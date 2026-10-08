@@ -16,6 +16,7 @@ with (B/'emitted.json').open('w') as f:run(['build/test_emit'],stdout=f)
 run(['cc',*flags,'-Wno-unused-function','-Wno-unused-variable','test_native.c','-pthread','-lcrypto','-ldl','-o','build/test_native'])
 run(['cc',*flags,'-fPIC','-fvisibility=hidden','-ftls-model=initial-exec','-shared','-Wl,-z,relro,-z,now,-z,noexecstack','-Wl,-Bsymbolic-functions','observer.c','-pthread','-lcrypto','-ldl','-o','build/libft_native_hooks.so'])
 with (B/'native-test.txt').open('w') as f:run(['build/test_native'],stdout=f,stderr=subprocess.STDOUT)
+with (B/'drain-test.txt').open('w') as f:run(['python3','-B','test_drain.py'],stdout=f,stderr=subprocess.STDOUT)
 # Default-off and opt-in unsupported-executable cases run /usr/bin/true, not a VR process.
 directory=B/'preload-test';directory.mkdir(mode=0o700,exist_ok=True)
 log=directory/'disabled.bin';bad=directory/'wrong-exe.bin'
@@ -30,7 +31,7 @@ with (B/'native-test.txt').open('a') as f:f.write('PASS default-off-and-wrong-ex
 run(['readelf','-d','build/libft_native_hooks.so'])
 run(['ldd','build/libft_native_hooks.so'])
 run(['nm','-D','--defined-only','build/libft_native_hooks.so'])
-files=['libft_native_hooks.so','test_native','test_emit','emitted.json','native-test.txt']
+files=['libft_native_hooks.so','test_native','test_emit','emitted.json','native-test.txt','drain-test.txt']
 (B/'SHA256SUMS').write_text(''.join(hashlib.sha256((B/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in files))
 print((B/'native-test.txt').read_text(),end='');print((B/'SHA256SUMS').read_text(),end='')
 artifacts={'libft_native_hooks.so':B/'libft_native_hooks.so','decode.py':R/'decode.py','pins.h':R/'pins.h'}

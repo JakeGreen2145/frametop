@@ -131,6 +131,9 @@ static void observe(const struct saved *r,unsigned id) {
         if(!read_meta(&vs,p+0x20,4) || (vs!=57 && vs!=58)) {atomic_fetch_add(&filtered,1);goto cleanup;}
     }
     if(atomic_flag_test_and_set_explicit(&ring_lock,memory_order_acquire)) {atomic_fetch_add(&dropped,1);goto cleanup;}
+    /* The drainer closes admission under this lock before testing emptiness.
+     * A callback may have passed the initial enabled check before that close. */
+    if(!atomic_load_explicit(&enabled,memory_order_relaxed)) {atomic_flag_clear_explicit(&ring_lock,memory_order_release);goto cleanup;}
     if(head==EVENT_LIMIT) {atomic_store(&enabled,0);atomic_flag_clear_explicit(&ring_lock,memory_order_release);goto cleanup;}
     if(head-tail==RING_COUNT) {atomic_fetch_add(&dropped,1);atomic_flag_clear_explicit(&ring_lock,memory_order_release);goto cleanup;}
     struct event *e=&ring[head%RING_COUNT];memset(e,0,sizeof(*e));
@@ -174,14 +177,18 @@ static void *drain(void *unused) {
     (void)unused;
     const struct timespec pause={0,10000000};
     for(;;) {
-        struct event e;int have=0,empty=0;
+        struct event e;int have=0,finished=0;
+        int closing=now_ns()>=deadline || atomic_load(&stop_drain);
         if(!atomic_flag_test_and_set_explicit(&ring_lock,memory_order_acquire)) {
-            if(tail<head) {e=ring[tail%RING_COUNT];++tail;have=1;}else empty=1;
+            if(closing)atomic_store(&enabled,0);
+            /* Completion requires closed admission and an empty ring in the
+             * same critical section, never a cached pre-close empty result. */
+            if(tail<head) {e=ring[tail%RING_COUNT];++tail;have=1;}
+            else finished=!atomic_load(&enabled);
             atomic_flag_clear_explicit(&ring_lock,memory_order_release);
         }
         if(have && !write_all(&e,sizeof(e))) {atomic_store(&enabled,0);break;}
-        if(now_ns()>=deadline)atomic_store(&enabled,0);
-        if(empty && (!atomic_load(&enabled) || atomic_load(&stop_drain)))break;
+        if(finished)break;
         if(!have)nanosleep(&pause,NULL);
     }
     atomic_store(&enabled,0);(void)control_event(2);fsync(output_fd);

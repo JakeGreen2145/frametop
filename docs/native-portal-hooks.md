@@ -7,17 +7,17 @@ This is a launch-only, default-off observer. It does not add camera intent, call
 ARM build directory:
 
 ```
-/home/steamos/dev/frametop-native-hooks/native-portal/hooks/build/bundle-83051aa891b468b4
+/home/steamos/dev/frametop-native-hooks/native-portal/hooks/build/bundle-80078287fe0dd534
 ```
 
-The matching local copy is under `native-portal/hooks/build/`. The bundle contains the shared library, decoder, exact site pins and a manifest with source and artifact hashes. Files are mode 0400 in a mode 0500 directory. All binaries, private evidence, Python dependencies and test output remain ignored under `build/`.
+The matching local copy is under `native-portal/hooks/build/`. This repair creates a new bundle; the earlier `bundle-83051aa891b468b4` and its manifest remain unchanged. The bundle contains the shared library, decoder, exact site pins and a manifest with source and artifact hashes. Files are mode 0400 in a mode 0500 directory. All binaries, private evidence, Python dependencies and test output remain ignored under `build/`.
 
 | Artifact | SHA256 |
 |---|---|
-| `libft_native_hooks.so` | `0ce3bbd029cea7eac92a7baddc3d8ad033d78e37bc0fe7cc52db10038df81c74` |
+| `libft_native_hooks.so` | `bec510c085d0324c1fba099cbba478d11b9a0701e3c7a43969a56ae8bb9a6c13` |
 | `decode.py` | `a3e4c12712404446676d00219ae4b5ac5a32863803c381faaadeaddc58c77398` |
 | `pins.h` | `fd67258a3a1439dced323658f6e15110fbebb9ef2db811bdfe3a22a80c090102` |
-| ARM `test_native` | `3db73ef60fc90eee992baa8cead67ba296bf965c33a892a024ac54c1f8c3d52f` |
+| ARM `test_native` | `a16ddd3437e98613cef4369a222fdaa94a4dd56b5957db6efbd387a5a7ed55d4` |
 | ARM `test_emit` | `fa39c22b6b71eb740ae7d2900bc34217133a044d7e1ca5cae294c43da41965e3` |
 
 Only `/opt/steamvr/bin/linuxarm64/vrcompositor` with SHA256 `9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265` is supported. There is no offset discovery or fallback for another ELF.
@@ -37,14 +37,16 @@ python3 -m pip install --target native-portal/hooks/build/pylib unicorn==2.1.4
 python3 -B -m unittest discover -s native-portal/hooks -p 'test_*.py' -v
 ```
 
-`build.py` refuses non-AArch64. It builds only in this new ARM mirror and runs synthetic tests. It reads and privately maps the installed pinned ELF for identity tests but never loads its libraries, executes its code, starts SteamVR, attaches to another process, installs anything or changes services. Its synthetic island uses a generated RET continuation, not Valve code. Compiler was GCC 16.2.1 in distrobox `dev`; flags and dynamic dependencies are in `build/arm-build.txt`. Runtime dependencies are `libc.so.6` and `libcrypto.so.3`. Default-off and opt-in wrong-executable loads also passed on the SteamOS host with `/usr/bin/true`.
+`build.py` refuses non-AArch64. It builds only in this new ARM mirror and runs synthetic tests. It reads and privately maps the installed pinned ELF for identity tests but never loads its libraries, executes its code, starts SteamVR, attaches to another process, installs anything or changes services. Its synthetic island uses a generated RET continuation, not Valve code. Compiler was GCC 16.2.1 in distrobox `dev`; flags and dynamic dependencies for this repair are in `build/arm-drain-build.txt`. Runtime dependencies are `libc.so.6` and `libcrypto.so.3`. Default-off and opt-in wrong-executable loads also passed on the SteamOS host with `/usr/bin/true`.
 
 Observed verification:
 
 - ARM build and native test exits were 0. Native tests cover fresh private files, wrong executable/hash, positive pinned file-backed mapping and load-bias refusals, all-or-none byte guards, precommit protection rollback, postcommit RX-failure exit 190, bounded ring/drop counters, invalid metadata addresses, fork refusal, both-eye metadata, errno preservation, real ARM island execution and deadline draining.
 - Production C emitted 75 islands covering 25 sites at three synthetic ASLR bases. Unicorn ran each twice, including both pipeline CBZ outcomes: 150 executions. It compared every x0..x30, every full q0..q31, SP, NZCV, FPCR, FPSR, continuation PC and native instruction memory effects against the original pinned instruction. The callback deliberately clobbered even callee-saved registers.
-- The final Python suite reported `Ran 4 tests` and `OK`, exit 0. It also decoded real ARM-generated metadata fixtures and rejected malformed/truncated records.
-- RED outputs are retained as `build/red-*.txt`; final outputs are `build/final-tests.txt`, `build/native-test.txt`, `build/arm-build.txt`, `build/pin-audit.json` and `build/SHA256SUMS`. Initial fixture errors involved an overlapping Unicorn mapping and overlapping 16-byte guard windows; both were fixed without weakening register or guard checks.
+- The final Python suite reported `Ran 7 tests` and `OK`, exit 0, against the freshly rebuilt ARM fixtures. It also decoded real ARM-generated metadata fixtures and rejected malformed/truncated records.
+- Three semaphore-controlled real-pthread regressions compile the current production callback/drainer C. They cover publication between the old empty snapshot and deadline check, plus a producer paused past its initial enabled check during deadline and explicit-stop shutdown. All three failed before the repair with `head=1 tail=0 dropped=0`. After the repair, the accepted event is emitted before the terminal record with `head=tail=1`; both late producers are refused with `head=tail=0`. The regressions passed locally and in the ARM build. Only unused identity includes and the AArch64 compile guard are removed for this portable CPU test; the callback and drainer bodies are unchanged.
+- Both local and Frame copies passed exact manifest source/artifact hash and 0400/0500 permission checks. The new manifest pins the changed `observer.c` and test/build sources. Before/after checksums of every old bundle file, including its manifest, matched.
+- Repair evidence is retained as `build/red-drain-admission.txt`, `build/green-drain-admission.txt`, `build/final-drain-tests.txt`, `build/drain-test.txt`, `build/native-test.txt`, `build/arm-drain-build.txt`, `build/host-drain-preload.txt`, `build/verified-drain-bundle-{local,frame}.json`, `build/old-bundle-{before,after}.txt` and `build/SHA256SUMS`. Earlier pin inspection remains in `build/pin-audit.json`.
 
 These are preservation and observer tests, not live callback-order evidence or product-renderer acceptance.
 
@@ -63,7 +65,9 @@ Do not combine with `FT_AURORA_GATE_ENABLE`, `FT_NATIVE_CLIP_DIR` or `FT_CAMERA_
 
 The output is a new mode 0600 regular file, opened with O_EXCL and O_NOFOLLOW. Existing files, symlinks, noncanonical/private-parent failures and missing directories are refused. An unusable log target causes no hooks and no file. No enabled variable causes no file and no thread. The trace stops after the duration or 16,384 accepted events, whichever comes first. A 256-record static ring drops on full/contended/reentrant paths rather than waiting. Drops are not proof of missing native calls.
 
-The duration only disables observation and drains the ring. It does not restart SteamVR or remove installed branches. Islands remain RX until process exit and continue native pass-through. Never dlclose an installed observer or unmap its islands. Parent rollback must remove only its own launch additions and use the parent's separately authorized process-lifecycle procedure. Do not relax the single-thread startup guard if the existing preload has already started threads; treat that as a failed trial.
+The duration only disables observation and drains the ring. The drainer closes admission under the ring lock before deciding the queue is empty. Producers recheck admission after their single try-lock succeeds, so a callback that passed the initial enabled check cannot publish after shutdown completes. Events accepted before closure drain before the terminal record; callbacks refused by closed admission are not accepted events. Full/contended/reentrant observation remains explicitly counted and lossy.
+
+Duration expiry does not restart SteamVR or remove installed branches. Islands remain RX until process exit and continue native pass-through. Never dlclose an installed observer or unmap its islands. Parent rollback must remove only its own launch additions and use the parent's separately authorized process-lifecycle procedure. Do not relax the single-thread startup guard if the existing preload has already started threads; treat that as a failed trial.
 
 ## Install and hot-path contract
 
