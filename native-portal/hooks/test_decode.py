@@ -14,7 +14,7 @@ class DecoderTests(unittest.TestCase):
     def test_real_native_fixture_and_truncation(self):
         self.assertTrue((R/'decode.py').exists(),'event decoder is not implemented')
         spec=importlib.util.spec_from_file_location('decode',R/'decode.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-        fixture=R/'build/preload-test/wrong-exe.bin'
+        fixture=R/'build/control-fixture.bin'
         self.assertTrue(fixture.exists(),'fetch real ARM fixture first')
         with fixture.open('rb') as f:records=list(module.records(f))
         self.assertEqual(len(records),1);self.assertEqual(records[0]['control'],'refuse-executable')

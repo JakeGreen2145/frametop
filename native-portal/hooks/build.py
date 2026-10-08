@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """ARM-only local build and synthetic acceptance. Never installs or launches SteamVR."""
-import hashlib, json, os, pathlib, platform, shutil, struct, subprocess
+import hashlib, json, os, pathlib, platform, shutil, subprocess
 R=pathlib.Path(__file__).resolve().parent
 if platform.machine()!='aarch64':raise SystemExit('Build only on ARM in distrobox dev.')
 os.chdir(R);os.umask(0o077)
@@ -17,17 +17,9 @@ run(['cc',*flags,'-Wno-unused-function','-Wno-unused-variable','test_native.c','
 run(['cc',*flags,'-fPIC','-fvisibility=hidden','-ftls-model=initial-exec','-shared','-Wl,-z,relro,-z,now,-z,noexecstack','-Wl,-Bsymbolic-functions','observer.c','-pthread','-lcrypto','-ldl','-o','build/libft_native_hooks.so'])
 with (B/'native-test.txt').open('w') as f:run(['build/test_native'],stdout=f,stderr=subprocess.STDOUT)
 with (B/'drain-test.txt').open('w') as f:run(['python3','-B','test_drain.py'],stdout=f,stderr=subprocess.STDOUT)
-# Default-off and opt-in unsupported-executable cases run /usr/bin/true, not a VR process.
-directory=B/'preload-test';directory.mkdir(mode=0o700,exist_ok=True)
-log=directory/'disabled.bin';bad=directory/'wrong-exe.bin'
-for p in (log,bad):
-    if p.exists():p.unlink()
-env=os.environ.copy();env['LD_PRELOAD']=str(B/'libft_native_hooks.so');env.pop('FT_NATIVE_HOOKS_ENABLE',None);env['FT_NATIVE_HOOKS_LOG']=str(log)
-run(['/usr/bin/true'],env=env);assert not log.exists()
-env['FT_NATIVE_HOOKS_ENABLE']='metadata-v1-9b1bd5fe';env['FT_NATIVE_HOOKS_LOG']=str(bad)
-run(['/usr/bin/true'],env=env)
-data=bad.read_bytes();assert len(data)==2384 and struct.unpack_from('<4I',data)==(0x3154464e,2384,0xffffffff,10)
-with (B/'native-test.txt').open('a') as f:f.write('PASS default-off-and-wrong-exe\n')
+# Default-off and repeated opt-in non-target loads cannot reserve the shared log.
+with (B/'native-test.txt').open('a') as f:
+    run(['python3','-B','check_preload.py',str(B/'libft_native_hooks.so'),str(B)],stdout=f,stderr=subprocess.STDOUT)
 run(['readelf','-d','build/libft_native_hooks.so'])
 run(['ldd','build/libft_native_hooks.so'])
 run(['nm','-D','--defined-only','build/libft_native_hooks.so'])

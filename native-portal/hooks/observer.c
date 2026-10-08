@@ -243,6 +243,11 @@ static void *make_islands(uintptr_t base,size_t ps,size_t *length) {
 __attribute__((constructor)) static void launch(void) {
     const char *opt=getenv("FT_NATIVE_HOOKS_ENABLE");
     if(!opt || strcmp(opt,"metadata-v1-9b1bd5fe"))return;
+    /* Service-wide preload reaches helpers first. Never reserve their shared log.
+     * Keep the full identity check below so intended-target failures still report. */
+    char path[PATH_MAX];ssize_t n=readlink("/proc/self/exe",path,sizeof(path)-1);
+    if(n<0 || (size_t)n>=sizeof(path)-1)return;
+    path[n]=0;if(strcmp(path,EXE))return;
     self_pid=getpid();output_fd=fresh_log(getenv("FT_NATIVE_HOOKS_LOG"));if(output_fd<0)return;
     int fd=exe_fd();unsigned refusal=10;
     if(fd<0)goto refuse;

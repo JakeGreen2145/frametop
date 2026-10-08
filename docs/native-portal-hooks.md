@@ -7,17 +7,17 @@ This is a launch-only, default-off observer. It does not add camera intent, call
 ARM build directory:
 
 ```
-/home/steamos/dev/frametop-native-hooks/native-portal/hooks/build/bundle-80078287fe0dd534
+/home/steamos/dev/frametop-native-hooks/native-portal/hooks/build/launch-contract-4Grz7QEA/build/bundle-dbbd07d1510554ce
 ```
 
-The matching local copy is under `native-portal/hooks/build/`. This repair creates a new bundle; the earlier `bundle-83051aa891b468b4` and its manifest remain unchanged. The bundle contains the shared library, decoder, exact site pins and a manifest with source and artifact hashes. Files are mode 0400 in a mode 0500 directory. All binaries, private evidence, Python dependencies and test output remain ignored under `build/`.
+The matching local copy is under `native-portal/hooks/build/`. This launch-integration change creates a new bundle; both earlier bundles, `bundle-83051aa891b468b4` and `bundle-80078287fe0dd534`, and their manifests remain unchanged. The bundle contains the shared library, decoder, exact site pins and a manifest with source and artifact hashes. Files are mode 0400 in a mode 0500 directory. All binaries, private evidence, Python dependencies and test output remain ignored under `build/`.
 
 | Artifact | SHA256 |
 |---|---|
-| `libft_native_hooks.so` | `bec510c085d0324c1fba099cbba478d11b9a0701e3c7a43969a56ae8bb9a6c13` |
+| `libft_native_hooks.so` | `075ec9e313d5361edbca7fef9f8e0efd0739d3c93e68d9385470afbe54541dae` |
 | `decode.py` | `a3e4c12712404446676d00219ae4b5ac5a32863803c381faaadeaddc58c77398` |
 | `pins.h` | `fd67258a3a1439dced323658f6e15110fbebb9ef2db811bdfe3a22a80c090102` |
-| ARM `test_native` | `a16ddd3437e98613cef4369a222fdaa94a4dd56b5957db6efbd387a5a7ed55d4` |
+| ARM `test_native` | `c5a95495dc2a495dd663216592854123f4a152e242991589a9cdb62726dcf02c` |
 | ARM `test_emit` | `fa39c22b6b71eb740ae7d2900bc34217133a044d7e1ca5cae294c43da41965e3` |
 
 Only `/opt/steamvr/bin/linuxarm64/vrcompositor` with SHA256 `9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265` is supported. There is no offset discovery or fallback for another ELF.
@@ -27,26 +27,27 @@ Only `/opt/steamvr/bin/linuxarm64/vrcompositor` with SHA256 `9b1bd5fe4463592cbc7
 From this isolated local checkout:
 
 ```sh
-rsync -a --exclude build native-portal/hooks/ \
-  frame:/home/steamos/dev/frametop-native-hooks/native-portal/hooks/
-ssh frame 'cd /home/steamos/dev/frametop-native-hooks/native-portal/hooks && ~/.local/bin/distrobox enter dev -- python3 -B build.py'
+REMOTE=$(ssh frame 'mktemp -d /home/steamos/dev/frametop-native-hooks/native-portal/hooks/build/launch-contract-XXXXXXXX')
+rsync -a --exclude build --exclude __pycache__ native-portal/hooks/ "frame:$REMOTE/"
+ssh frame "cd '$REMOTE' && ~/.local/bin/distrobox enter dev -- python3 -B build.py"
 rsync -a --exclude tmp --exclude 'test-log-*' \
-  frame:/home/steamos/dev/frametop-native-hooks/native-portal/hooks/build/ \
-  native-portal/hooks/build/
+  "frame:$REMOTE/build/" native-portal/hooks/build/
 python3 -m pip install --target native-portal/hooks/build/pylib unicorn==2.1.4
 python3 -B -m unittest discover -s native-portal/hooks -p 'test_*.py' -v
 ```
 
-`build.py` refuses non-AArch64. It builds only in this new ARM mirror and runs synthetic tests. It reads and privately maps the installed pinned ELF for identity tests but never loads its libraries, executes its code, starts SteamVR, attaches to another process, installs anything or changes services. Its synthetic island uses a generated RET continuation, not Valve code. Compiler was GCC 16.2.1 in distrobox `dev`; flags and dynamic dependencies for this repair are in `build/arm-drain-build.txt`. Runtime dependencies are `libc.so.6` and `libcrypto.so.3`. Default-off and opt-in wrong-executable loads also passed on the SteamOS host with `/usr/bin/true`.
+`build.py` refuses non-AArch64. It builds only in this new ARM mirror and runs synthetic tests. It reads and privately maps the installed pinned ELF for identity tests but never loads its libraries, executes its code, starts SteamVR, attaches to another process, installs anything or changes services. Its synthetic island uses a generated RET continuation, not Valve code. Compiler was GCC 16.2.1 in distrobox `dev`; flags and dynamic dependencies for this launch change are in `build/arm-launch-build.txt`. Runtime dependencies are `libc.so.6` and `libcrypto.so.3`. Default-off and two opt-in wrong-executable loads using the same fresh log path also passed on the SteamOS host with `/usr/bin/true`. All three leave the private directory empty. `check_preload.py LIBRARY SCRATCH_DIRECTORY` runs this regression against a real DSO and rejects loader warnings even when the inert process exits zero.
 
 Observed verification:
 
 - ARM build and native test exits were 0. Native tests cover fresh private files, wrong executable/hash, positive pinned file-backed mapping and load-bias refusals, all-or-none byte guards, precommit protection rollback, postcommit RX-failure exit 190, bounded ring/drop counters, invalid metadata addresses, fork refusal, both-eye metadata, errno preservation, real ARM island execution and deadline draining.
 - Production C emitted 75 islands covering 25 sites at three synthetic ASLR bases. Unicorn ran each twice, including both pipeline CBZ outcomes: 150 executions. It compared every x0..x30, every full q0..q31, SP, NZCV, FPCR, FPSR, continuation PC and native instruction memory effects against the original pinned instruction. The callback deliberately clobbered even callee-saved registers.
-- The final Python suite reported `Ran 7 tests` and `OK`, exit 0, against the freshly rebuilt ARM fixtures. It also decoded real ARM-generated metadata fixtures and rejected malformed/truncated records.
+- The final Python suite reported `Ran 7 tests` and `OK`, exit 0, against the freshly rebuilt ARM fixtures. It also decoded real ARM-generated metadata fixtures and rejected malformed/truncated records. The control fixture now comes from the production writer in `test_native`, not from a wrong-executable launch.
 - Three semaphore-controlled real-pthread regressions compile the current production callback/drainer C. They cover publication between the old empty snapshot and deadline check, plus a producer paused past its initial enabled check during deadline and explicit-stop shutdown. All three failed before the repair with `head=1 tail=0 dropped=0`. After the repair, the accepted event is emitted before the terminal record with `head=tail=1`; both late producers are refused with `head=tail=0`. The regressions passed locally and in the ARM build. Only unused identity includes and the AArch64 compile guard are removed for this portable CPU test; the callback and drainer bodies are unchanged.
-- Both local and Frame copies passed exact manifest source/artifact hash and 0400/0500 permission checks. The new manifest pins the changed `observer.c` and test/build sources. Before/after checksums of every old bundle file, including its manifest, matched.
+- Both local and Frame copies passed exact manifest source/artifact hash and 0400/0500 permission checks. The new manifest pins the changed `observer.c` and test/build sources. Both older bundles still match their original artifact and manifest hashes.
 - Repair evidence is retained as `build/red-drain-admission.txt`, `build/green-drain-admission.txt`, `build/final-drain-tests.txt`, `build/drain-test.txt`, `build/native-test.txt`, `build/arm-drain-build.txt`, `build/host-drain-preload.txt`, `build/verified-drain-bundle-{local,frame}.json`, `build/old-bundle-{before,after}.txt` and `build/SHA256SUMS`. Earlier pin inspection remains in `build/pin-audit.json`.
+
+The inherited-preload regression failed against reviewed bundle `80078287fe0dd534` with `AssertionError: non-target executable reserved the compositor log`, after default-off passed. The new bundle passed default-off and both enabled attempts in the ARM build and on the SteamOS host. Evidence is in `build/red-launch-contract.txt`, `build/arm-launch-build.txt`, `build/host-launch-preload.txt`, `build/final-launch-tests.txt` and `build/verified-launch-bundle-{local,frame}.json`. The production change adds only an early exact-path check; emitter, drain and full identity guards are unchanged.
 
 These are preservation and observer tests, not live callback-order evidence or product-renderer acceptance.
 
@@ -62,6 +63,8 @@ No launcher or service drop-in is installed. For a separately authorized composi
 | `LD_PRELOAD` | Existing value plus `:` and the absolute `libft_native_hooks.so` path |
 
 Do not combine with `FT_AURORA_GATE_ENABLE`, `FT_NATIVE_CLIP_DIR` or `FT_CAMERA_BLEND_MODE`. Their presence refuses installation. The native observer has no shader/layer dependency.
+
+A service-wide preload can reach `vrstartup`, `vrcmd` and other helpers before the compositor. Before opening the log, the constructor now requires `/proc/self/exe` to match the exact target pathname. A non-target executable or unreadable/truncated executable link returns without creating a file, starting a thread or installing hooks, even with valid opt-in and a fresh valid log path. It no longer emits refusal code 10 or reserves the shared log. The full path/canonical-path, installed inode and hash checks still run afterward, and intended-target identity failures can still emit code 10 when the log is usable.
 
 The output is a new mode 0600 regular file, opened with O_EXCL and O_NOFOLLOW. Existing files, symlinks, noncanonical/private-parent failures and missing directories are refused. An unusable log target causes no hooks and no file. No enabled variable causes no file and no thread. The trace stops after the duration or 16,384 accepted events, whichever comes first. A 256-record static ring drops on full/contended/reentrant paths rather than waiting. Drops are not proof of missing native calls.
 

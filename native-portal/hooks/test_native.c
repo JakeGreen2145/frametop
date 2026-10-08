@@ -106,5 +106,9 @@ int main(void) {
     assert(!pthread_create(&drainer,NULL,drain,NULL));assert(!pthread_join(drainer,NULL));
     assert(!atomic_load(&enabled));assert(tail==head);close(output_fd);output_fd=-1;
     assert(!stat(file,&st) && st.st_size==(off_t)((head+1)*sizeof(struct event)));
-    puts("PASS deadline-drain");return 0;
+    puts("PASS deadline-drain");
+    /* Decoder fixture from the production writer, not a non-target launch log. */
+    output_fd=open("build/control-fixture.bin",O_CREAT|O_TRUNC|O_WRONLY|O_CLOEXEC,0600);
+    assert(output_fd>=0 && control_event(10));assert(!close(output_fd));output_fd=-1;
+    return 0;
 }
