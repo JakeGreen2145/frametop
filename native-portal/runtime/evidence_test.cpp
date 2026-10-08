@@ -229,6 +229,26 @@ int main() {
     assert(!read_self(UINT64_MAX-3,out.data(),8));assert(!read_self(0,out.data(),8));
     assert(!read_self(reinterpret_cast<uint64_t>(p),out.data(),0));
     assert(munmap(p,2*page)==0);assert(!read_self(reinterpret_cast<uint64_t>(p),out.data(),8));
+    // Native unmap's signed-positive predicate at 0x2fe0c4/0x2fe0c8.
+    for(uint32_t refs : {0u,1u,0x7fffffffu,0x80000000u,0xffffffffu}) {
+        const bool positive=refs>0 && refs<=INT32_MAX;
+        Fixture initial;render::Observation observation{};
+        put(initial.resource,0x98,refs);
+        assert(initial.bootstrap()==positive);
+        assert(initial.evidence.initialized()==positive);
+        assert(initial.evidence.coherent(addr(initial.resource))==positive);
+        if(positive)assert(initial.objects());
+        assert(initial.evidence.snapshot(addr(initial.wrapper),addr(initial.marker),observation)==positive);
+    }
+    for(uint32_t refs : {0u,1u,0x7fffffffu,0x80000000u,0xffffffffu}) {
+        const bool positive=refs>0 && refs<=INT32_MAX;
+        Fixture later;render::Observation observation{};
+        assert(later.bootstrap());assert(later.objects());
+        assert(later.evidence.snapshot(addr(later.wrapper),addr(later.marker),observation));
+        put(later.resource,0x98,refs);
+        assert(later.evidence.coherent(addr(later.resource))==positive);
+        assert(later.evidence.snapshot(addr(later.wrapper),addr(later.marker),observation)==positive);
+    }
     Fixture f;render::Observation o{};
     assert(!f.evidence.snapshot(addr(f.wrapper),addr(f.marker),o));
     assert(f.bootstrap());assert(f.evidence.initialized());assert(f.evidence.coherent(addr(f.resource)));

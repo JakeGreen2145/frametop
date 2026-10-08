@@ -173,7 +173,7 @@ bool Evidence::route(arena::Bridge &bridge,uint64_t pc,arena::Saved &s) noexcept
 }
 bool Evidence::arena(render::Arena &a) const noexcept {
     const auto R=identity_.renderer;uint64_t D=0,allocator_D=0,backing=0,map_owner=0,mapped=0,allocation_size=0,device=0;
-    uint32_t capacity=0,cursor=0,index=0,count=0,flags=0,refs=0;
+    uint32_t capacity=0,cursor=0,index=0,count=0,flags=0;int32_t refs=0;
     if(!at(R+0xa78,device) || device!=identity_.device || !at(R+0x1390,a.resource) || a.resource!=resource_ ||
        !at(resource_+8,D) || D!=R+0x50 || !at(R+0xec0,allocator_D) || allocator_D!=D ||
        !at(resource_+0x50,backing) || !backing || !at(resource_+0x58,index) ||
@@ -181,7 +181,7 @@ bool Evidence::arena(render::Arena &a) const noexcept {
        !at(R+0xf04+8*index,flags) || (flags&0xe)!=0xe ||
        !at(resource_+0x60,allocation_size) || !at(resource_+0xb8,capacity) || capacity!=requested_size_ ||
        allocation_size<capacity || !at(resource_+0xb0,a.buffer) || !a.buffer ||
-       !at(resource_+0x98,refs) || !refs || !at(resource_+0xa0,mapped) ||
+       !at(resource_+0x98,refs) || refs<=0 || !at(resource_+0xa0,mapped) ||
        !at(R+0x1408,map_owner) || map_owner!=resource_ || !at(R+0x1410,a.map) ||
        a.map!=mapped || !bounded(a.map,capacity) || !at(R+0x328,a.alignment) || a.alignment!=64 ||
        !at(R+0x1418,cursor) || cursor>capacity || !at(R+0x1380,a.command_wrapper) ||
