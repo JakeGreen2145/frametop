@@ -22,13 +22,14 @@ for name,args,result in [
  f=getattr(lib,'upstream_'+name);f.argtypes=args;f.restype=result
 class Integrated(a.Native):
  def __init__(self):
-  self.adapter=None;self.host_pages=set();self.descriptor_calls=0
+  self.adapter=None;self.descriptor_calls=0
+  self.host_written:tuple[int,int]|None=None
+  self.host_copy:tuple[int,int]|None=None
   super().__init__(False)
   a.lib.arena_delete(self.owner)
   def write(_,address,src,n):
-   # Bridge writes only the Adapter-owned host staging buffer. Native copy
-   # reads a mirrored mapping of that same address after the island returns.
-   C.memmove(address,src,n);return True
+   # Record the exact host write for this dispatch, not a numeric address class.
+   C.memmove(address,src,n);self.host_written=(address,n);return True
   self.host_write=a.WRITE(write)
   self.memory=a.Memory(None,self.callbacks[0],self.host_write,self.callbacks[2])
   self.owner=a.lib.arena_new(C.byref(self.memory))
@@ -58,14 +59,24 @@ class Integrated(a.Native):
   self.resolve=RESOLVE(resolve)
   self.adapter=lib.upstream_new(self.owner,C.byref(self.memory),self.resolve,self.R,self.wrap,self.K,self.stockwrap)
  def hook(self,uc,pc,size,user):
+  if pc==0x4be00 and self.host_copy is not None:
+   # This libc boundary was already synthetic. Keep the native source pointer
+   # unchanged, but read its registered host allocation rather than guest RAM.
+   # The same integer may name a live native object in Unicorn; never map or
+   # overwrite that object to mirror host staging. Consume provenance once.
+   dst,src,n=[self.x(i) for i in range(3)]
+   assert (src,n)==self.host_copy, 'native memcpy differs from owned host staging'
+   payload=C.string_at(src,n)
+   uc.mem_write(dst,payload);self.host_copy=None
+   self.events.append({'kind':'memcpy_fake','dst':dst,'bytes':n})
+   self.x(0,dst);self.ret();return
   if pc==0x680000 and self.adapter:
    ctx=self.x(0);site=self.x(1);s=a.Saved.from_buffer_copy(bytes(uc.mem_read(ctx,800)))
+   if site in (0,6):self.host_written=None;self.host_copy=None # upload/reset
    lr=self.x(30);lib.upstream_dispatch(self.adapter,C.byref(s),site,self.lifetime,self.thread)
    if site==0 and s.pad==1:
-    start=s.x[2]&~4095;end=(s.x[2]+592+4095)&~4095
-    for page in range(start,end,4096):
-     if page not in self.host_pages:self.uc.mem_map(page,4096);self.host_pages.add(page)
-    self.uc.mem_write(s.x[2],C.string_at(s.x[2],592))
+    assert self.host_written==(s.x[2],592), 'replacement has no matching host write'
+    self.host_copy=self.host_written
    uc.mem_write(ctx,bytes(s));self.calls.append((site,s.pad))
    for i in range(31):self.x(i,0)
    for i in range(32):uc.reg_write(a.ar.UC_ARM64_REG_Q0+i,0)

@@ -42,6 +42,7 @@ if a.machine:
  work=pathlib.Path('/home/jakeg/.hermes/work')
  os.environ['PYTHONPATH']=os.pathsep.join(str(work/x) for x in ('frame-native-reuse/camera-analysis/pylib','frame-native-product-design/pylib'))
  run([sys.executable,'-B',R/'integration/upstream_machine.py'],'upstream-machine')
+ run([sys.executable,'-B',R/'integration/test_upstream_transport.py'],'upstream-transport')
 report={'limits':limits(),'commands':logs,'source_sha256':{str(f.relative_to(R)):hashlib.sha256(f.read_bytes()).hexdigest() for folder in ('render','arena','integration') for f in (R/folder).iterdir() if f.is_file()}}
 (B/('upstream-verification-asan.json' if a.sanitize else 'upstream-verification.json')).write_text(json.dumps(report,indent=2)+'\n')
 print(json.dumps(report['limits']))
