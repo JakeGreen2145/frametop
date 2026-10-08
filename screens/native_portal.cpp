@@ -8,55 +8,110 @@ namespace native_portal {
 struct Owner::Impl {
     struct Sample { Geometry geometry; bool tracking=false,paused=false,menu=false; uint64_t generation=0,time=0; };
     struct Observed { Reply reply; uint64_t intent=0; };
+    struct Intent { uint64_t ticket=0; bool wanted=false; };
     std::string path; Clock clock; Mailbox<Sample> sample; Mailbox<Observed> status;
-    std::atomic<bool> wanted{false},quit{false}; std::atomic<uint64_t> intent{0};
+    Mailbox<Intent> desired; // one coherent command snapshot for the worker
+    std::atomic<bool> wanted{false},quit{false},unsettled{false}; std::atomic<uint64_t> intent{0};
     std::thread worker; uint64_t generation=0;
     Impl(std::string p,Clock c):path(std::move(p)),clock(c) {
         if(path.empty()) { const char* rt=std::getenv("XDG_RUNTIME_DIR"); if(rt&&rt[0]=='/')path=std::string(rt)+"/frametop-native-portal/control.sock"; }
-        Reply r; r.reason=Reason::MissingBridge; status.publish({r,intent.load()}); sample.publish(Sample{});
+        Reply r; r.reason=Reason::MissingBridge; status.publish({r,intent.load()}); sample.publish(Sample{}); desired.publish(Intent{});
     }
     void run() {
-        Client client; Reply r; Request q; uint64_t seen=0,last=0; bool connected=false; uint32_t last_flags=0;
+        enum class Link { Idle, Active, Releasing, Lost };
+        Client client; Reply r; Request q;
+        Link link=unsettled?Link::Lost:Link::Idle;
+        if(unsettled) { r.state=State::Fault; r.reason=Reason::OwnerGone; }
+        uint64_t seen=0,last=0,lease_intent=0; uint32_t last_flags=0;
+        bool attempted=false,off_known=!unsettled;
+        auto next_release=std::chrono::steady_clock::now();
+        auto lost=[&] {
+            client.close(); link=Link::Lost;
+            r=Reply{}; r.state=State::Fault; r.reason=Reason::OwnerGone;
+        };
+        auto release=[&] {
+            // Status requires a live writer in ABI-1. Repeat the idempotent
+            // Release on this exact connection/epoch instead; it never renews.
+            q.op=Operation::Release; ++q.sequence; q.flags=0;
+            if(!client.exchange(q,r)) { lost(); return; }
+            if(r.state==State::Draining) { link=Link::Releasing; return; }
+            off_known=r.state==State::Off;
+            unsettled=!off_known;
+            // A revocation latches its original intent, not a newer explicit
+            // On queued while that lease was still draining.
+            if(!off_known&&seen==lease_intent)attempted=true;
+            client.close(); link=Link::Idle;
+        };
         while(!quit) {
-            auto ticket=intent.load(); bool want=wanted.load(); Sample s; bool have=sample.read(s); auto now=clock();
+            Intent request;
+            if(!desired.read(request)) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); continue; }
+            const auto ticket=request.ticket; const bool want=request.wanted;
+            Sample s; bool have=sample.read(s); auto now=clock();
             bool ready=have&&s.tracking&&!s.paused&&s.time&&now>=s.time&&now-s.time<250000000;
-            if(ticket!=seen) { client.close(); connected=false; q=Request{}; seen=ticket; last=0; }
-            if(!want||!ready) {
-                // Only an intentional close of a still-valid connection permits
-                // automatic recovery. Failed/revoked attempts keep their latch.
-                if(connected) { client.close(); connected=false; last=0; }
-                Reply waiting; waiting.state=want?State::Warming:State::Off; waiting.reason=want?Reason::Tracking:Reason::Off; status.publish({waiting,ticket});
-            } else {
-                if(!connected) {
-                    // Failed/revoked attempts require a new explicit On generation.
-                    if(!last) {
-                        r=Reply{}; r.reason=Reason::MissingBridge;
-                        if(client.connect(path)) {
-                            q=Request{}; q.sent_ns=now; q.sequence=1;
-                            if(client.exchange(q,r)&&r.epoch&&r.capability) {
-                                connected=true; q.epoch=r.epoch; q.origin=r.origin; q.op=Operation::Update;
-                            } else client.close();
-                        }
-                        last=now;
-                    }
-                    status.publish({r,ticket});
+            auto current=[&] {
+                Intent latest;
+                return !quit&&desired.read(latest)&&latest.ticket==ticket&&latest.wanted==want;
+            };
+            if(ticket!=seen) {
+                seen=ticket; attempted=false;
+                if(link==Link::Active) { link=Link::Releasing; next_release=std::chrono::steady_clock::now(); }
+            }
+            if(link==Link::Active&&(!want||!ready)) {
+                link=Link::Releasing; attempted=false; // a previously valid intent may recover
+                next_release=std::chrono::steady_clock::now();
+            }
+            if(link==Link::Releasing) {
+                if(std::chrono::steady_clock::now()>=next_release) {
+                    release(); next_release=std::chrono::steady_clock::now()+std::chrono::milliseconds(50);
                 }
-                uint32_t flags=1|(s.menu?2:0);
-                if(connected&&((q.op==Operation::Update&&q.sequence==1) || flags!=last_flags || now-last>=50000000)) {
-                    q.sequence++; q.op=Operation::Update; q.sent_ns=s.time; q.geometry=s.geometry; q.generation=s.generation; q.flags=flags;
-                    if(!client.exchange(q,r)) { r=Reply{}; r.state=State::Fault; r.reason=Reason::OwnerGone; connected=false; }
-                    else if(r.state==State::Fault||r.state==State::Unavailable||r.state==State::SuspendedExternal) { client.close(); connected=false; }
-                    status.publish({r,ticket}); last=now; last_flags=flags;
+            } else if(link==Link::Idle&&want&&ready&&!attempted&&current()) {
+                attempted=true; r=Reply{}; r.reason=Reason::MissingBridge;
+                if(client.connect(path)) {
+                    if(current()) {
+                        q=Request{}; q.sent_ns=now; q.sequence=1;
+                        // A lost Acquire reply is ambiguous too: the server may
+                        // have accepted it. EOF or a replacement server cannot
+                        // prove that the old native work settled.
+                        off_known=false; unsettled=true;
+                        if(!client.exchange(q,r))lost();
+                        else if(r.epoch&&r.capability&&r.state==State::Warming) {
+                            link=Link::Active; q.epoch=r.epoch; q.origin=r.origin; last=0; lease_intent=ticket;
+                        } else { off_known=!r.epoch; unsettled=!off_known; client.close(); }
+                    } else client.close();
                 }
             }
+            uint32_t flags=1|(s.menu?2:0);
+            if(link==Link::Active&&want&&ready&&current()&&
+               (q.sequence==1||flags!=last_flags||now-last>=50000000)) {
+                ++q.sequence; q.op=Operation::Update; q.sent_ns=s.time;
+                q.geometry=s.geometry; q.generation=s.generation; q.flags=flags;
+                if(!client.exchange(q,r))lost();
+                else if(r.state==State::Draining||r.state==State::Fault||
+                        r.state==State::Unavailable||r.state==State::SuspendedExternal) {
+                    // Keep the revoked connection while it can still report debt.
+                    link=Link::Releasing; next_release=std::chrono::steady_clock::now();
+                }
+                last=now; last_flags=flags;
+            }
+            Reply visible=r;
+            if(link==Link::Idle) {
+                if(!want&&off_known) { visible=Reply{}; visible.state=State::Off; visible.reason=Reason::Off; }
+                else if(want&&!ready) { visible=Reply{}; visible.state=State::Warming; visible.reason=Reason::Tracking; }
+            }
+            status.publish({visible,ticket});
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
-        client.close(); r=Reply{}; r.state=State::Off; r.reason=Reason::Off; status.publish({r,intent.load()});
+        // Shutdown is bounded by the in-flight exchange and one Release. It
+        // relinquishes demand, not debt, and never waits for native settlement.
+        if(link==Link::Active||link==Link::Releasing)release();
+        client.close();
+        if(link==Link::Idle&&off_known) { r=Reply{}; r.state=State::Off; r.reason=Reason::Off; }
+        status.publish({r,intent.load()});
     }
 };
 Owner::Owner(std::string path,Clock clock):impl_(new Impl(std::move(path),clock)) {}
 Owner::~Owner(){shutdown();delete impl_;}
-void Owner::shutdown() { impl_->wanted=false; impl_->quit=true; if(impl_->worker.joinable())impl_->worker.join(); }
+void Owner::shutdown() { impl_->wanted=false; impl_->desired.publish({impl_->intent.load(),false}); impl_->quit=true; if(impl_->worker.joinable())impl_->worker.join(); }
 bool Owner::command(const char* cmd,char* out,int size) {
     std::istringstream input(cmd); std::string subsystem,action,value,extra; input>>subsystem>>action;
     if(subsystem!="passthrough"||action!="portal")return false;
@@ -64,10 +119,10 @@ bool Owner::command(const char* cmd,char* out,int size) {
         std::snprintf(out,size,"error passthrough portal <on|off|status>"); return true;
     }
     auto& s=*impl_;
-    if(value=="on") { s.wanted=true; ++s.intent; if(!s.worker.joinable()) { s.quit=false; s.worker=std::thread([&s]{s.run();}); } }
+    if(value=="on") { s.wanted=true; ++s.intent; s.desired.publish({s.intent.load(),true}); if(!s.worker.joinable()) { s.quit=false; s.worker=std::thread([&s]{s.run();}); } }
     if(value=="off") {
-        s.wanted=false; ++s.intent;
-        if(!s.worker.joinable()) { Reply off; off.state=State::Off; off.reason=Reason::Off; s.status.publish({off,s.intent.load()}); }
+        s.wanted=false; ++s.intent; s.desired.publish({s.intent.load(),false});
+        if(!s.worker.joinable()&&!s.unsettled) { Reply off; off.state=State::Off; off.reason=Reason::Off; s.status.publish({off,s.intent.load()}); }
     }
     Impl::Observed observed; Reply r;
     if(s.status.read(observed))r=observed.reply;
@@ -76,7 +131,8 @@ bool Owner::command(const char* cmd,char* out,int size) {
         r=Reply{}; r.state=s.wanted?State::Warming:State::Draining; r.reason=Reason::None;
     }
     const bool wanted=s.wanted.load();
-    if(wanted&&(r.state==State::Off||r.state==State::Draining)) { r.state=State::Warming; r.reason=Reason::None; }
+    if(wanted&&r.state==State::Off) { r.state=State::Warming; r.reason=Reason::None; }
+    if(wanted&&r.state==State::Draining)r.state=State::Warming; // keep the pending/revocation reason
     if(!wanted&&(r.state==State::Warming||r.state==State::ActiveSubmitted||r.state==State::SuspendedExternal||r.state==State::SuppressedMenu)) {
         r.state=State::Draining; r.reason=Reason::Off;
     }
@@ -98,6 +154,6 @@ void Owner::tick(const passthrough::Volume& v,bool tracking,bool paused,bool men
     s.geometry.quaternion[1]=float(sy*cx*cz-cy*sx*sz);
     s.geometry.quaternion[2]=float(cy*cx*sz-sy*sx*cz);
     s.geometry.quaternion[3]=float(cy*cx*cz+sy*sx*sz);
-    if(!impl_->sample.publish(s))impl_->wanted=false;
+    if(!impl_->sample.publish(s)) { impl_->wanted=false; impl_->desired.publish({++impl_->intent,false}); }
 }
 }

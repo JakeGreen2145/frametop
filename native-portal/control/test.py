@@ -2,6 +2,7 @@
 """CPU only, private runtime paths; --evidence optionally replays the pinned ELF."""
 import argparse
 import ast
+import importlib
 import os
 from pathlib import Path
 import struct
@@ -20,15 +21,26 @@ flags = ["-std=c++17", "-g", "-O1", "-Wall", "-Wextra", "-Werror", "-pthread"]
 if a.sanitize:
     flags += ["-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-no-pie"]
 common = [root / "native-portal/control" / f for f in ("protocol.cpp", "transport.cpp", "policy.cpp")]
-for source in ("test", "adversarial_test", "frame_test"):
+for source in ("owner_test", "test", "adversarial_test", "frame_test"):
     sources = [root / "native-portal/control" / (source + ".cpp"), *common]
-    if source == "test":
+    if source in ("test", "owner_test"):
         sources += [root / "screens/native_portal.cpp", root / "screens/passthrough.cpp"]
     binary = out / source
     subprocess.run(["g++", *flags, *map(str, sources), "-o", str(binary)], check=True)
     # Parent TMPDIR is respected; only this owned fixture directory is removed.
     with tempfile.TemporaryDirectory(prefix="np-test-", dir=os.environ.get("TMPDIR")) as runtime:
-        subprocess.run([str(binary)], check=True, env={**os.environ, "TMPDIR": os.environ.get("TMPDIR", runtime), "XDG_RUNTIME_DIR": runtime})
+        result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=30,
+                                env={**os.environ, "TMPDIR": os.environ.get("TMPDIR", runtime), "XDG_RUNTIME_DIR": runtime})
+        print(result.stdout, end="", flush=True)
+        print(result.stderr, end="", file=sys.stderr, flush=True)
+        result.check_returncode()
+        if source == "owner_test":
+            # Exercise the shipped GUI/CLI schema against actual Owner replies.
+            sys.path.insert(0, str(root / "display-settings"))
+            parse_status = importlib.import_module("native_portal_client").parse_status
+            replies = [parse_status(line) for line in result.stdout.splitlines() if line.startswith("ok portal ")]
+            assert {reply["state"] for reply in replies} >= {"draining", "off", "warming", "fault"}
+            print(f"PASS {len(replies)} actual owner replies through GUI/CLI schema", flush=True)
     print(f"PASS {source}", flush=True)
 if a.evidence:
     binary = out / "policy-fixture"
