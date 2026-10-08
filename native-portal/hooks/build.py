@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """ARM-only local build and synthetic acceptance. Never installs or launches SteamVR."""
-import hashlib, json, os, pathlib, platform, shutil, subprocess
+import hashlib, json, os, pathlib, platform, re, shutil, subprocess
 R=pathlib.Path(__file__).resolve().parent
 if platform.machine()!='aarch64':raise SystemExit('Build only on ARM in distrobox dev.')
 os.chdir(R);os.umask(0o077)
@@ -17,6 +17,7 @@ run(['cc',*flags,'-Wno-unused-function','-Wno-unused-variable','test_native.c','
 run(['cc',*flags,'-fPIC','-fvisibility=hidden','-ftls-model=initial-exec','-shared','-Wl,-z,relro,-z,now,-z,noexecstack','-Wl,-Bsymbolic-functions','observer.c','-pthread','-lcrypto','-ldl','-o','build/libft_native_hooks.so'])
 with (B/'native-test.txt').open('w') as f:run(['build/test_native'],stdout=f,stderr=subprocess.STDOUT)
 with (B/'drain-test.txt').open('w') as f:run(['python3','-B','test_drain.py'],stdout=f,stderr=subprocess.STDOUT)
+with (B/'lifecycle-test.txt').open('w') as f:run(['python3','-B','test_lifecycle.py'],stdout=f,stderr=subprocess.STDOUT)
 # Default-off and repeated opt-in non-target loads cannot reserve the shared log.
 with (B/'native-test.txt').open('a') as f:
     run(['python3','-B','check_preload.py',str(B/'libft_native_hooks.so'),str(B)],stdout=f,stderr=subprocess.STDOUT)
@@ -28,13 +29,22 @@ files=['libft_native_hooks.so','test_native','test_emit','emitted.json','native-
 print((B/'native-test.txt').read_text(),end='');print((B/'SHA256SUMS').read_text(),end='')
 artifacts={'libft_native_hooks.so':B/'libft_native_hooks.so','decode.py':R/'decode.py','pins.h':R/'pins.h'}
 hashes={name:hashlib.sha256(path.read_bytes()).hexdigest() for name,path in artifacts.items()}
-identity=hashlib.sha256(json.dumps(hashes,sort_keys=True).encode()).hexdigest()
+sources={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in R.iterdir() if p.is_file()}
+source=(R/'observer.c').read_text()
+limits={name:int(re.search(r'#define '+name+r' (\d+)',source)[1]) for name in ('EVENT_LIMIT','CRITICAL_LIMIT','RING_COUNT','CRITICAL_RING_COUNT')}
+limits['record_bytes']=int(re.search(r'sizeof\(struct event\)==(\d+)',source)[1])
+limits['max_file_bytes']=(limits['EVENT_LIMIT']+limits['CRITICAL_LIMIT']+3)*limits['record_bytes']
+print('LIFECYCLE_LIMITS',json.dumps(limits,sort_keys=True))
+identity=hashlib.sha256(json.dumps({'artifacts':hashes,'sources':sources},sort_keys=True).encode()).hexdigest()
 bundle=B/('bundle-'+identity[:16])
 if not bundle.exists():
     bundle.mkdir(mode=0o700)
     for name,path in artifacts.items():shutil.copyfile(path,bundle/name);(bundle/name).chmod(0o400)
-    (bundle/'manifest.json').write_text(json.dumps({'schema':1,'elf_sha256':'9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265','bundle_id':identity,'artifacts':hashes,'source_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in R.iterdir() if p.is_file()}},indent=2)+'\n')
+    (bundle/'manifest.json').write_text(json.dumps({'schema':1,'elf_sha256':'9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265','bundle_id':identity,'artifacts':hashes,'source_sha256':sources,'lifecycle_limits':limits},indent=2)+'\n')
     (bundle/'manifest.json').chmod(0o400);bundle.chmod(0o500)
 for name,digest in hashes.items():assert hashlib.sha256((bundle/name).read_bytes()).hexdigest()==digest
+assert json.loads((bundle/'manifest.json').read_text())['source_sha256']==sources
+assert bundle.stat().st_mode & 0o777 == 0o500
+for p in bundle.iterdir():assert p.stat().st_mode & 0o777 == 0o400
 (B/'bundle-path.txt').write_text(str(bundle)+'\n')
 print('BUNDLE',bundle)

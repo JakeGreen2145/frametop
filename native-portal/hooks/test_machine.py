@@ -11,6 +11,12 @@ class MachineTests(unittest.TestCase):
         manifest = R / 'build/emitted.json'
         self.assertTrue(manifest.exists(), 'production machine-code emitter has not been implemented/built')
         data = json.loads(manifest.read_text())
+        import re
+        pins = re.findall(r'\{"([a-z_]+)",0x([0-9a-f]+),0x([0-9a-f]+)',(R/'pins.h').read_text())
+        self.assertEqual(len(data),3*len(pins))
+        for case in data:
+            name,offset,word=pins[case['id']]
+            self.assertEqual((case['name'],case['offset'],case['word']),(name,int(offset,16),int(word,16)))
         rng = random.Random(418)
         for case in data:
             for zero in (False, True):
@@ -25,8 +31,9 @@ class MachineTests(unittest.TestCase):
                     u.mem_write(island,code)
                     xs = [rng.getrandbits(64) for _ in range(31)]
                     # All original memory operands in the fixture address a mapped scratch region.
-                    for n in (0,1,19): xs[n] = 0x70008000
-                    if zero and case['kind'] == 3: xs[0] = 0
+                    for n in (0,1,19,20,21,22,26): xs[n] = 0x70002000+n*0x100
+                    if case['kind'] == 3 and case['word'] & 0x7e000000 == 0x34000000:
+                        xs[case['word'] & 31] = 0 if zero else 0x70008000
                     xs[4] = base + 0x600000
                     xs[30] = base + 0x600100
                     sp = 0x70010000
@@ -34,7 +41,8 @@ class MachineTests(unittest.TestCase):
                     for i,v in enumerate(xs): u.reg_write(UC_ARM64_REG_X0+i if i<29 else [UC_ARM64_REG_X29,UC_ARM64_REG_X30][i-29],v)
                     for i,v in enumerate(qs): u.reg_write(UC_ARM64_REG_Q0+i,v)
                     u.reg_write(UC_ARM64_REG_SP,sp)
-                    u.reg_write(UC_ARM64_REG_NZCV,0xa0000000)
+                    nzcv = 0 if zero else 0xa0000000
+                    u.reg_write(UC_ARM64_REG_NZCV,nzcv)
                     u.reg_write(UC_ARM64_REG_FPCR,0x400000)
                     u.reg_write(UC_ARM64_REG_FPSR,0x8000011)
                     u.mem_write(0x70000000,bytes((i%251 for i in range(0x20000))))
@@ -57,7 +65,7 @@ class MachineTests(unittest.TestCase):
                             self.assertEqual(list(saved[:31]),xs)
                             self.assertEqual(saved[31],sp)
                             for i,q in enumerate(qs): self.assertEqual(int.from_bytes(uc.mem_read(ctx+256+16*i,16),'little'),q)
-                            self.assertEqual(struct.unpack('<3Q',uc.mem_read(ctx+768,24)),(0xa0000000,0x400000,0x8000011))
+                            self.assertEqual(struct.unpack('<3Q',uc.mem_read(ctx+768,24)),(nzcv,0x400000,0x8000011))
                             lr=uc.reg_read(UC_ARM64_REG_X30)
                             # Hostile callback clobbers even callee-saved state. The bridge must restore it all.
                             for r in regs:
@@ -76,6 +84,6 @@ class MachineTests(unittest.TestCase):
                     if native_sp!=sp:
                         self.assertEqual(u.mem_read(native_sp,16),expected.mem_read(native_sp,16))
                     self.assertEqual(u.mem_read(sp,0x1000),expected.mem_read(sp,0x1000))
-                    self.assertEqual(u.mem_read(0x70008000,0x1000),expected.mem_read(0x70008000,0x1000))
+                    self.assertEqual(u.mem_read(0x70000000,sp-800-0x70000000),expected.mem_read(0x70000000,sp-800-0x70000000))
 
 if __name__=='__main__': unittest.main(verbosity=2)

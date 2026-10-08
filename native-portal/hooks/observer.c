@@ -27,6 +27,8 @@
 #endif
 #define RING_COUNT 256
 #define EVENT_LIMIT 16384
+#define CRITICAL_LIMIT 4096
+#define CRITICAL_RING_COUNT 128
 #define MAGIC 0x3154464e
 struct event {
     uint32_t magic,size,site,flags;
@@ -37,14 +39,28 @@ struct event {
 };
 _Static_assert(sizeof(struct event)==2384,"file format v1");
 struct chunk {uint32_t tag,len; uint64_t address;};
-struct scope {uint64_t frame,owner,sp; uint32_t eye,mask;};
+struct policy_loads {uint64_t seen,conflict,value[14];};
+struct call_scope {uint64_t sp,lr,object,aux; unsigned selected,valid; unsigned char token[16];};
+struct call_stack {struct call_scope item[4]; unsigned depth,overflow;};
+struct scope {uint64_t frame,owner,sp; uint32_t eye,mask,selected;};
 static __thread struct {
     struct scope scope[4]; unsigned depth,busy,ambiguous;
     uint64_t seq,tid;
+    unsigned pending,previous_selected,policy_valid;
+    struct policy_loads policy;
+    unsigned char previous_policy[sizeof(struct policy_loads)+38];
+    struct call_stack resource,backend,wait,renderer_wait;
 } tls __attribute__((tls_model("initial-exec")));
-static struct event ring[RING_COUNT];
+static struct event ring[RING_COUNT],critical_ring[CRITICAL_RING_COUNT];
+static int lifecycle;
+static unsigned sample_every=120,window_frames=3;
+static _Atomic unsigned window_open,requested_window;
 static atomic_flag ring_lock=ATOMIC_FLAG_INIT;
-static uint64_t head,tail;
+/* Terminal diagnostics can run after a failed write while a producer finishes
+ * its already-admitted copy. Keep published counts atomic on that error path. */
+static _Atomic uint64_t head,chead;
+static uint64_t tail,ctail;
+static _Atomic uint64_t critical_dropped,critical_budget_drops,normal_budget_drops,sampled_out,write_failures;
 static _Atomic uint64_t frame_seq,dropped,read_failures,filtered,reentrant,scope_errors;
 static _Atomic int enabled,stop_drain;
 static uint64_t deadline;
@@ -84,6 +100,11 @@ static int control_event(unsigned code) {
     struct event e={.magic=MAGIC,.size=sizeof(e),.site=UINT32_MAX,.flags=code,.mono=now_ns(),.owner=image_base};
     e.x[0]=self_pid;e.x[1]=atomic_load(&dropped);e.x[2]=atomic_load(&read_failures);
     e.x[3]=atomic_load(&filtered);e.x[4]=atomic_load(&reentrant);e.x[5]=atomic_load(&scope_errors);
+    if(lifecycle) {e.magic=0x3254464e;e.x[6]=atomic_load(&critical_dropped);
+        e.x[7]=atomic_load(&critical_budget_drops);e.x[8]=atomic_load(&normal_budget_drops);
+        e.x[9]=atomic_load(&sampled_out);e.x[10]=atomic_load(&write_failures);
+        e.x[11]=head;e.x[12]=chead;e.x[13]=sample_every;e.x[14]=window_frames;
+        e.x[15]=EVENT_LIMIT;e.x[16]=CRITICAL_LIMIT;e.x[17]=(EVENT_LIMIT+CRITICAL_LIMIT+3ULL)*sizeof(e);}
     memcpy(e.data,EXE_SHA,64);e.used=64;
     return write_all(&e,sizeof(e));
 }
@@ -106,10 +127,11 @@ static void chunk(struct event *e,unsigned tag,uintptr_t address,size_t n) {
     }
     e->used+=sizeof(c)+n;
 }
+#include "lifecycle.h"
 /* Never called by native code directly: emit_island saves every live machine register. */
 static void observe(const struct saved *r,unsigned id) {
     int saved_errno=errno;
-    if(!atomic_load_explicit(&enabled,memory_order_relaxed) || id>=SITE_COUNT)goto done;
+    if(!atomic_load_explicit(&enabled,memory_order_relaxed) || id>=SITE_COUNT || (!lifecycle && id>OUTER_RETURN))goto done;
     if((pid_t)syscall(SYS_getpid)!=self_pid) {atomic_store(&enabled,0);goto done;}
     if(tls.busy) {atomic_fetch_add_explicit(&reentrant,1,memory_order_relaxed);goto done;}
     tls.busy=1;
@@ -121,24 +143,89 @@ static void observe(const struct saved *r,unsigned id) {
     if(id==OUTER_ENTER) {
         if(tls.depth && r->sp>=tls.scope[tls.depth-1].sp) {tls.depth=0;tls.ambiguous=1;atomic_fetch_add(&scope_errors,1);}
         if(tls.depth==4) {tls.ambiguous=1;atomic_fetch_add(&scope_errors,1);atomic_store(&enabled,0);goto finish;}
-        tls.scope[tls.depth++]=(struct scope){atomic_fetch_add(&frame_seq,1)+1,r->x[0],r->sp,UINT32_MAX,0};
+        uint64_t frame=atomic_fetch_add(&frame_seq,1)+1;
+        unsigned selected=1;
+        if(lifecycle) {
+            unsigned requested=atomic_exchange(&requested_window,0);
+            if(tls.pending<requested)tls.pending=requested;
+            if((frame-1)%sample_every==0 && tls.pending<window_frames)tls.pending=window_frames;
+            selected=tls.pending!=0;if(tls.pending)--tls.pending;
+            memset(&tls.policy,0,sizeof(tls.policy));
+            atomic_store(&window_open,selected);
+        }
+        tls.scope[tls.depth++]=(struct scope){frame,r->x[0],r->sp,UINT32_MAX,0,selected};
     }
     struct scope *s=tls.depth?&tls.scope[tls.depth-1]:NULL;
     if(s && id>=LAYER_LEFT_EARLY && id<=LAYER_RIGHT_LATE)s->eye=(uint32_t)r->x[1];
     if(s && id==CAMERA_ENQUEUE && r->x[19]<2)s->mask|=1u<<r->x[19];
+    unsigned selected=!lifecycle || (s?s->selected:atomic_load(&window_open));
+    unsigned critical=lifecycle && resource_edge(id);
+    unsigned char policy_snapshot[sizeof(struct policy_loads)+38]={0};int policy_ok=1;
+    struct call_scope *call=NULL;
+    if(lifecycle) {
+        policy_tap(r,id);
+        if(id==POLICY_FEEDBACK) {
+            memcpy(policy_snapshot,&tls.policy,sizeof(tls.policy));
+            policy_ok=read_meta(policy_snapshot+sizeof(tls.policy),r->x[19]+0x62c,36) &&
+                read_meta(policy_snapshot+sizeof(tls.policy)+36,r->x[19]+0x1e0,2);
+            if(!policy_ok)atomic_fetch_add(&read_failures,1);
+            if(!policy_ok || !tls.policy_valid || memcmp(policy_snapshot,tls.previous_policy,sizeof(policy_snapshot))) {
+                critical=1;tls.policy_valid=policy_ok;memcpy(tls.previous_policy,policy_snapshot,sizeof(policy_snapshot));
+            }
+        }
+        if(critical)atomic_store(&requested_window,window_frames);
+        if(id==ACQUIRE_ENTER || id==RELEASE_ENTER)push_call(&tls.resource,r,r->x[0],1);
+        if(resource_return(id))call=top_call(&tls.resource);
+        if(id==BACKEND_ENTER)push_call(&tls.backend,r,r->x[1],selected);
+        if(id==PIPELINE_RESULT || id==BACKEND_RETURN || id==BACKEND_RETURN_CLEANUP) {
+            call=top_call(&tls.backend);selected=call?call->selected:0;
+        }
+        if(id==WAIT_ENTER) {
+            call=push_call(&tls.wait,r,r->x[0],selected);
+            if(call) {call->aux=r->x[2];call->valid=read_meta(call->token,r->x[1],9);
+                if(!call->valid)atomic_fetch_add(&read_failures,1);}
+        }
+        if(id==WAIT_RESULT || id==WAIT_RETURN || id==WAIT_RETURN_ERROR) {
+            call=top_call(&tls.wait);selected=call?call->selected:0;
+        }
+        if(id==RENDERER_WAIT)call=push_call(&tls.renderer_wait,r,r->x[0],selected);
+        if(id==RENDERER_WAIT_RETURN) {call=top_call(&tls.renderer_wait);selected=call?call->selected:0;}
+    }
     if(id==BACKEND_ENTER || id==PIPELINE_RESULT) {
         uint32_t vs=0;uintptr_t p=id==BACKEND_ENTER?r->x[1]:r->x[24];
-        if(!read_meta(&vs,p+0x20,4) || (vs!=57 && vs!=58)) {atomic_fetch_add(&filtered,1);goto cleanup;}
+        int ok=read_meta(&vs,p+0x20,4);
+        if(!ok)atomic_fetch_add(&read_failures,1);
+        if(!ok || (vs!=57 && vs!=58)) {
+            if(lifecycle && id==BACKEND_ENTER && top_call(&tls.backend))top_call(&tls.backend)->selected=0;
+            atomic_fetch_add(&filtered,1);goto cleanup;
+        }
     }
-    if(atomic_flag_test_and_set_explicit(&ring_lock,memory_order_acquire)) {atomic_fetch_add(&dropped,1);goto cleanup;}
+    if(lifecycle && id==RECORD_COMPLETE && selected) {
+        uint64_t source=0;uint32_t vs=0;
+        if(!read_meta(&source,r->sp+0x98,8) || !read_meta(&vs,source+0x20,4)) {
+            atomic_fetch_add(&read_failures,1);goto cleanup;
+        }
+        if(vs!=57 && vs!=58) {atomic_fetch_add(&filtered,1);goto cleanup;}
+    }
+    if(lifecycle && !critical && !selected) {atomic_fetch_add(&sampled_out,1);goto cleanup;}
+    if(atomic_flag_test_and_set_explicit(&ring_lock,memory_order_acquire)) {
+        atomic_fetch_add(&dropped,1);if(critical)atomic_fetch_add(&critical_dropped,1);goto cleanup;
+    }
     /* The drainer closes admission under this lock before testing emptiness.
      * A callback may have passed the initial enabled check before that close. */
     if(!atomic_load_explicit(&enabled,memory_order_relaxed)) {atomic_flag_clear_explicit(&ring_lock,memory_order_release);goto cleanup;}
-    if(head==EVENT_LIMIT) {atomic_store(&enabled,0);atomic_flag_clear_explicit(&ring_lock,memory_order_release);goto cleanup;}
-    if(head-tail==RING_COUNT) {atomic_fetch_add(&dropped,1);atomic_flag_clear_explicit(&ring_lock,memory_order_release);goto cleanup;}
-    struct event *e=&ring[head%RING_COUNT];memset(e,0,sizeof(*e));
-    e->magic=MAGIC;e->size=sizeof(*e);e->site=id;e->seq=head+1;e->thread_seq=tls.seq;
-    e->tid=tls.tid;e->mono=time;e->depth=tls.depth;e->flags=(!s?1:0)|(tls.ambiguous?2:0);
+    if((critical?chead:head)>=(critical?CRITICAL_LIMIT:EVENT_LIMIT)) {
+        if(!lifecycle)atomic_store(&enabled,0);
+        else {atomic_fetch_add(&dropped,1);atomic_fetch_add(critical?&critical_budget_drops:&normal_budget_drops,1);}
+        atomic_flag_clear_explicit(&ring_lock,memory_order_release);goto cleanup;
+    }
+    if((critical?chead-ctail:head-tail)==(critical?CRITICAL_RING_COUNT:RING_COUNT)) {
+        atomic_fetch_add(&dropped,1);if(critical)atomic_fetch_add(&critical_dropped,1);
+        atomic_flag_clear_explicit(&ring_lock,memory_order_release);goto cleanup;
+    }
+    struct event *e=critical?&critical_ring[chead%CRITICAL_RING_COUNT]:&ring[head%RING_COUNT];memset(e,0,sizeof(*e));
+    e->magic=lifecycle?0x3254464e:MAGIC;e->size=sizeof(*e);e->site=id;e->seq=head+chead+1;e->thread_seq=tls.seq;
+    e->tid=tls.tid;e->mono=time;e->depth=tls.depth;e->flags=(!s?1:0)|(tls.ambiguous?2:0)|(critical?32:0)|(lifecycle && selected?64:0);
     e->frame=s?s->frame:0;e->owner=s?s->owner:0;e->eye=s?s->eye:UINT32_MAX;e->mask=s?s->mask:0;
     memcpy(e->x,r->x,sizeof(e->x));e->sp=r->sp;
     switch(id) {
@@ -146,13 +233,24 @@ static void observe(const struct saved *r,unsigned id) {
         e->eye=(uint32_t)r->x[19];
         chunk(e,1,r->x[27]+0xc0,528); /* native constants only, no resource/pixel storage */
         chunk(e,2,r->sp+0x170,48); /* SP unchanged from camera prologue through enqueue */
-        chunk(e,3,r->x[1],0x160);break;
+        chunk(e,3,r->x[1],0x160);
+        if(lifecycle) {renderer_metadata(e,r->x[0]);packet_metadata(e,r->x[1],0);
+            unsigned char name[15];unsigned n=0;int ok=1;
+            for(;n<15;n++) {if(!read_meta(name+n,r->x[2]+n,1)) {ok=0;atomic_fetch_add(&read_failures,1);break;}if(!name[n])break;}
+            copied_chunk(e,14,r->x[2],name,n,ok);
+        }break;
     case BACKEND_ENTER: case PIPELINE_RESULT: {
         uintptr_t p=id==BACKEND_ENTER?r->x[1]:r->x[24];
-        chunk(e,3,p,0x160);chunk(e,4,p+0x1c8,9*24);break;
+        chunk(e,3,p,0x160);chunk(e,4,p+0x1c8,9*24);if(lifecycle)packet_metadata(e,p,1);break;
     }
     case TRACKING_INPUT:chunk(e,5,r->x[3],0x50);break; /* HMD pose, original array pointer remains x3 */
     case POLICY_FEEDBACK:
+        if(lifecycle) {
+            copied_chunk(e,30,0,&tls.policy,sizeof(tls.policy),1);
+            copied_chunk(e,32,r->x[19]+0x62c,policy_snapshot+sizeof(tls.policy),36,policy_ok);
+            copied_chunk(e,33,r->x[19]+0x1e0,policy_snapshot+sizeof(tls.policy)+36,2,policy_ok);
+            break;
+        }
         chunk(e,6,r->x[19],0x660); /* original completed pre-feedback S */
         chunk(e,7,r->x[0]+0xb40,0x18); /* H+0x40000 in x0, diagnostic reread, not original load results */
         chunk(e,8,r->x[20]+0x1572,2);break;
@@ -162,10 +260,43 @@ static void observe(const struct saved *r,unsigned id) {
         chunk(e,10,r->sp+0xc70+0xc38,64);break;
     case ACTIVITY_COMPARE:chunk(e,11,r->x[0]+0x68c,1);break;
     case ACQUIRE_ENTER:case RELEASE_ENTER:chunk(e,12,r->x[0]+0x340,0x28);break;
-    default:break;
+    case CACHE_POSTSTORE:chunk(e,11,r->x[0]+0x68c,1);break;
+    case ACQUIRE_RETURN_FALSE:case ACQUIRE_RETURN_TRUE:case RELEASE_RETURN_FAST:case RELEASE_RETURN_SLOW:
+        if(!lifecycle)break;
+        call_chunk(e,34,call,r,1);
+        if(call && call->sp==r->sp && call->lr==r->x[30])chunk(e,12,call->object+0x340,40);
+        break;
+    case RECORD_COMPLETE: {
+        uint64_t src=pointer_chunk(e,35,r->sp+0x98),base=pointer_chunk(e,36,r->sp+0x60);
+        (void)src;uint64_t packet=base+0x150;
+        chunk(e,3,packet,0x160);chunk(e,4,packet+0x1c8,216);packet_metadata(e,packet,1);
+        renderer_metadata(e,r->x[21]);break;
     }
-    ++head;atomic_flag_clear_explicit(&ring_lock,memory_order_release);
+    case BACKEND_RETURN:case BACKEND_RETURN_CLEANUP:call_chunk(e,34,call,r,1);break;
+    case ARENA_RESET:renderer_metadata(e,r->x[22]);break;
+    case SUBMIT_CALL:case SUBMIT_RESULT:case SUBMIT_STAMPED:
+        chunk(e,23,r->x[19]+0x10,17);chunk(e,37,r->x[19]+0x428,8);chunk(e,38,r->x[19]+0x4f0,8);break;
+    case SUBMIT_STAMP:case RESOURCE_STAMP:
+        chunk(e,39,r->x[2],9);chunk(e,23,r->x[0]+0x10,17);break;
+    case RESOURCE_STAMPED:chunk(e,23,r->x[19]+0x10,17);break;
+    case WAIT_ENTER:
+        call_chunk(e,34,call,r,0);chunk(e,40,r->x[0]+0x58,8);break;
+    case WAIT_RESULT:case WAIT_RETURN:case WAIT_RETURN_ERROR:call_chunk(e,34,call,r,id!=WAIT_RESULT);break;
+    case RENDERER_WAIT:
+        call_chunk(e,34,call,r,0);renderer_metadata(e,r->x[0]);break;
+    case RENDERER_WAIT_RETURN:call_chunk(e,34,call,r,0);break;
+    default:
+        if(lifecycle && id>=POLICY_STYLE)copied_chunk(e,30,0,&tls.policy,sizeof(tls.policy),1);
+        break;
+    }
+    if(critical)++chead;else ++head;atomic_flag_clear_explicit(&ring_lock,memory_order_release);
 cleanup:
+    if(lifecycle) {
+        if(resource_return(id))pop_call(&tls.resource,r,1);
+        if(id==BACKEND_RETURN || id==BACKEND_RETURN_CLEANUP)pop_call(&tls.backend,r,1);
+        if(id==WAIT_RETURN || id==WAIT_RETURN_ERROR)pop_call(&tls.wait,r,1);
+        if(id==RENDERER_WAIT_RETURN && top_call(&tls.renderer_wait))pop_call(&tls.renderer_wait,r,0);
+    }
     if(id==OUTER_RETURN && tls.depth) {
         if(s && s->sp!=r->sp) {tls.ambiguous=1;atomic_fetch_add(&scope_errors,1);}
         --tls.depth;
@@ -183,15 +314,18 @@ static void *drain(void *unused) {
             if(closing)atomic_store(&enabled,0);
             /* Completion requires closed admission and an empty ring in the
              * same critical section, never a cached pre-close empty result. */
-            if(tail<head) {e=ring[tail%RING_COUNT];++tail;have=1;}
+            if(ctail<chead && (tail==head || critical_ring[ctail%CRITICAL_RING_COUNT].seq<ring[tail%RING_COUNT].seq)) {
+                e=critical_ring[ctail%CRITICAL_RING_COUNT];++ctail;have=1;
+            }
+            else if(tail<head) {e=ring[tail%RING_COUNT];++tail;have=1;}
             else finished=!atomic_load(&enabled);
             atomic_flag_clear_explicit(&ring_lock,memory_order_release);
         }
-        if(have && !write_all(&e,sizeof(e))) {atomic_store(&enabled,0);break;}
+        if(have && !write_all(&e,sizeof(e))) {atomic_fetch_add(&write_failures,1);atomic_store(&enabled,0);break;}
         if(finished)break;
         if(!have)nanosleep(&pause,NULL);
     }
-    atomic_store(&enabled,0);(void)control_event(2);fsync(output_fd);
+    atomic_store(&enabled,0);(void)control_event(atomic_load(&write_failures)?21:2);fsync(output_fd);
     return NULL;
 }
 static int guards(uintptr_t base) {
@@ -257,6 +391,18 @@ __attribute__((constructor)) static void launch(void) {
     if(m.seen!=1 || !verify_load(fd,m.base,m.ph,m.count) || !one_thread()) {refusal=12;goto refuse;}
     unsigned seconds=60;const char *limit=getenv("FT_NATIVE_HOOKS_SECONDS");
     if(limit) {char *end;unsigned long n=strtoul(limit,&end,10);if(!*limit || *end || n<1 || n>120) {refusal=13;goto refuse;}seconds=(unsigned)n;}
+    const char *profile=getenv("FT_NATIVE_HOOKS_PROFILE");
+    if(profile) {if(strcmp(profile,"lifecycle-v2")) {refusal=20;goto refuse;}lifecycle=1;}
+    const char *every=getenv("FT_NATIVE_HOOKS_SAMPLE_EVERY"),*window=getenv("FT_NATIVE_HOOKS_WINDOW_FRAMES");
+    if(every || window) {
+        if(!lifecycle) {refusal=20;goto refuse;}
+        const char *values[2]={every,window};unsigned *dest[2]={&sample_every,&window_frames};
+        for(unsigned i=0;i<2;i++)if(values[i]) {
+            char *end;unsigned long v=strtoul(values[i],&end,10);
+            if(values[i][0]<'0' || values[i][0]>'9' || *end || v<1 || v>(i?8:10000)) {refusal=20;goto refuse;}
+            *dest[i]=(unsigned)v;
+        }
+    }
     /* Warm libc/syscall/TLS and self-read before touching executable pages. */
     unsigned char probe[8];if(!read_meta(probe,(uintptr_t)&m,8)) {refusal=14;goto refuse;}
     deadline=now_ns()+(uint64_t)seconds*1000000000;

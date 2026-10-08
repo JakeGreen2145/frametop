@@ -1,149 +1,168 @@
 # Native compositor metadata hooks
 
-This is a launch-only, default-off observer. It does not add camera intent, call OpenVR, allocate renderer resources, edit shaders, change blend state, change Aurora, or read camera pixels. It has not been activated in the compositor. The parent alone owns any live trial and its timed rollback.
+This launch-only observer is default-off. It only records existing native metadata. It does not call OpenVR, request camera intent, change a ticket or name, allocate renderer resources, write native policy, change blend/shaders, or read camera pixels. This lifecycle bundle has **not been activated**. The parent owns review, any bounded live trial, and rollback.
 
-## Delivered bundle
-
-ARM build directory:
+## Immutable ARM bundle
 
 ```
-/home/steamos/dev/frametop-native-hooks/native-portal/hooks/build/launch-contract-4Grz7QEA/build/bundle-dbbd07d1510554ce
+/home/steamos/dev/frametop-native-lifecycle-observer/native-portal/hooks/build/bundle-b430c166d75c9d23
 ```
 
-The matching local copy is under `native-portal/hooks/build/`. This launch-integration change creates a new bundle; both earlier bundles, `bundle-83051aa891b468b4` and `bundle-80078287fe0dd534`, and their manifests remain unchanged. The bundle contains the shared library, decoder, exact site pins and a manifest with source and artifact hashes. Files are mode 0400 in a mode 0500 directory. All binaries, private evidence, Python dependencies and test output remain ignored under `build/`.
+The matching local bundle is in this worktree's ignored `native-portal/hooks/build/`. Artifact files and manifest are mode 0400; the bundle directory is 0500. The manifest pins every hook source/test plus each shipped artifact. Its identity now includes source hashes, so changed tests or build sources cannot silently reuse an older manifest. Existing bundles were not modified or activated.
 
 | Artifact | SHA256 |
 |---|---|
-| `libft_native_hooks.so` | `075ec9e313d5361edbca7fef9f8e0efd0739d3c93e68d9385470afbe54541dae` |
-| `decode.py` | `a3e4c12712404446676d00219ae4b5ac5a32863803c381faaadeaddc58c77398` |
-| `pins.h` | `fd67258a3a1439dced323658f6e15110fbebb9ef2db811bdfe3a22a80c090102` |
-| ARM `test_native` | `c5a95495dc2a495dd663216592854123f4a152e242991589a9cdb62726dcf02c` |
-| ARM `test_emit` | `fa39c22b6b71eb740ae7d2900bc34217133a044d7e1ca5cae294c43da41965e3` |
+| `libft_native_hooks.so` | `b644f317138a55992ee518c7625dc8a525ad2517be2a0b0243bf9d495341927a` |
+| `decode.py` | `78bf6cdb5b04fc3da310c578ac1e4fc5dc4a85ab724a93578c225210aeba126b` |
+| `pins.h` | `412197e1298c8b45683dc0cdbd39105fb04516e25df54e9c6fd541ae302f4e34` |
+| `manifest.json` | `22de2cd456f682e7894f59f53773671b95339d10ced7e34759772433c3a7abd7` |
 
-Only `/opt/steamvr/bin/linuxarm64/vrcompositor` with SHA256 `9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265` is supported. There is no offset discovery or fallback for another ELF.
+The only supported executable remains `/opt/steamvr/bin/linuxarm64/vrcompositor`, SHA256 `9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265`. There is no discovery/fallback for another executable. Private ELF/disassembly evidence and generated artifacts stay ignored; no installed proprietary binary is committed.
 
-## Build and verify
+## Parent-only launch settings
 
-From this isolated local checkout:
+No launcher, service, configuration or live process was changed.
+
+| Variable | Contract |
+|---|---|
+| `FT_NATIVE_HOOKS_ENABLE` | Exactly `metadata-v1-9b1bd5fe`; absent or anything else is off |
+| `FT_NATIVE_HOOKS_LOG` | Absolute fresh filename in an existing canonical user-owned mode 0700 directory |
+| `FT_NATIVE_HOOKS_SECONDS` | 1..120, default 60 |
+| `FT_NATIVE_HOOKS_PROFILE` | Absent preserves legacy schema-1 recording; exactly `lifecycle-v2` selects the new mode; other values refuse |
+| `FT_NATIVE_HOOKS_SAMPLE_EVERY` | Lifecycle only, 1..10000 outer invocations, default 120 |
+| `FT_NATIVE_HOOKS_WINDOW_FRAMES` | Lifecycle only, 1..8 consecutive outer invocations, default 3 |
+| `LD_PRELOAD` | Parent appends the absolute bundle DSO to the existing value, preserving the existing testbench preload |
+
+For a 120-second lifecycle trial the parent can choose `SECONDS=120`, `PROFILE=lifecycle-v2`, `SAMPLE_EVERY=600`, `WINDOW_FRAMES=3`. These are observer settings, not camera or owner authority. No settings listed here enable camera rendering. Preserve stock Vulkan loader discovery. Presence of `FT_AURORA_GATE_ENABLE`, `FT_NATIVE_CLIP_DIR` or `FT_CAMERA_BLEND_MODE` refuses installation.
+
+Exact executable-path refusal runs **before opening the log**, including service-wide inherited preloads in vrstartup/vrcmd. Default-off and wrong-executable loads do not create a file or thread. The fresh output is mode 0600, O_EXCL/O_NOFOLLOW, a regular file with one link, in a canonical private parent. Full file/inode/hash/load checks remain separate and mandatory.
+
+## Bounded sampling and loss contract
+
+Legacy mode retains the previous fixed 2384-byte schema-1 records, 256-entry ring and 16384-event stopping cap. New sites are ignored by the callback in this mode. The additional installed islands still preserve native state.
+
+Lifecycle mode uses two independently bounded queues and lifetime admission budgets:
+
+| Class | Queue records | Accepted-record budget | What goes here |
+|---|---:|---:|---|
+| Critical | 128 | 4096 | Both raw external wrappers; all acquire/release entries and real returns; layer transition/acquire results; cache post-store; changed or unreadable compact stock-policy snapshots |
+| Sampled | 256 | 16384 | Coherent frame windows, camera/record/backend metadata, selected submission/stamp/wait/reset boundaries |
+
+Normal exhaustion does **not** disable critical observation. Critical exhaustion also does not end normal sampling. Both stop at the duration or shutdown. A shared single-attempt try-lock preserves publication ordering. It can drop a critical event while a normal producer holds the lock, so the reserve is **not a lossless guarantee**. Ring full, contention, budget exhaustion, reentrancy, scope failures and metadata read failures remain visible. A write failure ends draining with code 21 if the file still permits a control record; absent/truncated terminal records are incomplete, not success.
+
+The build calculates and pins the maximum successful trace size: `(16384 + 4096 + 3) * 2384 = 48,831,472 bytes`, about 46.57 MiB, independent of duration or native callback frequency. This includes prepared, installed and terminal controls. Actual callback rate and resource-edge count are not assumed bounded by this disk limit. Output exceeding either event budget is explicitly lost and counted.
+
+Selection happens once at outer entry, never by unrelated per-event modulo. Every Nth outer invocation starts a configured consecutive-frame window. A stock-policy change or resource edge requests the **next whole window**, including when the edge occurs on another thread. The current unselected frame is not retroactively labeled complete. Critical events themselves are retained independently. All outer counters, scopes, eye masks, policy-load presence and bounded call stacks continue to update for unrecorded frames.
+
+The selected interval stays open after outer return until the next outer entry, covering the previously observed same-thread deferred backend schedule. Backend entry carries its selection through pipeline lookup and both real returns. Wait entry carries selection and its immutable token through result/return. Other-thread events inside an open interval are observations only; they are not assigned another thread's frame. `frame_context=0` is preserved for deferred/no-scope events.
+
+A selected window can still be incomplete because of contention, caps, deadline expiry, filtering/read failure, unmatched scopes, or work outside the interval. Require both eye records and every relevant native boundary in the decoded evidence; never interpret selection flags as proof of complete stereo or GPU lifetime. There is no claim that a finite trace proves future scheduling. Normal-budget exhaustion can remove later full windows while still retaining the final critical release.
+
+## Exact additional sites
+
+IDs 0..24 remain unchanged. Every new 16-byte window was read from the hash-pinned local ELF and verified against the ARM installed file through the existing identity tests. All new sites are in the production emitter's preservation tests.
+
+| ID | Event | ELF offset |
+|---:|---|---|
+| 25 | `cache_poststore` | `0x9eebc` |
+| 26 | `record_complete` | `0x29b548` |
+| 27 | `backend_return` | `0x29f518` |
+| 28 | `backend_return_cleanup` | `0x29f550` |
+| 29 | `arena_reset` | `0x2987d4` |
+| 30 | `submit_call` | `0x3021d4` |
+| 31 | `submit_result` | `0x3021d8` |
+| 32 | `submit_stamp` | `0x302208` |
+| 33 | `submit_stamped` | `0x30220c` |
+| 34 | `resource_stamp` | `0x310ea0` |
+| 35 | `resource_stamped` | `0x310f20` |
+| 36 | `wait_enter` | `0x3160b8` |
+| 37 | `wait_result` | `0x316110` |
+| 38 | `wait_return` | `0x316120` |
+| 39 | `wait_return_error` | `0x316150` |
+| 40 | `renderer_wait` | `0x7410c` |
+| 41 | `renderer_wait_return` | `0x74110` |
+| 42 | `policy_style` | `0x112ab4` |
+| 43 | `policy_forced_initial` | `0x112ac4` |
+| 44 | `policy_enable_special` | `0x112aec` |
+| 45 | `policy_special_scalar` | `0x112af4` |
+| 46 | `policy_ordinary` | `0x112afc` |
+| 47 | `policy_forced_inactive` | `0x112b10` |
+| 48 | `policy_request` | `0x112c10` |
+| 49 | `policy_forced_alpha` | `0x112c50` |
+| 50 | `policy_special` | `0x112c70` |
+| 51 | `policy_construct` | `0x112c78` |
+| 52 | `policy_suppression` | `0x112cfc` |
+| 53 | `policy_forced_final` | `0x112d14` |
+| 54 | `policy_base` | `0x112d2c` |
+
+The original inventory remains outer `147a48/148414/148de0`, policy `112b58/122568/1480b8`, layer `148244/1482a8/14834c/14840c`, enqueue `161ed8`, backend/lookup `29f1e8/29f204`, external wrappers `6d6e0/6d6f0`, tracking `63920`, comparison/join `9ee98/9eeb4/a0510`, acquire `15f9e0/15fa78/15faa4`, and release `15fba8/15fbd8/15fc20`.
+
+### Resource and recording contracts
+
+- Acquire/release entry captures K, original SP and caller LR in a bounded TLS call stack even when publication fails. Real RET captures the unchanged raw x0 and reads K+340..+367 from that **entry K**, never restored x19. Missing/mismatched entry is flagged, not invented. Retained nonzero handles after release are metadata, not proof of activity or failure.
+- `9eebc` reads cache at original x0+68c **after** the native cache store. The old shared join remains labeled transition-result, not release-only.
+- Enqueue retains existing K+0xc0 native528, this draw's SP+170 raw-to-Standing matrix and original packet prefix. No getter call, cold origin initialization or OpenVR initialization is added.
+- Enqueue also captures R+1380 and wrapper+8, R+1388, arena R+1390 with buffer+0xb0 and size+0xb8, mapping/cursor R+1410/+1418, full u64 alignment R+328, pass-vector bounds R+15a0/+15a8, both packet UBO wrappers' +8/+18 fields, and 32-byte blend attachment at blend+8. Resource size is the u32 at +0xb8; the adjacent captured word has no declared meaning.
+- Source name is read one byte at a time up to NUL or 15 bytes. A full 15-byte source prefix does not establish full source length. Recorded name captures existing pointer+160, exact u64 length+168, and at most 15 bytes from that pointer. No name/ticket rewrite occurs.
+- Recorder completion uses common epilogue `29b548`, before x21/SP restore: R=x21, source=`[SP+98]`, destination=`[SP+60]+150`. This is later than the branch-specific `29b518` candidate and follows the descriptor/name snapshots. It captures packet prefix, nine descriptors and name plus renderer metadata. Source VS57/58 filters camera records. Backend retains both original stage enums; PS127 and PS130 remain distinguishable. A valid-looking pointer or matching prefix is not an authenticated generation.
+- Backend return sites use captured entry packet/SP/LR, not already-restored x24. CPU returns are not submission or completion.
+
+### Submission, wait and reuse contracts
+
+`3021d4` is the existing resolved submit call, with command x19; `3021d8` captures raw w0 before it is moved to w20. `302208` is reached on native submit success and supplies x0 command, x1 sync object and x2 pointer to the exact u64 serial plus signed subserial byte. `30220c` follows native stamping. Header registers preserve those identities; chunks retain mutable command/resource stamp metadata separately.
+
+`310ea0` captures resource, sync object and requested serial/subserial. `310f20` reads resource x19+10/+18/+20 after either native update path. It is not a new guessed completion function and does not equate an unstamped object with retired work.
+
+`3160b8` captures the actual native wait's synchronization object, timeout, existing semaphore+58, and an **entry copy** of serial/subserial. `316110` captures raw VkResult before comparison; `316120/316150` capture actual native Boolean returns with that entry token after caller registers are restored. Native renderer wait call `7410c` records R and R+1388; `74110` records its returned value only if the call was observed, not when the preceding null branch skipped it.
+
+`2987d4` records R=x22 and cursor **before** the native zero store. This locates reuse precisely. To claim a completed native timeline, require matching command/resource/sync/serial/subserial, submit result, successful native wait return, and subsequent reset ordering in the actual trial. Later mutable stamp values, elapsed time, nonnull pipeline, outer/backend return, or a null synchronization pointer cannot substitute. Untaken or unsampled boundaries leave the claim unproven. Resubmitted native commands and resources not observed in the selected interval still need their own evidence.
+
+### Branch-specific policy input
+
+Policy taps retain actual loaded register values at the exact paths listed above. The schema records original style, enable, special pointer/scalar, ordinary versus special branch, ordinary/construct request, four forced-state loads, suppression result and base-scalar bits. p0/p1 and S+62c..+64f come from the compact pre-feedback snapshot. This includes the copied gain and output alpha/style; no policy helper is called twice.
+
+Tag30 carries a presence bitmap, conflict bitmap and fixed u64 slots. Decoder emits `value: null` for untaken inputs, not false/zero. Repeated values that disagree, including differing forced loads across branches, retain conflict bits. A single taken source does not establish the inactive request source. This instrumentation does not itself authorize a production PolicyInput or any counterfactual; unresolved/contradictory input must remain unresolved. Nested/unwound or concurrent unsupported schedules are not certified by these observations.
+
+## Wire format
+
+Both versions use fixed 2384-byte little-endian records with `struct.Struct('<4I6Q4I32Q')` headers. Schema1 magic is `0x3154464e`; lifecycle magic is `0x3254464e`. The decoder accepts both and rejects unknown magic/size, truncated records/chunks, excessive used lengths and unknown site IDs. Existing tags 1..12 keep their meaning. All tag names are in the bundled decoder; no live process access is required.
+
+Headers retain publication sequence, actual TLS frame, per-thread callback sequence, TID, MONOTONIC ns, owner, depth/eye/mask, original x0..x30 and original SP. Payload chunks are `<IIQ>` tag/size/original-address plus bounded bytes. High tag bit means read/association failure; failed bytes must not be interpreted as native values. Derived copied-call/policy chunks have address zero; native source chunks retain their addresses.
+
+Flags retain 1=no outer scope, 2=ambiguous/recovered scope, 4=failed read, 8=payload refusal. Lifecycle adds 16=unmatched/invalid call context, 32=critical admission class, 64=selected-window class. A changed policy record may have flag32 without64 and does not start a partial frame window.
+
+Control site is `0xffffffff`; codes 0/1/2 are prepared/installed/drained. Existing refusal/fatal codes remain, with 20=invalid sampling configuration and 21=drain write failure. Controls still start with the exact ELF SHA. Original x0..x5 counters remain PID, total drops, read failures, filtered noncamera, reentrant, scope errors. Lifecycle x6..x12 add critical queue/contention drops, critical budget drops, normal budget drops, intentionally sampled-out callbacks, write failures, normal accepted count and critical accepted count. x13..x17 pin interval, window length, budgets and max file bytes. Reentrancy is separately counted, not silently folded into critical drops.
+
+The drainer chooses the lower publication sequence across both queues. Closing admission, checking both queues empty, and producer admission recheck use the same ring lock. Accepted events precede the terminal record unless file writing fails. No file format claims losslessness or native transaction atomicity across separate reads.
+
+## Preservation and verification
+
+Startup retains exact executable/inode/hash/ELF/load-bias/private-RX mapping checks, all site guards, single-thread launch, blocked signals and all-or-none precommit permission handling. Text pages become RW without X before writes and RX afterward. Precommit failure rolls back protections; postcommit RX/postcheck failure exits190. A bounded MAP_FIXED_NOREPLACE island search never replaces another mapping. No guard was relaxed.
+
+Islands save x0..x30, all full q0..q31, original SP, NZCV, FPCR and FPSR before C; errno is preserved. Retained BL/BLR use original native LR; CBZ/CBNZ/B.cond, B, RET and pinned ordinary instructions preserve their exact effects. New conditionals use the existing two-branch relocation encoding, not a general relocator.
+
+Callbacks use fixed storage, TLS, atomics, one try-lock and self-only fault-safe process_vm_readv. They do not allocate, perform file I/O, block on a mutex, or call the renderer/VR. Kernel reads can fault or perturb timing; there is no zero-overhead claim. Forked children disable observation and do not join a vanished drainer. Deadline expiry does not detach branches or unmap RX islands; process exit owns cleanup. Never dlclose this observer after installation.
+
+Verified against this source and ARM bundle:
+
+- ARM GCC16.2.1 production DSO, native synthetic island, exact-file mapping, installation/rollback/fatal-RX fixtures, fork/errno/default metadata and deadline drain all passed.
+- Production emitter generated 165 islands for all55 sites at three synthetic load biases. Unicorn executed330 cases, including both outcomes of conditional sites, BL/BLR/RET, every GPR/full SIMD/FP state, native continuation PC and native memory effects.
+- Actual C callback fixtures exercise every new site and both decoders. They prove captured entry K survives restored x19, immutable wait token survives source mutation, both-eye selection, absent/conflicting policy loads, full alignment width, independent queue/budget exhaustion, cross-thread edge window triggering and backend selection through pipeline return.
+- Virtual-clock 120-second fixture executes10800 outer invocations, captures219 complete stereo frames in2635 records/6,281,840 bytes, and retains final release at frame9001. This is a synthetic callback schedule, **not live stock off/on/off evidence**.
+- Six real-pthread drain schedules cover both queues: publication before deadline closure and inflight producer admission after deadline or explicit stop. All passed. Legacy tests remain unchanged in behavior; local suite reports8 tests, OK.
+- Actual SteamOS host `/usr/bin/true` preload checks passed default-off and both opt-in wrong-executable launches, leaving the fresh log path absent. No compositor was launched.
+- Local/ARM source/artifact hashes and 0400/0500 modes were read back and verified. Evidence is under ignored `build/arm-lifecycle-build.txt`, `final-local-tests.txt`, `native-test.txt`, `drain-test.txt`, `lifecycle-test.txt`, `emitted.json` and bundle manifest. Parent independent review remains required; no independent reviewer CLI is installed in this worker.
+
+Rebuild only in the dedicated mirror, not a live checkout:
 
 ```sh
-REMOTE=$(ssh frame 'mktemp -d /home/steamos/dev/frametop-native-hooks/native-portal/hooks/build/launch-contract-XXXXXXXX')
-rsync -a --exclude build --exclude __pycache__ native-portal/hooks/ "frame:$REMOTE/"
-ssh frame "cd '$REMOTE' && ~/.local/bin/distrobox enter dev -- python3 -B build.py"
-rsync -a --exclude tmp --exclude 'test-log-*' \
-  "frame:$REMOTE/build/" native-portal/hooks/build/
-python3 -m pip install --target native-portal/hooks/build/pylib unicorn==2.1.4
-python3 -B -m unittest discover -s native-portal/hooks -p 'test_*.py' -v
+rsync -a --exclude build --exclude __pycache__ native-portal/hooks/ \
+  frame:/home/steamos/dev/frametop-native-lifecycle-observer/native-portal/hooks/
+ssh frame 'cd /home/steamos/dev/frametop-native-lifecycle-observer/native-portal/hooks && ~/.local/bin/distrobox enter dev -- python3 -B build.py'
 ```
 
-`build.py` refuses non-AArch64. It builds only in this new ARM mirror and runs synthetic tests. It reads and privately maps the installed pinned ELF for identity tests but never loads its libraries, executes its code, starts SteamVR, attaches to another process, installs anything or changes services. Its synthetic island uses a generated RET continuation, not Valve code. Compiler was GCC 16.2.1 in distrobox `dev`; flags and dynamic dependencies for this launch change are in `build/arm-launch-build.txt`. Runtime dependencies are `libc.so.6` and `libcrypto.so.3`. Default-off and two opt-in wrong-executable loads using the same fresh log path also passed on the SteamOS host with `/usr/bin/true`. All three leave the private directory empty. `check_preload.py LIBRARY SCRATCH_DIRECTORY` runs this regression against a real DSO and rejects loader warnings even when the inert process exits zero.
+`build.py` refuses non-AArch64 and performs only offline/synthetic tests. Local Unicorn dependencies may come from an existing private analysis environment. Prior bundles remain usable with their original decoder/pins; do not replace their files. Parent activation and stock-camera/GPU ordering acceptance remain separate from this build.
 
-Observed verification:
+## Reusable constraints
 
-- ARM build and native test exits were 0. Native tests cover fresh private files, wrong executable/hash, positive pinned file-backed mapping and load-bias refusals, all-or-none byte guards, precommit protection rollback, postcommit RX-failure exit 190, bounded ring/drop counters, invalid metadata addresses, fork refusal, both-eye metadata, errno preservation, real ARM island execution and deadline draining.
-- Production C emitted 75 islands covering 25 sites at three synthetic ASLR bases. Unicorn ran each twice, including both pipeline CBZ outcomes: 150 executions. It compared every x0..x30, every full q0..q31, SP, NZCV, FPCR, FPSR, continuation PC and native instruction memory effects against the original pinned instruction. The callback deliberately clobbered even callee-saved registers.
-- The final Python suite reported `Ran 7 tests` and `OK`, exit 0, against the freshly rebuilt ARM fixtures. It also decoded real ARM-generated metadata fixtures and rejected malformed/truncated records. The control fixture now comes from the production writer in `test_native`, not from a wrong-executable launch.
-- Three semaphore-controlled real-pthread regressions compile the current production callback/drainer C. They cover publication between the old empty snapshot and deadline check, plus a producer paused past its initial enabled check during deadline and explicit-stop shutdown. All three failed before the repair with `head=1 tail=0 dropped=0`. After the repair, the accepted event is emitted before the terminal record with `head=tail=1`; both late producers are refused with `head=tail=0`. The regressions passed locally and in the ARM build. Only unused identity includes and the AArch64 compile guard are removed for this portable CPU test; the callback and drainer bodies are unchanged.
-- Both local and Frame copies passed exact manifest source/artifact hash and 0400/0500 permission checks. The new manifest pins the changed `observer.c` and test/build sources. Both older bundles still match their original artifact and manifest hashes.
-- Repair evidence is retained as `build/red-drain-admission.txt`, `build/green-drain-admission.txt`, `build/final-drain-tests.txt`, `build/drain-test.txt`, `build/native-test.txt`, `build/arm-drain-build.txt`, `build/host-drain-preload.txt`, `build/verified-drain-bundle-{local,frame}.json`, `build/old-bundle-{before,after}.txt` and `build/SHA256SUMS`. Earlier pin inspection remains in `build/pin-audit.json`.
-
-The inherited-preload regression failed against reviewed bundle `80078287fe0dd534` with `AssertionError: non-target executable reserved the compositor log`, after default-off passed. The new bundle passed default-off and both enabled attempts in the ARM build and on the SteamOS host. Evidence is in `build/red-launch-contract.txt`, `build/arm-launch-build.txt`, `build/host-launch-preload.txt`, `build/final-launch-tests.txt` and `build/verified-launch-bundle-{local,frame}.json`. The production change adds only an early exact-path check; emitter, drain and full identity guards are unchanged.
-
-These are preservation and observer tests, not live callback-order evidence or product-renderer acceptance.
-
-## Parent-only launch options
-
-No launcher or service drop-in is installed. For a separately authorized compositor launch, the parent must append the absolute bundle library to the existing `LD_PRELOAD`, retaining the existing testbench preload verbatim. Do not replace `VK_LAYER_PATH`, `VK_ADD_LAYER_PATH`, `VK_INSTANCE_LAYERS`, or stock loader discovery. The observer never changes those variables.
-
-| Variable | Required value |
-|---|---|
-| `FT_NATIVE_HOOKS_ENABLE` | Exactly `metadata-v1-9b1bd5fe`; absent or anything else means off |
-| `FT_NATIVE_HOOKS_LOG` | Absolute, fresh filename in an already-existing canonical, user-owned mode 0700 directory |
-| `FT_NATIVE_HOOKS_SECONDS` | Decimal 1..120; default 60 |
-| `LD_PRELOAD` | Existing value plus `:` and the absolute `libft_native_hooks.so` path |
-
-Do not combine with `FT_AURORA_GATE_ENABLE`, `FT_NATIVE_CLIP_DIR` or `FT_CAMERA_BLEND_MODE`. Their presence refuses installation. The native observer has no shader/layer dependency.
-
-A service-wide preload can reach `vrstartup`, `vrcmd` and other helpers before the compositor. Before opening the log, the constructor now requires `/proc/self/exe` to match the exact target pathname. A non-target executable or unreadable/truncated executable link returns without creating a file, starting a thread or installing hooks, even with valid opt-in and a fresh valid log path. It no longer emits refusal code 10 or reserves the shared log. The full path/canonical-path, installed inode and hash checks still run afterward, and intended-target identity failures can still emit code 10 when the log is usable.
-
-The output is a new mode 0600 regular file, opened with O_EXCL and O_NOFOLLOW. Existing files, symlinks, noncanonical/private-parent failures and missing directories are refused. An unusable log target causes no hooks and no file. No enabled variable causes no file and no thread. The trace stops after the duration or 16,384 accepted events, whichever comes first. A 256-record static ring drops on full/contended/reentrant paths rather than waiting. Drops are not proof of missing native calls.
-
-The duration only disables observation and drains the ring. The drainer closes admission under the ring lock before deciding the queue is empty. Producers recheck admission after their single try-lock succeeds, so a callback that passed the initial enabled check cannot publish after shutdown completes. Events accepted before closure drain before the terminal record; callbacks refused by closed admission are not accepted events. Full/contended/reentrant observation remains explicitly counted and lossy.
-
-Duration expiry does not restart SteamVR or remove installed branches. Islands remain RX until process exit and continue native pass-through. Never dlclose an installed observer or unmap its islands. Parent rollback must remove only its own launch additions and use the parent's separately authorized process-lifecycle procedure. Do not relax the single-thread startup guard if the existing preload has already started threads; treat that as a failed trial.
-
-## Install and hot-path contract
-
-Startup verifies the exact executable path, current executable versus installed file identity, stable whole-file hash, pinned ELF headers/program headers, load bias, private RX backing device/inode/offset and every 16-byte site window. The overlay-backed filesystem identity comes from a private read-only alias of the same pinned descriptor, not a relaxed inode/device comparison. Guards were adapted from the existing reviewed launch-only diagnostic without modifying that original.
-
-One four-byte B replaces each site. A bounded MAP_FIXED_NOREPLACE search reserves nearby RW islands and converts them to RX after cache synchronization. Only this finite instruction set is retained: ordinary non-PC-relative instruction, BL, BLR x4, CBZ x0, B and RET. BL/BLR set x30 to the original callsite+4 before jumping to the original native target. There is no general instruction relocator and no live register used as a hidden branch scratch register.
-
-Each island reserves an aligned 800-byte bridge frame. It saves all 31 GPRs, all 32 full SIMD registers, original SP, NZCV, FPCR and FPSR, calls the observer, restores them, then performs the retained native instruction. C preserves errno. No native pointer, result, packet or policy value is changed.
-
-Installation requires one process thread and blocks signals. Every target page becomes RW without X before any word is committed. Failure in this preparation restores RX with original words untouched. After committing, cache synchronization, RX restoration and exact branch/page postchecks are mandatory. A postcommit failure terminates startup with exit 190 instead of continuing partially installed. The drainer starts only after a complete install; setup failure then also terminates startup. These are process-local private mappings, never disk patches.
-
-Hot callbacks do no allocation, file I/O, IPC, renderer/VR calls or blocking locks. They use initial-exec TLS, bounded fixed-size copies, atomics, a single try-lock attempt, clock/PID/TID queries and self-only `process_vm_readv` metadata reads. The latter are fault-safe kernel copies, not arbitrary pointer dereferences. They can still perturb timing or incur page faults; no zero-overhead claim is made. A drainer does regular-file writes outside callbacks. Forked children disable inherited observation and do not join a vanished parent drainer.
-
-## Hook inventory
-
-IDs are zero-based in `pins.h` and are stable for schema 1.
-
-| IDs | Offsets | Observation |
-|---|---|---|
-| 0, 1, 24 | `0x147a48`, `0x148414`, `0x148de0` | Outer entry, normal post-eye point, actual outer RET |
-| 2, 3, 4 | `0x112b58`, `0x122568`, `0x1480b8` | Stock pre-feedback policy, completed S, stereo seal |
-| 5..8 | `0x148244`, `0x1482a8`, `0x14834c`, `0x14840c` | Left early/late, right early/late callsites |
-| 9 | `0x161ed8` | Camera enqueue before original BLR x4 |
-| 10, 11 | `0x29f1e8`, `0x29f204` | Camera backend entry and actual pipeline lookup result |
-| 12, 13 | `0x6d6e0`, `0x6d6f0` | Raw external acquire/release wrappers and original caller LR |
-| 14 | `0x63920` | Original HMD pose record from incoming x3 array, stride 0x50 |
-| 15, 16, 17 | `0x9ee98`, `0x9eeb4`, `0xa0510` | Activity/cache comparison and native layer transition results |
-| 18, 19, 20 | `0x15f9e0`, `0x15fa78`, `0x15faa4` | K acquire entry and both real native return sites |
-| 21, 22, 23 | `0x15fba8`, `0x15fbd8`, `0x15fc20` | K release entry and both real native return sites |
-
-The shared transition result at `0x9eeb4` is reached after acquire as well as release. Do not label every event there a release. The actual RET events carry native x0 and caller LR unchanged.
-
-At enqueue, K is original x27, eye is original x19, and packet is original x1. The captured SP is the original site SP, not the bridge's lower SP. The pinned camera prologue subtracts 0x460. Only the two return epilogues add it back; neither is on a path continuing to enqueue. The exact getter destination is therefore site-SP+0x170. The observer reads its 48 bytes at enqueue, without calling the getter. The native packet begins at camera-SP+0x300 on the inspected path; x1 remains the authoritative packet reference. `pin-audit.json` records the decoded stack adjustments and site windows.
-
-## Event schema
-
-The binary stream consists of fixed 2,384-byte little-endian records. `decode.py FILE` emits JSONL without contacting any process. Use `python3 -B` so a read-only bundle does not need a bytecode cache.
-
-Header format is Python `struct.Struct('<4I6Q4I32Q')`, 336 bytes:
-
-1. u32 magic `0x3154464e`, record size, site ID, flags.
-2. u64 accepted sequence, frame context, per-thread callback sequence, Linux TID, CLOCK_MONOTONIC nanoseconds, outer owner x0.
-3. u32 scope depth, current eye, eye-seen mask, payload bytes used.
-4. 31 u64 original GPR values x0..x30, then original SP.
-
-The remaining 2,048 bytes contain chunks. Each begins with `<IIQ>`: tag, byte length, original address, followed by exactly that many bytes. A tag's high bit marks a failed read; its data is zeroed and must not be treated as a native value. The observer flags are 1=no outer scope, 2=ambiguous/recovered scope, 4=failed metadata read, 8=payload bound refusal.
-
-| Tag | Bytes | Contents |
-|---|---:|---|
-| 1 | 528 | Unchanged native UBO bytes at K+0xc0 |
-| 2 | 48 | This draw's raw-to-Standing 3x4 at original camera-SP+0x170 |
-| 3 | 352 | Original or recorded packet prefix; VS at +0x20, PS at +0x30, blend +8, VS UBO +0x38, PS UBO +0x58 |
-| 4 | 216 | Nine native recorded descriptor entries at recorded packet+0x1c8; raw entries, no buffer-content reads |
-| 5 | 80 | HMD device-to-absolute matrix, velocities, tracking result +0x48, valid +0x4c, connected +0x4d |
-| 6 | 1632 | Stock S, copied read-only through +0x65f |
-| 7 | 24 | Shared policy reread H+0x40b40..+0x40b57 |
-| 8 | 2 | Policy-owner enable bytes L+0x1572/+0x1573 |
-| 9 | 8 | F tracking class and native diagnostic input ID |
-| 10 | 64 | F per-device copied validity bytes at +0xc38 |
-| 11 | 1 | Existing layer activity cache at comparison |
-| 12 | 40 | K+0x340 resource state/handle metadata; no pointed-to resources |
-
-Site `0xffffffff` is a control record. Flags are the control code; data starts with the pinned ELF SHA256 text. `decode.py` names every refusal/fatal code. Codes 0, 1 and 2 mean prepared, installed and drained. Control x0..x5 hold PID, drops, failed reads, filtered noncamera backend calls, reentrant callbacks and scope errors. The control owner field is the image load bias.
-
-## Interpretation and remaining gates
-
-- The frame token is a shim monotonic outer invocation sequence, not F-pointer equality or F+4. TLS supports four nested scopes and detects missing normal cleanup on the next equal/higher-SP outer entry. Overflow stops observation. Nonlocal unwind is not intercepted. Any scope error or ambiguous flag invalidates an ordering conclusion involving that scope.
-- Both eyes share the same observed outer token. `eye_seen_mask` reports callbacks already seen in that thread's current scope; it is not a rendering-validity decision. The tracking capture contains the complete HMD rigid matrix and native valid/connected/result fields. Other pose-array records are not copied; x3 retains the original array reference and F has all copied validity bytes.
-- `frame_context` on a backend event means the TLS scope active when that callback ran. It is not authenticated enqueue ownership and may be zero on a deferred worker. The trace includes original/recorded packet addresses, selected shaders, both UBO references and recorded descriptor bytes for offline association. Ambiguous matches must remain ambiguous; do not infer same-draw identity from shader IDs, buffer range or current TLS alone.
-- Backend callbacks are logged only when the native VS field is 57 or 58. Other backend calls increase `filtered_non_camera`; no native result changes. Pipeline result x0 can be null and the native CBZ still follows its original null branch.
-- Policy tag 7 is explicitly a reread at the capture point, not a retained historical result from every preceding load. This observer captures stock policy only. It does not implement the pure counterfactual graph, ownership arbitration, acquire/release handoff or any effective intent.
-- Metadata chunks are bounded observations, not an atomic snapshot across separate native objects. Concurrent native mutation can make fields inconsistent. Require the live thread/order evidence before treating a K, policy or descriptor copy as a stable ownership input.
-- Accepted sequence is ring publication order. Per-thread sequence includes filtered/dropped callbacks. Cross-thread monotonic timestamps bracket callback observations, not GPU submission, causality or exposure time. Read failures, drops, reentrancy, scope errors or an incomplete terminal record require an inconclusive result for affected ordering claims.
-- No resource lifetime, native intent owner, recenter epoch, simultaneous-eye backend admission, GPU completion, optical registration or renderer activation is proven. Parent still needs the bounded live trace and must stop on unexpected ordering rather than enabling the product renderer.
-
-The full requested critical ordering hook set is included; it was not reduced to an entry-only observer. The remaining limitations are explicitly observational, not silent substitutions for a product-safe ownership adapter.
+Keep event-budget closure separate from producer admission closure when critical evidence must survive heavy steady-state sampling. Carry entry object/token/selection through restored-register returns. Read native recorded names rather than inventing identity in pointer reuse, and keep selected windows, authenticated packet provenance and actual GPU completion as separate facts. These lessons are kept here because this task only owns hooks and this document.

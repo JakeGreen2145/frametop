@@ -41,12 +41,13 @@ class DrainTests(unittest.TestCase):
         ], check=True, timeout=30)
 
     def schedule(self, name):
-        result = subprocess.run(
-            [str(self.binary), name, str(self.path / (name + '.bin'))],
-            capture_output=True, text=True, timeout=5,
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        print(result.stdout, end='', flush=True)
+        for critical in (False, True):
+            result = subprocess.run(
+                [str(self.binary), name, str(self.path / (name + str(critical) + '.bin'))] + (['critical'] if critical else []),
+                capture_output=True, text=True, timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            print('critical=' + str(critical), result.stdout, end='', flush=True)
 
     def test_publication_between_empty_observation_and_deadline(self):
         self.schedule('empty-deadline')

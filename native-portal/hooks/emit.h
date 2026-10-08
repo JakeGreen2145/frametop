@@ -49,7 +49,7 @@ static size_t emit_island(uint32_t *out,uintptr_t at,uintptr_t base,unsigned id,
         out[n++]=b; return n*4;
     }
     if(s->kind==3) {
-        out[n++]=(s->word&~0x00ffffe0u)|(2<<5); /* CBZ to second B */
+        out[n++]=(s->word&~0x00ffffe0u)|(2<<5); /* Pinned CBZ/CBNZ/B.cond to second B; preserve register/condition bits. */
         if(!branch_word(at+n*4,pc+4,&b))return 0;
         out[n++]=b;
         if(!branch_word(at+n*4,native_target(pc,s->word,19),&b))return 0;

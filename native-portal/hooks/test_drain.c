@@ -35,12 +35,12 @@ int __wrap_clock_gettime(clockid_t id,struct timespec *t) {
 static void *producer(void *unused) {
     (void)unused;
     if(!inflight)wait_sem(&go);
-    struct saved r={0};errno=E2BIG;observe(&r,STEREO_FINISH);
+    struct saved r={0};errno=E2BIG;observe(&r,lifecycle?EXTERNAL_RELEASE:STEREO_FINISH);
     assert(errno==E2BIG);assert(!tls.busy);
     assert(!sem_post(&published));return NULL;
 }
 int main(int argc,char **argv) {
-    assert(argc==3);
+    assert(argc==3 || argc==4);lifecycle=argc==4;
     inflight=strcmp(argv[1],"empty-deadline")!=0;
     stop_case=!strcmp(argv[1],"inflight-stop");
     consumer=pthread_self();self_pid=getpid();deadline=1000000000;
@@ -60,18 +60,18 @@ int main(int argc,char **argv) {
         (unsigned long long)atomic_load(&dropped),(long long)st.st_size,atomic_load(&enabled));
     fflush(stdout);
     uint64_t expected=inflight?0:1;
-    assert(head==expected);assert(tail==head);assert(!atomic_load(&enabled));
+    assert((lifecycle?chead:head)==expected);assert(tail==head && ctail==chead);assert(!atomic_load(&enabled));
     assert(!atomic_load(&dropped));
     assert(st.st_size==(off_t)((expected+1)*sizeof(struct event)));
     struct event e;
     if(expected) {
         assert(pread(output_fd,&e,sizeof(e),0)==sizeof(e));
-        assert(e.magic==MAGIC && e.size==sizeof(e));
-        assert(e.site==STEREO_FINISH && e.seq==1 && e.thread_seq==1);
+        assert(e.magic==(lifecycle?0x3254464e:MAGIC) && e.size==sizeof(e));
+        assert(e.site==(lifecycle?EXTERNAL_RELEASE:STEREO_FINISH) && e.seq==1 && e.thread_seq==1);
         assert(e.tid && e.tid!=(uint64_t)syscall(SYS_gettid));assert(e.mono==1);
     }
     assert(pread(output_fd,&e,sizeof(e),(off_t)(expected*sizeof(e)))==sizeof(e));
-    assert(e.magic==MAGIC && e.size==sizeof(e) && e.site==UINT32_MAX && e.flags==2);
+    assert(e.magic==(lifecycle?0x3254464e:MAGIC) && e.size==sizeof(e) && e.site==UINT32_MAX && e.flags==2);
     assert(!e.x[1]);
     close(output_fd);
     assert(!sem_destroy(&go));assert(!sem_destroy(&published));
