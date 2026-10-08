@@ -28,6 +28,11 @@ struct Registers {
 struct Descriptor {
     uint64_t buffer = 0, offset = 0, range = 0;
 };
+// observe() must return actual coherent bounds, never normalized/frozen pointers.
+// Same-begin 0x98-stride append is supported between uploads/backends only.
+// recording_generation is binding-issued, stable within a frame and strictly
+// increasing across frames even when command/arena pointers are reused. The
+// binding must advance it at reset; pointers/extents cannot authenticate a reset.
 struct Arena {
     uint64_t pass_begin = 0, pass_end = 0, command_wrapper = 0, command = 0, resource = 0,
              buffer = 0, map = 0;

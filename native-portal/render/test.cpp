@@ -29,12 +29,13 @@ struct Fake {
     bool bad_queue_command = false, retire_marker_ok = true;
     Address fail = 0;
     bool wrong_descriptor = false, wrong_upload = false;
+    void (*during_upload)(Arena &) = nullptr;
     unsigned allocations = 0, uploads = 0, enqueues = 0, destroys = 0, lookups = 0;
     std::array<Recorded, 32> records{};
     std::array<ft::portal::PortalConstants, 32> payloads{};
     Adapter *reenter = nullptr;
     Fake() {
-        obs.arena = {1, 2, 3, 4, 5, 6, 0x100000, 0x80000, 0, 64, 7};
+        obs.arena = {0x1000, 0x11c8, 3, 4, 5, 6, 0x100000, 0x80000, 0, 64, 7};
         obs.wrapper_resource = 0x600;
         obs.wrapper_size = 592;
         obs.wrapper_offset = UINT32_MAX;
@@ -78,6 +79,7 @@ struct Fake {
             f.obs.wrapper_offset = f.obs.arena.cursor + (f.wrong_upload ? 1 : 0);
             f.obs.arena.cursor = (f.obs.arena.cursor + 592 + f.obs.arena.alignment - 1) &
                                  ~(f.obs.arena.alignment - 1);
+            if (f.during_upload) f.during_upload(f.obs.arena);
             r.x[0] = 0; // upload has NO native boolean result
         } else if (r.target == 0x2988a8) {
             assert(r.x[2] == f.wrapper);

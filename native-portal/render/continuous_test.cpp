@@ -319,7 +319,172 @@ static void r1_reclamation() {
         assert(f.adapter.retire() && f.native.destroys == 1);
     }
 }
+// Pass endpoints transcribed from live03 camera_enqueue pairs, trace SHA256
+// 29705cfc2019d5c22f9cbf335a5312871d55c23e7f3be6db6beae94d3614d123.
+// Native operations, lease, generation and backend arena observations are synthetic.
+static void live_pass_appends() {
+    struct Pair {
+        uint64_t frame, begin, left_end, right_end, left_cursor, right_cursor, command;
+    };
+    constexpr Pair pairs[] = {
+        {601, 0xffff603c5470, 0xffff603c5638, 0xffff603c56d0, 1536, 3072, 0xaaaaef535810},
+        {602, 0xffff603d55b0, 0xffff603d5778, 0xffff603d5810, 1536, 3072, 0xaaaaef368ae0},
+        {603, 0xffff603c5470, 0xffff603c5638, 0xffff603c56d0, 1536, 3072, 0xaaaaef535810},
+        {743, 0xffff603c5470, 0xffff603c56d0, 0xffff603c5768, 2816, 5632, 0xaaaaef368ae0},
+        {744, 0xffff603d55b0, 0xffff603d5810, 0xffff603d58a8, 2816, 5632, 0xaaaaef5432f0},
+        {745, 0xffff603c5470, 0xffff603c56d0, 0xffff603c5768, 2816, 5632, 0xaaaaef368ae0},
+    };
+    bool all = true;
+    for (const auto &pair : pairs) {
+        ContinuousFixture f;
+        f.begin(pair.frame);
+        auto &a = f.native.obs.arena;
+        a.pass_begin = pair.begin;
+        a.pass_end = pair.left_end;
+        a.cursor = pair.left_cursor;
+        a.command = pair.command;
+        const auto generation = a.recording_generation;
+        assert(f.adapter.enqueue(f.source.eye(0)));
+        a.pass_end = pair.right_end; // expose the REAL append; never freeze the reader
+        a.cursor = pair.right_cursor + 640; // synthetic native work plus left portal upload
+        const bool right = f.adapter.enqueue(f.source.eye(1));
+        std::printf("live03 frame %llu: left=1 right=%d uploads=%u enqueues=%u resident=%zu\n",
+                    static_cast<unsigned long long>(pair.frame), right, f.native.uploads,
+                    f.native.enqueues, f.adapter.state().tickets_used);
+        std::fflush(stdout);
+        all = all && right;
+        if (!right) continue;
+        assert(a.recording_generation == generation && a.pass_begin == pair.begin &&
+               a.pass_end == pair.right_end);
+        assert(f.native.uploads == 2 && f.native.enqueues == 2);
+        for (unsigned eye = 0; eye < 2; ++eye)
+            assert(decode_ticket(f.native.records[eye].label, 15, f.native.settled_tickets[eye]));
+        assert(f.adapter.outer_return());
+        assert(f.native.obs.wrapper_offset == f.native.records[1].descriptors[0].offset);
+        assert(f.native.obs.wrapper_offset != f.native.records[0].descriptors[0].offset);
+        // Additional same-begin appends before and between deferred backends are
+        // synthetic coverage, not fields captured at those live03 boundaries.
+        a.pass_end += 0x98;
+        a.cursor += 64;
+        assert(f.draw(0).decision == Decision::Portal); // shared wrapper is already right
+        a.pass_end += 0x98;
+        a.cursor += 64;
+        assert(f.draw(1).decision == Decision::Portal);
+        f.queue_success();
+        assert(f.adapter.submitted());
+        f.complete();
+        f.settled();
+    }
+    assert(all && "live native pass append must admit both eyes");
+}
+static void pass_structure_refusals() {
+    for (unsigned mode = 0; mode < 8; ++mode) {
+        Fixture f;
+        f.start();
+        auto &a = f.fake.obs.arena;
+        switch (mode) {
+        case 0: a.pass_begin = 0; break;
+        case 1: a.pass_end = a.pass_begin; break;
+        case 2: a.pass_end = a.pass_begin - 8; break;
+        case 3: a.pass_end = a.pass_begin + 8; break;
+        case 4: a.pass_end += 8; break; // aligned pointers, nonintegral stride
+        case 5: ++a.pass_begin; ++a.pass_end; break; // valid span, misaligned pointers
+        case 6: a.pass_begin = UINT64_MAX - 7; a.pass_end = 0x90; break; // wrapped append
+        case 7: a.pass_begin = 8; a.pass_end = 0x8000000000000068; break; // oversized span
+        }
+        assert(!f.adapter.enqueue(f.eye(0)));
+        assert(!f.fake.uploads && !f.fake.enqueues);
+    }
+}
+static void mutate_recording(Arena &a, unsigned mode) {
+    switch (mode) {
+    case 0: a.pass_end -= 0x98; break; // structurally valid shrink
+    case 1: a.pass_end += 8; break; // wrong stride
+    case 2: a.pass_begin += 0x1000; a.pass_end += 0x1000; break; // unaudited relocation
+    case 3: a.cursor = 0; break; // native reset under the old generation
+    case 4: ++a.recording_generation; break;
+    case 5: ++a.command; break;
+    case 6: ++a.command_wrapper; break;
+    case 7: ++a.resource; break;
+    case 8: ++a.buffer; break;
+    case 9: a.map += 64; break;
+    case 10: a.capacity *= 2; break;
+    case 11: a.alignment *= 2; break;
+    case 12: a.cursor = a.capacity + 64; break;
+    case 13: ++a.cursor; break;
+    case 14: a.recording_generation = 0; break;
+    case 15: --a.recording_generation; break;
+    }
+}
+static void pass_progression_refusals() {
+    // Check between eyes, before first backend, and after an accepted backend
+    // advanced the observed cursor/extent. Never permit rollback to an older bound.
+    for (unsigned phase = 0; phase < 3; ++phase) {
+        for (unsigned mode = 0; mode < 16; ++mode) {
+            Fixture f;
+            f.start();
+            assert(f.adapter.enqueue(f.eye(0)));
+            auto &a = f.fake.obs.arena;
+            if (phase) {
+                a.pass_end += 0x98;
+                assert(f.adapter.enqueue(f.eye(1)));
+                assert(f.adapter.outer_return());
+                if (phase == 2) {
+                    a.pass_end += 0x98;
+                    a.cursor += 128;
+                    assert(f.draw(0).decision == Decision::Portal);
+                }
+            }
+            const auto uploads = f.fake.uploads, lookups = f.fake.lookups;
+            mutate_recording(a, mode);
+            if (!phase) assert(!f.adapter.enqueue(f.eye(1)));
+            else assert(f.draw(phase == 2 ? 1 : 0).decision == Decision::Drop);
+            assert(f.adapter.state().frame_invalid);
+            assert(f.fake.uploads == uploads && f.fake.lookups == lookups);
+        }
+    }
+    Fixture rollback;
+    rollback.start();
+    rollback.stereo();
+    rollback.fake.obs.arena.cursor += 128;
+    assert(rollback.draw(0).decision == Decision::Portal);
+    rollback.fake.obs.arena.cursor -= 64; // still above uploads, below latest observation
+    assert(rollback.draw(1).decision == Decision::Drop);
+}
+static void upload_pass_mutation_refusals() {
+    for (auto mutation : {
+             +[](Arena &a) { a.pass_end += 0x98; }, // valid append only OUTSIDE upload
+             +[](Arena &a) { a.pass_end -= 0x98; },
+             +[](Arena &a) { a.pass_begin += 0x1000; a.pass_end += 0x1000; },
+             +[](Arena &a) { ++a.recording_generation; },
+             +[](Arena &a) { ++a.command; }}) {
+        Fixture f;
+        f.start();
+        f.fake.during_upload = mutation;
+        assert(!f.adapter.enqueue(f.eye(0)));
+        assert(f.fake.uploads == 1 && !f.fake.enqueues);
+        assert(f.adapter.state().frame_invalid);
+    }
+}
+static void recycled_generation_refusals() {
+    for (unsigned mode = 0; mode < 2; ++mode) {
+        ContinuousFixture f;
+        f.begin(10);
+        f.submit();
+        f.complete();
+        f.settled();
+        f.begin(11);
+        f.native.obs.arena.recording_generation = mode ? 9 : 10;
+        assert(!f.adapter.enqueue(f.source.eye(0)));
+        assert(!f.native.uploads && !f.native.enqueues);
+    }
+}
 int main(int argc, char **argv) {
+    live_pass_appends();
+    pass_structure_refusals();
+    pass_progression_refusals();
+    upload_pass_mutation_refusals();
+    recycled_generation_refusals();
     sustained_storage();
     settlement_required();
     settlement_owner_guards();

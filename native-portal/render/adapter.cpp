@@ -33,12 +33,37 @@ bool same_geometry(const Geometry &a, const Geometry &b) noexcept {
             return false;
     return a.opacity == b.opacity;
 }
-bool same_arena(const Arena &a, const Arena &b) noexcept {
-    return a.pass_begin == b.pass_begin && a.pass_end == b.pass_end &&
-           a.command_wrapper == b.command_wrapper && a.command == b.command &&
+bool valid_arena(const Arena &a) noexcept {
+    // Pinned native pass stride, with 8-byte fields. Check ordered bounds before
+    // subtracting, and require a representable, integral, nonempty native span.
+    constexpr uint64_t stride = 0x98;
+    return a.pass_begin && !(a.pass_begin % 8) && a.pass_begin <= UINT64_MAX - stride &&
+           a.pass_end >= a.pass_begin + stride &&
+           a.pass_end - a.pass_begin <= INT64_MAX &&
+           (a.pass_end - a.pass_begin) % stride == 0 &&
+           a.command_wrapper && a.command && a.resource && a.buffer && a.map &&
+           a.recording_generation && a.capacity == 0x80000 && a.alignment &&
+           a.alignment <= a.capacity && !(a.alignment & (a.alignment - 1)) &&
+           a.cursor <= a.capacity && !(a.cursor % a.alignment) &&
+           a.map <= UINT64_MAX - a.capacity;
+}
+bool same_generation(const Arena &a, const Arena &b) noexcept {
+    return a.command_wrapper == b.command_wrapper && a.command == b.command &&
            a.resource == b.resource && a.buffer == b.buffer && a.map == b.map &&
            a.capacity == b.capacity && a.alignment == b.alignment &&
            a.recording_generation == b.recording_generation;
+}
+bool same_upload(const Arena &a, const Arena &b) noexcept {
+    // An append is supported between calls, never during one managed upload.
+    return valid_arena(b) && same_generation(a, b) &&
+           a.pass_begin == b.pass_begin && a.pass_end == b.pass_end;
+}
+bool recording_progress(const Arena &previous, const Arena &current) noexcept {
+    // Only same-begin append has been audited. Relocation needs a future native
+    // ownership binding, not relaxed pointer checks or normalized observations.
+    return valid_arena(current) && same_generation(previous, current) &&
+           current.pass_begin == previous.pass_begin && current.pass_end >= previous.pass_end &&
+           current.cursor >= previous.cursor;
 }
 struct Ticket {
     Provenance provenance;
@@ -187,7 +212,7 @@ bool Adapter::latch(const Frame &frame) noexcept {
     p.frame = frame;
     p.eyes = 0;
     p.returned = false;
-    p.recording = 0;
+    // Keep the recording watermark across reclamation and new frame latches.
     p.stopped = false;
     p.completion = {};
     p.highwater = 0;
@@ -256,16 +281,13 @@ bool Adapter::enqueue(const EyeInput &in) noexcept {
         before.wrapper_size != 592 || before.attachment != attachment)
         return p.reject();
     const auto &a = before.arena;
-    if (!a.pass_begin || a.pass_begin == a.pass_end || !a.command_wrapper || !a.command ||
-        !a.resource || !a.buffer || !a.map || !a.recording_generation || a.capacity != 0x80000 ||
-        !a.alignment || a.alignment > a.capacity || (a.alignment & (a.alignment - 1)) ||
-        a.cursor > a.capacity || a.cursor % a.alignment || a.capacity - a.cursor < 592 ||
-        a.map > UINT64_MAX - a.capacity)
+    if (!valid_arena(a) || a.capacity - a.cursor < 592)
         return p.reject();
     const uint64_t end = a.cursor + 592, aligned = (end + a.alignment - 1) & ~(a.alignment - 1);
     if (aligned > a.capacity || !p.cb.headroom(p.cb.user, p.binding, a, aligned))
         return p.reject();
-    if (p.eyes && (!same_arena(p.frame_arena, a) || a.cursor < p.highwater))
+    if (p.eyes ? (!recording_progress(p.frame_arena, a) || a.cursor < p.highwater)
+               : a.recording_generation <= p.recording)
         return p.reject();
     p.recording = a.recording_generation;
     p.frame_arena = a;
@@ -285,7 +307,7 @@ bool Adapter::enqueue(const EyeInput &in) noexcept {
     if (!p.call(r))
         return p.reject(); // never interpret upload x0 as Boolean
     Observation after;
-    if (!p.observe(after) || !same_arena(a, after.arena) || after.arena.cursor != aligned ||
+    if (!p.observe(after) || !same_upload(a, after.arena) || after.arena.cursor != aligned ||
         after.wrapper_resource != before.wrapper_resource || after.wrapper_size != 592 ||
         after.wrapper_offset != a.cursor || after.attachment != attachment || !p.live())
         return p.reject();
@@ -392,13 +414,17 @@ BackendResult Adapter::backend(const Recorded &record, const Context &context,
         !same(record.descriptors[4], auth.descriptors[1]) || !p.gate.accept(p.frame, p.cb.clock()))
         return drop();
     Observation current;
-    if (!p.observe(current) || !same_arena(p.frame_arena, current.arena) ||
+    if (!p.observe(current) || !recording_progress(p.frame_arena, current.arena) ||
         current.arena.cursor < p.highwater || current.wrapper_resource != p.wrapper_resource ||
         current.wrapper_size != 592 || current.attachment != attachment)
         return drop();
     if (!p.cb.pipeline(p.cb.user, auth, lookup) || !lookup.x[0] || !p.live() ||
         !p.gate.accept(p.frame, p.cb.clock()))
         return drop();
+    // Remember actual accepted progress so the second deferred backend cannot
+    // roll back to a prior extent/cursor that merely exceeds the upload boundary.
+    p.frame_arena = current.arena;
+    p.highwater = current.arena.cursor;
     ticket.admitted = true;
     p.status.cpu_done = p.tickets[p.eye_slots[0]].admitted && p.tickets[p.eye_slots[1]].admitted;
     return {Decision::Portal, lookup.x[0]};
