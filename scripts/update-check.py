@@ -48,7 +48,9 @@ HOST_GLIBC = (2, 39)  # the newest the pointer driver may need (pointer/driver/b
 # Packages in the OS image that Frametop depends on, and what to try by hand when one changes.
 PACKAGES = {
     "deckard-steamvr-rel": "the 3D mouse on the dashboard, on SteamVR Settings, and on a SteamVR "
-                           "window's grab bar; picking up a controller; mapped controller buttons; gaze",
+                           "window's grab bar; picking up a controller; mapped controller buttons; gaze; "
+                           "portal controls hide/show on Steam menu open/close: recheck "
+                           "valve.steam.gamepadui.frame.menu.55880005 after updates",
     "kwin": "clicks near the far edge of a screen whose scale isn't 1; every screen comes back "
             "after a desktop restart; floating a window; no blur behind the taskbar's menus",
     "plasma-workspace": "the taskbar and panels after a desktop restart; no DiscoverNotifier or "
