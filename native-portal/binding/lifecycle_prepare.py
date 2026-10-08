@@ -32,5 +32,5 @@ with elf.open('rb') as f:
 subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',str(R/'lifecycle_emit.c'),'-o',str(B/'lifecycle-emit')],check=True)
 with (B/'lifecycle-emitted.json').open('w') as f:subprocess.run([str(B/'lifecycle-emit'),str(B/'lifecycle-pins.txt')],stdout=f,check=True)
 root=R.parent
-subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror','-shared','-fPIC','-pthread','-I'+str(root/'include'),*[str(root/x) for x in ['binding/lifecycle_machine.cpp','binding/lifecycle.cpp','binding/command.cpp','render/adapter.cpp','src/aperture.cpp','control/protocol.cpp','control/policy.cpp']],'-o',str(B/'lifecycle-machine.so')],check=True)
+subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror','-shared','-fPIC','-pthread','-I'+str(root/'include'),*[str(root/x) for x in ['binding/lifecycle_machine.cpp','binding/lifecycle.cpp','binding/command.cpp','render/adapter.cpp','arena/bridge.cpp','src/aperture.cpp','control/protocol.cpp','control/policy.cpp']],'-o',str(B/'lifecycle-machine.so')],check=True)
 print('Pinned ELF, six queue routes, reset vtable, nine generated observation islands')

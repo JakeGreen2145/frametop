@@ -96,7 +96,7 @@ cmd = ['g++', '-std=c++17', '-Wall', '-Wextra', '-Werror', '-g', '-pthread', '-I
 if a.sanitize:
     cmd += ['-fsanitize=address,undefined','-fno-omit-frame-pointer','-fno-pie','-no-pie']
 out = build / ('test-sanitize' if a.sanitize else 'test')
-cmd += [str(root/x) for x in ['binding/test.cpp','binding/command.cpp','render/adapter.cpp',
+cmd += [str(root/x) for x in ['binding/test.cpp','binding/command.cpp','render/adapter.cpp','arena/bridge.cpp',
                             'src/aperture.cpp','control/protocol.cpp','control/policy.cpp']]
 cmd += ['-o',str(out)]
 subprocess.run(cmd,check=True)
@@ -105,7 +105,7 @@ print(json.dumps({'memory.max':(cgroup/'memory.max').read_text().strip(),
                   'memory.swap.max':(cgroup/'memory.swap.max').read_text().strip(),
                   'memory.peak':(cgroup/'memory.peak').read_text().strip(),
                   'sources':{str(x.relative_to(root)):hashlib.sha256(x.read_bytes()).hexdigest()
-                             for x in [root/'render/adapter.cpp',root/'binding/command.cpp']},
+                             for x in [root/'render/adapter.cpp',root/'arena/bridge.cpp',root/'binding/command.cpp']},
                   'private_inputs':{x:hashlib.sha256((a.evidence/x).read_bytes()).hexdigest()
                                     for x in ['evidence.json','camera-chains.csv','records.jsonl']},
                   'sanitized':a.sanitize,'chains':6}))

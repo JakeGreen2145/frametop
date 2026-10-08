@@ -18,7 +18,7 @@ assert (cg/'memory.max').read_text().strip()=='681574400'
 assert (cg/'memory.swap.max').read_text().strip()=='0'
 cmd=['g++','-std=c++17','-Wall','-Wextra','-Werror','-g','-pthread','-I'+str(root/'include')]
 if a.sanitize: cmd+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-fno-pie','-no-pie']
-sources=['binding/pass_test.cpp','render/adapter.cpp','src/aperture.cpp','control/protocol.cpp','control/policy.cpp']
+sources=['binding/pass_test.cpp','render/adapter.cpp','arena/bridge.cpp','src/aperture.cpp','control/protocol.cpp','control/policy.cpp']
 if (root/'binding/pass.cpp').exists(): sources+=['binding/pass.cpp']
 out=build/('test-sanitize' if a.sanitize else 'test')
 subprocess.run(cmd+[str(root/x) for x in sources]+['-o',str(out)],check=True)

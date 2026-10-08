@@ -13,7 +13,7 @@ cmd=['g++','-std=c++17','-Wall','-Wextra','-Werror','-Wno-misleading-indentation
 if a.sanitize:cmd+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-fno-pie','-no-pie']
 cmd += [str(r/'lifecycle_test.cpp'),str(r/'command.cpp')]
 if (r/'lifecycle.cpp').exists():cmd+=[str(r/'lifecycle.cpp')]
-cmd += [str(root/x) for x in ['render/adapter.cpp','src/aperture.cpp','control/protocol.cpp','control/policy.cpp']]
+cmd += [str(root/x) for x in ['render/adapter.cpp','arena/bridge.cpp','src/aperture.cpp','control/protocol.cpp','control/policy.cpp']]
 cmd += ['-o',str(b/'lifecycle-test')];subprocess.run(cmd,check=True)
 subprocess.run([str(b/'lifecycle-test')],check=True,env={**os.environ,'ASAN_OPTIONS':'detect_leaks=1'})
 subprocess.run(['python3','-B',str(r/'lifecycle_prepare.py')],check=True)

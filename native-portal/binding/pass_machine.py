@@ -32,7 +32,7 @@ from unicorn import UC_HOOK_MEM_WRITE
 import unicorn.arm64_const as ar
 img=b.Image()
 so=build/'extract.so'
-subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror','-shared','-fPIC','-pthread','-I'+str(root/'include')]+[str(root/x) for x in ['binding/pass_test_bridge.cpp','binding/pass.cpp','render/adapter.cpp','src/aperture.cpp','control/protocol.cpp','control/policy.cpp']]+['-o',str(so)],check=True)
+subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror','-shared','-fPIC','-pthread','-I'+str(root/'include')]+[str(root/x) for x in ['binding/pass_test_bridge.cpp','binding/pass.cpp','render/adapter.cpp','arena/bridge.cpp','src/aperture.cpp','control/protocol.cpp','control/policy.cpp']]+['-o',str(so)],check=True)
 lib=ct.CDLL(str(so))
 extract=lib.pass_extract_test
 extract.argtypes=[ct.c_void_p,ct.c_size_t,ct.c_uint64,ct.c_uint64,ct.c_uint64,ct.c_uint32,ct.POINTER(ct.c_uint64)]
