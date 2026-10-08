@@ -1,0 +1,13 @@
+FT_PORTAL_PIPELINE_1.0 {
+  global:
+    vkGetInstanceProcAddr;
+    vkGetDeviceProcAddr;
+    vk_layerGetPhysicalDeviceProcAddr;
+    vkNegotiateLoaderLayerInterfaceVersion;
+    ft_pipeline_generation;
+    ft_pipeline_begin;
+    ft_pipeline_end;
+    ft_pipeline_approved;
+    ft_pipeline_revoke;
+  local: *;
+};

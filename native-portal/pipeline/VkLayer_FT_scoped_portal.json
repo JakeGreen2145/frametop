@@ -1,0 +1,11 @@
+{
+  "file_format_version": "1.2.0",
+  "layer": {
+    "name": "VK_LAYER_FT_scoped_portal",
+    "type": "GLOBAL",
+    "library_path": "./libft_portal_pipeline.so.1",
+    "api_version": "1.3.0",
+    "implementation_version": "1",
+    "description": "Default-off checked native portal lookup substitution"
+  }
+}
