@@ -58,6 +58,12 @@ Still outside this lane:
 
 A missing required entry/post, malformed scope, partial pair, queue failure, failed reset or unknown generation keeps the callback false. Do not enable capability from these CPU results alone.
 
+## Initial runtime attachment
+
+The inactive `runtime/Evidence` now captures initial native command creation, raw begin result and wrapper publication and owns a persistent `Generations` issuer. Its `bind_lifecycle` connects that issuer to the actual Lifecycle after exact Owner/observation checks. Pending pool members do not consume active identities; publication chooses the successfully begun member. Reset or an unmatched begin revokes observation before native mutation.
+
+This reader still cannot supply current/retained graph lifetime. Its suite verifies initial binding and premature-reset refusal, not a successful successor or full settlement through real native-owned pass buffers. The successful recycling fixtures in this document still use their separately labeled synthetic memory reader. See [runtime evidence](native-portal-runtime-evidence.md).
+
 ## Verification
 
 Run from this checkout with absolute script paths:

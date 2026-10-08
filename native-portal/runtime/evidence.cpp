@@ -43,6 +43,7 @@ bool Evidence::add(unsigned i,uint64_t p,size_t n) noexcept {
 }
 bool Evidence::read(uint64_t p,void *out,size_t n) const noexcept {
     if(!owner() || failed_ || !constructed_ || !bounded(p,n)) return false;
+    if(borrowed_slot_ && p==borrowed_slot_ && n==8) return read_self(p,out,n);
     for(const auto &s:spans_) {
         if(s.epoch==epoch_ && p>=s.begin && p-s.begin<=s.size && n<=s.size-(p-s.begin))
             return read_self(p,out,n);
@@ -50,7 +51,7 @@ bool Evidence::read(uint64_t p,void *out,size_t n) const noexcept {
     return false;
 }
 bool Evidence::fail() noexcept {
-    failed_=true;ready_=false;allocation_open_=false;call_=0;spans_={};return false;
+    failed_=true;ready_=false;allocation_open_=false;call_=0;spans_={};recordings_={};recording_=0;return false;
 }
 bool Evidence::initialized() const noexcept {return owner() && ready_ && !failed_;}
 render::Identity Evidence::identity() const noexcept {return initialized()?identity_:render::Identity{};}
@@ -70,6 +71,10 @@ bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
     }
     if(!constructed_) return false;
     const auto R=identity_.renderer;
+    if(pc==0x301808 || pc==0x30180c || pc==0x300a08 || pc==0x300a38 ||
+       pc==0x300b20 || pc==0x300c54 || pc==0x3003d0 || pc==0x311648 || pc==0x4b3d0 ||
+       pc==0x305260 || pc==0x2953a0 || pc==0x3018b0 || pc==0x2a2230 ||
+       pc==0x2a2320 || pc==0x2987d8 || pc==0x298840) return recording_event(pc,s);
     if(pc==0x29bd18 || pc==0x29c238) {
         if(s.x[0]!=R) return false;
         fail();return true; // revoke before native teardown, never retire native objects
@@ -108,7 +113,18 @@ bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
     }
     if(pc==0x29a528) { // before STR x1,[R+1380]; newly returned 16-byte wrapper
         if(ready_ || s.x[19]!=R || command_wrapper_ || !add(2,s.x[1],0x10)) return fail();
-        command_wrapper_=s.x[1];return true;
+        command_wrapper_=s.x[1];
+        uint64_t command=0;
+        if(!at(command_wrapper_+8,command)) return fail();
+        for(auto &c:recordings_) if(c.command==command && c.begun) {
+            if(!add(6,command,0x7b0)) return fail();
+            uint64_t vk=0,D=0;
+            if(!at(command+0x738,vk) || vk!=c.vk || !at(command+8,D) || D!=R+0x50) return fail();
+            // Issue only for the published owner, not the last-created pool member.
+            c.generation=generations_.issue();if(!c.generation) return fail();
+            recording_=c.generation;break;
+        }
+        return true;
     }
     if(pc==0x7fdbc) {
         if(ready_ || s.x[24]!=R || !(s.x[0]&255) || allocation_open_ || !resource_ || !command_wrapper_) return fail();
@@ -125,6 +141,35 @@ bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
         ready_=true;return true;
     }
     return false;
+}
+bool Evidence::route(arena::Bridge &bridge,uint64_t pc,arena::Saved &s) noexcept {
+    if(!owner() || failed_ || !pinned_ || borrowed_slot_) return false;
+    if(pc==0x7fda0) {
+        if(bridge_ || !event(pc,s)) return false;
+        bridge_=&bridge;
+        if(!bridge.arm({identity_.renderer,epoch_,static_cast<uint64_t>(tid_),identity_.renderer+0xec0,base_},true)) return fail();
+        return true;
+    }
+    if(bridge_!=&bridge) return false;
+    if(pc==0x29a14c) {
+        bridge.dispatch(s,arena::Allocate,epoch_,static_cast<uint64_t>(tid_));
+        if(s.x[1]!=arena::Capacity) return fail();
+        return event(pc,s);
+    }
+    if(pc==0x29a150) {
+        const auto slot=allocation_slot_;
+        if(!event(pc,s)) return false;
+        borrowed_slot_=slot;
+        bridge.dispatch(s,arena::AllocationReturn,epoch_,static_cast<uint64_t>(tid_));
+        borrowed_slot_=0;
+        return true;
+    }
+    if(pc==0x7fdbc) {
+        if(!event(pc,s)) return false;
+        bridge.dispatch(s,arena::Initialized,epoch_,static_cast<uint64_t>(tid_));
+        return bridge.ready();
+    }
+    return event(pc,s);
 }
 bool Evidence::arena(render::Arena &a) const noexcept {
     const auto R=identity_.renderer;uint64_t D=0,allocator_D=0,backing=0,map_owner=0,mapped=0,allocation_size=0,device=0;
@@ -146,7 +191,14 @@ bool Evidence::arena(render::Arena &a) const noexcept {
        (a.pass_end-a.pass_begin)%0x98 || (a.pass_end-a.pass_begin)/0x98>binding::pass_limit) return false;
     if(ready_ && (backing!=backing_ || index!=type_index_ || flags!=type_flags_ || count!=type_count_ ||
                   a.map!=map_ || a.buffer!=buffer_ || allocation_size!=allocation_bytes_)) return false;
-    a.capacity=capacity;a.cursor=cursor;a.recording_generation=0;return true;
+    a.capacity=capacity;a.cursor=cursor;a.recording_generation=recording_;
+    if(recording_) {
+        uint64_t vk=0,D=0;bool found=false;
+        if(!at(a.command+0x738,vk) || !at(a.command+8,D) || D!=R+0x50) return false;
+        for(const auto &c:recordings_) if(c.command==a.command && c.vk==vk && c.generation==recording_) found=true;
+        if(!found) return false;
+    }
+    return true;
 }
 bool Evidence::coherent(uint64_t resource) const noexcept {
     if(!initialized() || resource!=resource_) return false;
@@ -199,11 +251,22 @@ bool Evidence::write_callback(void *,uint64_t,const void *,size_t) noexcept {
 }
 bool Evidence::coherent_callback(void *p,uint64_t a) noexcept {return p && static_cast<Evidence*>(p)->coherent(a);}
 bool Evidence::live_callback(void *,const render::Context &) noexcept {
-    // Initial command recording and dynamic pass/cache/attachment graph lifetime
-    // are unresolved. Process mappings and empty vectors do not establish either.
+    // Initial command recording is attached, but dynamic pass/cache/attachment
+    // retention through BOTH eyes is unresolved. Mappings are not ownership.
     return false;
 }
-bool Evidence::observe(void *,const render::Binding &,uint64_t,uint64_t,render::Observation &out) noexcept {out={};return false;}
+bool Evidence::same_identity(const render::Identity &i) const noexcept {
+    return i.process_instance==identity_.process_instance && i.renderer==identity_.renderer &&
+        i.renderer_generation==identity_.renderer_generation && i.device==identity_.device &&
+        i.device_generation==identity_.device_generation;
+}
+bool Evidence::observe(void *p,const render::Binding &b,uint64_t w,uint64_t m,render::Observation &out) noexcept {
+    out={};if(!p) return false;
+    const auto &e=*static_cast<Evidence*>(p);render::Observation o{};
+    if(!e.initialized() || !e.identity_.device_generation || !e.same_identity(b.identity) ||
+       !e.snapshot(w,m,o) || !o.arena.recording_generation) return false;
+    out=o;return true;
+}
 arena::Memory Evidence::bridge_memory() noexcept {return {this,read_callback,write_callback,coherent_callback};}
 binding::PassReader Evidence::pass_reader() noexcept {return {this,read_callback,live_callback};}
 } // namespace native_portal::runtime

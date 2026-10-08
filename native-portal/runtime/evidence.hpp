@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 #include "../binding/pass.hpp"
+#include "../binding/lifecycle.hpp"
+#include <optional>
 #include <sys/types.h>
 
 namespace native_portal::runtime {
@@ -14,8 +16,8 @@ bool read_self(uint64_t, void *, size_t) noexcept;
 // before native teardown. Event arguments are exact saved native registers, not
 // IPC inputs. A digest supplied here is a preparer contract, not live-image proof.
 // Native objects remain owned by the compositor; this object owns only evidence.
-// Missing recording and pass-graph lifetime proof deliberately prevents observe
-// and PassReader::live from authorizing Adapter work. snapshot is diagnostic.
+// Recording attachment is event-issued; dynamic graph retention is not proved.
+// PassReader::live and native staging writes remain unsupported.
 class Evidence {
  public:
     Evidence() noexcept;
@@ -23,10 +25,16 @@ class Evidence {
     Evidence &operator=(const Evidence &)=delete;
     bool pin(uint64_t image_base, const char *sha256) noexcept;
     bool event(uint64_t relative_pc, const arena::Saved &) noexcept;
+    // Compose only bootstrap Bridge sites; borrow allocation output for the
+    // duration of this call, then revoke before native resumes/clears the slot.
+    bool route(arena::Bridge &,uint64_t relative_pc,arena::Saved &) noexcept;
     // Paired direct Adapter-owned native calls; no user-authored wrapper pointer.
     bool call_enter(const render::Registers &) noexcept;
     bool call_return(const render::Registers &) noexcept;
     bool initialized() const noexcept;
+    // Command must outlive Evidence. No caller generation or reader is accepted.
+    // Owner's queue/signal identities still belong to the separate Command binding.
+    bool bind_lifecycle(binding::Command &,const binding::Owner &) noexcept;
     render::Identity identity() const noexcept;
     bool coherent(uint64_t resource) const noexcept;
     bool snapshot(uint64_t wrapper,uint64_t marker,render::Observation &) const noexcept;
@@ -36,12 +44,22 @@ class Evidence {
  private:
     struct Span { uint64_t begin=0,size=0,epoch=0; };
     const pid_t pid_,tid_;
-    uint64_t base_=0,epoch_=0,allocation_sp_=0,allocation_slot_=0;
+    uint64_t base_=0,epoch_=0,allocation_sp_=0,allocation_slot_=0,borrowed_slot_=0;
+    arena::Bridge *bridge_=nullptr;
     uint64_t resource_=0,command_wrapper_=0,wrapper_=0,wrapper_resource_=0,marker_=0;
     uint64_t call_=0,backing_=0,map_=0,buffer_=0,allocation_bytes_=0;
     uint32_t requested_size_=0,type_index_=0,type_flags_=0,type_count_=0;
     render::Identity identity_{};
-    std::array<Span,6> spans_{};
+    std::array<Span,7> spans_{};
+    struct Recording { uint64_t command=0,vk=0,generation=0;bool begun=false; };
+    std::array<Recording,64> recordings_{};
+    binding::Generations generations_;
+    std::optional<binding::Lifecycle> lifecycle_;
+    binding::Owner lifecycle_owner_{};
+    uint64_t creation_=0,creation_sp_=0,begin_sp_=0,begin_vk_=0,recording_=0;
+    bool begin_open_=false,begin_success_=false;
+    bool recording_event(uint64_t,const arena::Saved &) noexcept;
+    bool same_identity(const render::Identity &) const noexcept;
     bool pinned_=false,constructed_=false,ready_=false,failed_=false,allocation_open_=false;
     bool owner() const noexcept;
     bool add(unsigned,uint64_t,size_t) noexcept;
@@ -50,6 +68,7 @@ class Evidence {
     bool arena(render::Arena &) const noexcept;
     bool fail() noexcept;
     static bool read_callback(void *,uint64_t,void *,size_t) noexcept;
+    static bool command_read_callback(void *,uint64_t,void *,size_t) noexcept;
     static bool write_callback(void *,uint64_t,const void *,size_t) noexcept;
     static bool coherent_callback(void *,uint64_t) noexcept;
     static bool live_callback(void *,const render::Context &) noexcept;

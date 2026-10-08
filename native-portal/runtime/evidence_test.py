@@ -23,9 +23,13 @@ if __name__=='__main__':
     env=dict(os.environ,TMPDIR='/home/jakeg/.hermes/cache/scratch')
     suffix='-asan' if a.sanitize else ''
     exe=B/('evidence-test'+suffix)
-    cmd=['g++','-std=c++17','-Wall','-Wextra','-Werror','-O1','-g','-pthread']
+    cmd=['g++','-std=c++17','-Wall','-Wextra','-Werror','-O1','-g','-pthread','-I'+str(R.parent/'include')]
     if a.sanitize:cmd+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
-    cmd +=[str(R/'evidence.cpp'),str(R/'evidence_test.cpp'),'-o',str(exe)]
+    sources=['runtime/evidence.cpp','runtime/recording.cpp','runtime/evidence_test.cpp',
+             'binding/lifecycle.cpp','binding/command.cpp','binding/pass.cpp',
+             'render/adapter.cpp','arena/bridge.cpp','src/aperture.cpp',
+             'control/protocol.cpp','control/policy.cpp','control/transport.cpp']
+    cmd +=[str(R.parent/p) for p in sources]+['-o',str(exe)]
     report['commands']=[]
     no_layer=cmd[:-1]+[str(exe)+'-no-layer','-DEVIDENCE_NO_LAYER']
     exit_code=0

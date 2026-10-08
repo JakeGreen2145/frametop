@@ -32,6 +32,10 @@ Coverage:
 - Either pipeline failure admits neither eye. Upload debt remains until both actual skips and exact queue/GPU/disposal/reset proof permit the separate rejected-pair settlement path.
 - 2000 consecutive fully settled frames through one persistent Adapter and Bridge. The loop observes 4000 upstream replacements, at most two resident tickets, one wrapper allocation and zero hot C++ allocations. It retains one generation issuer across command-address reuse and replaces Command/Lifecycle storage only after proved old-generation settlement. Queue/reclaim leave arena accounting at 1280; the separate native cursor-reset callback clears it for the next frame.
 
+## Inactive runtime evidence extension
+
+`runtime/evidence_test.py` now exercises the first-generation Evidence -> Bridge -> Adapter initialization/latch chain with a kernel self-process reader. The initial command identity comes from paired native creation/begin results and renderer publication, not this combined fixture's synthetic initial attachment. Its PassGate invocation deliberately refuses because whole-dispatch graph retention and private staging ownership remain unsupported. It does not replace the successful synthetic combined stereo/recycling tests below. See [runtime evidence](native-portal-runtime-evidence.md) for the exact supported events and remaining blockers.
+
 ## Facts and limitations
 
 The combined fixture's native memory, Vulkan handles/results, pipeline results, process/device identities, initial recording attachment and synchronous event scope coordinates are synthetic. Its portal labels come from the real Adapter and its command generations from the real persistent Generations issuer. These are not captured live03 portal submissions. The separate existing command suite still checks the six pinned historical queue/stamp/wait chains and labels its uncaptured fields synthetic.

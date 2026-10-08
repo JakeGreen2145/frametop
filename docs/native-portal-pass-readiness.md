@@ -112,6 +112,10 @@ systemd-run --user --wait --pipe \
 
 The existing render suite additionally needs the shown explicit TMPDIR environment for its private IPC fixture. An initial run without it failed constructing the fixture path; the final run above corrected the runner environment without editing existing tests. The emulator uses an explicit stop hook because a reused Unicorn translation block can otherwise pass a newly selected stop address.
 
+## Runtime reader status
+
+`runtime/Evidence` can now authenticate the initially published command generation and initialize/latch the Adapter through a real self-process reader. It still supplies `PassReader::live=false`. Its CPU test invokes this PassGate against real allocated pass, packet, cache and attachment objects and verifies lifetime refusal with zero pipeline lookups and no commit. These objects' readable addresses are not evidence of native retention. No successful whole-dispatch graph or private staging binding is claimed. The exact decoded scopes and blockers are recorded in [runtime evidence](native-portal-runtime-evidence.md).
+
 ## Remaining integration blockers
 
 1. Prove a legal cold-pass preparation split that preserves native barrier/query order, or keep the warm-only capability restriction. Do not replace this with count flags or execute the encoder twice.

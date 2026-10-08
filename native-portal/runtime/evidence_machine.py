@@ -80,6 +80,49 @@ class Allocation(p.Probe):
         assert mapped==self.rq(resource+0xa0)==self.R+0x20000 and self.ru(resource+0x98)==1
         return {'selected_index':self.indices[-1],'calls':self.calls,'same_resource_through_allocate_bind_map':True}
 
+class InitialBegin(p.Probe):
+    """Execute the nested native allocator/begin caller; Vulkan alone is faked."""
+    def __init__(self, raw):
+        super().__init__(img)
+        self.raw=raw;self.seen=[];self.C=self.R+0x8000;self.pool=self.R+0x9000
+        self.sp0=self.STACK+0x10000
+        self.wq(self.C+8,self.R+0x50);self.wq(self.C+0x50,self.pool)
+        self.wq(self.R+0xa78,0x1234);self.wq(self.pool+0x188,0xabc)
+        for j,got in enumerate([0x5ae348,0x5ae3e0]):
+            cell=self.R+0xa000+8*j;self.wq(got,cell);self.wq(cell,self.STOP+0x200+4*j)
+    def hook(self,uc,a,size,user):
+        sp=uc.reg_read(p.ar.UC_ARM64_REG_SP)
+        if a==0x301808:
+            assert self.x(0)==self.x(20)==self.C and sp==self.sp0
+            self.seen.append('create-call')
+        if a==self.STOP+0x200:
+            assert self.x(0)==0x1234 and self.x(2)==self.C+0x738
+            assert self.rq(self.x(1)+16)==0xabc
+            self.wq(self.x(2),0xc001);self.x(0,0);uc.reg_write(p.ar.UC_ARM64_REG_PC,self.x(30));return
+        if a==0x30b5f8:
+            uc.reg_write(p.ar.UC_ARM64_REG_PC,self.x(30));return
+        if a==0x300a08:
+            assert self.x(0)==self.x(19)==self.C and self.x(30)==0x300ae0 and sp==self.sp0-0x40
+            self.seen.append('begin-entry')
+        if a==self.STOP+0x204:
+            assert self.x(0)==0xc001 and self.ru(self.x(1))==42
+            assert self.x(1)==self.sp0-0x60
+            self.x(0,self.raw&0xffffffff);uc.reg_write(p.ar.UC_ARM64_REG_PC,self.x(30));return
+        if a==0x300a38:
+            assert self.x(0)==self.raw&0xffffffff and sp==self.sp0-0x70
+            assert self.rq(sp+8)==0x300ae0 and self.x(19)==self.C
+            self.seen.append('raw-result')
+        if a==0x1744b0: # original failure diagnostics, not a fabricated success
+            uc.reg_write(p.ar.UC_ARM64_REG_PC,self.x(30));return
+        if a==0x30180c:
+            assert self.x(20)==self.C and sp==self.sp0 and self.x(0)==int(self.raw==0)
+            self.seen.append('create-return')
+        super().hook(uc,a,size,user)
+    def check(self):
+        self.x(20,self.C);self.run(0x301804,stop=0x301810)
+        assert self.seen==['create-call','begin-entry','raw-result','create-return']
+        return {'raw':self.raw,'native_boolean':self.x(0),'scopes':self.seen}
+
 # Text expectations are semantic layout guards decoded from hash-pinned bytes.
 # Mutating one expected operand below would fail even on the right ELF.
 guards={
@@ -95,6 +138,17 @@ guards={
  0x2ffb9c:('mov','x6, x19'),0x2ffbac:('bl','#0x2fee38'),
  0x2fe01c:('add','x5, x19, #0xa0'),0x2fe030:('ldr','x1, [x19, #0x50]'),
  0x2fe03c:('ldr','x0, [x7, #0xa28]'),0x300a24:('ldr','x0, [x0, #0x738]'),
+ 0x3017e4:('mov','x0, #0x7b0'),0x301800:('bl','#0x303ce0'),
+ 0x301804:('mov','x0, x20'),0x301808:('bl','#0x300a70'),
+ 0x30180c:('tst','w0, #0xff'),0x300a70:('stp','x29, x30, [sp, #-0x40]!'),
+ 0x300ad8:('mov','x0, x19'),0x300adc:('bl','#0x300a08'),
+ 0x300a08:('stp','x29, x30, [sp, #-0x30]!'),0x300a38:('cbnz','w0, #0x300a48'),
+ 0x300a40:('ldp','x29, x30, [sp], #0x30'),0x300ae8:('ldp','x29, x30, [sp], #0x40'),
+ 0x3003d8:('str','xzr, [x1, #0x738]'),0x31166c:('strb','w0, [x1, #0x28]'),
+ 0x3052dc:('ldr','x1, [x19, #8]'),0x3052ec:('bl','#0x311648'),
+ 0x2953b0:('bl','#0x305260'),0x2953c4:('b','#0x4b3d0'),
+ 0x2a24dc:('bl','#0x2a1928'),0x2a1f3c:('ldp','x1, x3, [x26, #0x50]'),
+ 0x2a231c:('str','x25, [x19, #0x15a8]'),0x2a230c:('bl','#0x4bef0'),
 }
 for pc,expected in guards.items():
     ins=list(img.cs.disasm(img.data(pc,4),pc));assert len(ins)==1
@@ -129,10 +183,16 @@ assert z.rq(slot)==0 and z.rq(R+0x1390)==resource
 z.x(19,R);z.x(24,R);z.x(0,0xdeadbeef)
 z.run(0x7fdb0,stop=0x7fdb4);assert z.x(0)==R
 z.x(0,0x101);z.x(24,R);z.run(0x7fdbc,stop=0x7fdc0);assert z.x(23)==1 and z.x(24)==R
-out={'elf_sha256':p.PIN,'layout_guards':len(guards),'allocation_paths':results,'selector_cases':selector,
-     'source_sha256':{str(f):hashlib.sha256(f.read_bytes()).hexdigest() for f in [pathlib.Path(__file__),WORK/'frame-native-live-render-analysis/analyze.py',ROOT/'evidence.cpp',ROOT/'evidence.hpp']},
+# Execute the publication instruction: only the native x1 wrapper is stored.
+z=p.Probe(img);wrapper=z.R+0x14000;command=z.R+0x15000
+z.wq(wrapper+8,command);z.x(19,z.R);z.x(1,wrapper)
+z.run(0x29a528,stop=0x29a52c)
+assert z.rq(z.R+0x1380)==wrapper and z.rq(wrapper+8)==command
+initial_begin=[InitialBegin(raw).check() for raw in [0,-4,1]]
+out={'initial_begin':initial_begin,'elf_sha256':p.PIN,'layout_guards':len(guards),'allocation_paths':results,'selector_cases':selector,
+     'source_sha256':{str(f):hashlib.sha256(f.read_bytes()).hexdigest() for f in [pathlib.Path(__file__),WORK/'frame-native-live-render-analysis/analyze.py',ROOT/'evidence.cpp',ROOT/'evidence.hpp',ROOT/'recording.cpp']},
      'output_slot_consumed_and_cleared':True,'external_boundaries':'synthetic Vulkan, debug strings, libc allocation and selector vector storage; no native GPU calls',
-     'unproven':'native object destruction coverage, initial command generation, pass graph lifetime, runtime image/transport, owner thread handoff'}
+     'unproven':'exhaustive destruction coverage, whole-dispatch graph/cache/pipeline retention, K ownership and Adapter staging registration, runtime image/transport, owner thread handoff'}
 B=ROOT.parent/'integration'/'build'/'runtime-evidence';B.mkdir(parents=True,exist_ok=True)
 (B/'instruction-results.json').write_text(json.dumps(out,indent=2)+'\n')
 print(json.dumps(out,indent=2))
