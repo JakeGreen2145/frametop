@@ -88,6 +88,7 @@ struct ContinuousFixture {
     }
     Context context() { return {native.binding.identity, native.obs.arena.recording_generation}; }
     BackendResult draw(unsigned eye) {
+        prepare_commit(adapter, native, context(), source.lookup());
         return adapter.backend(native.records[eye], context(), source.lookup());
     }
     void stereo() {
@@ -479,7 +480,7 @@ static void recycled_generation_refusals() {
         assert(!f.native.uploads && !f.native.enqueues);
     }
 }
-int main(int argc, char **argv) {
+int continuous_suite_main(int argc, char **argv) {
     live_pass_appends();
     pass_structure_refusals();
     pass_progression_refusals();

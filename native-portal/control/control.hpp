@@ -48,20 +48,25 @@ public:
 };
 struct Lease { uint64_t epoch=0, origin=0, generation=0, deadline_ns=0, revocation=0; uint32_t flags=0; Geometry geometry; };
 struct BackendStatus {
-    bool capable=false, serialized=false, external_clear=false, fault=false;
+    bool capable=false, serialized=false, external_clear=false, fault=false, pending=false;
     uint64_t origin=0, submitted_epoch=0, submitted_frame=0;
 };
 // Only a proven adapter may publish capable/serialized/external_clear. In
 // production the default stays unsupported. Submission is an observer fact.
 class Backend {
     Mailbox<BackendStatus> status_; Mailbox<Lease> lease_; std::atomic<bool> collision_{false};
+    std::atomic<bool> render_pending_{false};
     std::atomic<uint64_t> revoked_{0}; std::atomic<Reason> blocked_{Reason::None}; std::atomic<bool> new_ready_{true};
 public:
     Backend() { status_.publish(BackendStatus{}); lease_.publish(Lease{}); }
+    // Single render owner; independent of lease revocation and demand settlement.
+    void render_pending(bool value) noexcept { render_pending_=value; }
+    bool render_pending() const noexcept { return render_pending_.load(); }
     void refuse() noexcept { collision_=true; }
     bool publish(const BackendStatus& s) { if(status_.publish(s))return true; collision_=true; return false; }
     bool status(BackendStatus& s) const {
         if(collision_||!status_.read(s))return false;
+        s.pending=render_pending_.load();
         auto reason=blocked_.load();
         if(reason!=Reason::None)s.external_clear=false;
         if(reason==Reason::NativeFault)s.fault=true;
@@ -71,7 +76,7 @@ public:
     void invalidate(Reason r) noexcept { blocked_=r; if(revoked_.fetch_add(1)==UINT64_MAX)refuse(); }
     void settled() noexcept { blocked_=Reason::None; } // native owner, verified idle only
     void new_lease_ready(bool value) noexcept { new_ready_=value; }
-    bool new_lease_ready() const noexcept { return new_ready_.load(); }
+    bool new_lease_ready() const noexcept { return new_ready_.load()&&!render_pending_.load(); }
     bool lease(Lease& out,uint64_t now) const;
     bool publish_lease(const Lease& l) { if(lease_.publish(l))return true; collision_=true; return false; }
 };

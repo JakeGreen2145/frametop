@@ -12,7 +12,7 @@ struct Frame {
 class FrameGate {
     Backend& backend_; const std::thread::id owner_=std::this_thread::get_id();
     std::atomic_flag busy_=ATOMIC_FLAG_INIT; uint64_t last_=0,active_=0;
-    uint32_t eyes_=0; bool invalid_=true;
+    uint32_t eyes_=0; bool invalid_=true; uint64_t committed_=0;
     bool enter() {
         if(std::this_thread::get_id()!=owner_||busy_.test_and_set()) { backend_.refuse(); return false; }
         return true;
@@ -28,6 +28,7 @@ public:
     explicit FrameGate(Backend& b):backend_(b) {}
     Frame begin(uint64_t id,const PolicyInput& inputs,bool tracking,bool safety,bool stock_active,uint64_t now) {
         Frame f; if(!enter())return f;
+        if(committed_) { leave(); return f; }
         if(!id||id<=last_) { backend_.refuse(); leave(); return f; }
         last_=active_=id; eyes_=0; invalid_=false; f.id=id;
         bool lease=backend_.lease(f.lease,now);
@@ -45,6 +46,24 @@ public:
     bool accept(const Frame& f,uint64_t now) {
         if(!enter())return false;
         bool ok=accepted(f,now); leave(); return ok;
+    }
+    // Commit once before either draw. end()/Off cannot cancel encoded work.
+    bool commit(const Frame& f,uint64_t now) {
+        if(!enter())return false;
+        bool ok=!committed_&&accepted(f,now);
+        if(ok)committed_=f.id;
+        leave(); return ok;
+    }
+    bool committed(const Frame& f) {
+        if(!enter())return false;
+        bool ok=f.id&&committed_==f.id;
+        leave(); return ok;
+    }
+    void settle(const Frame& f) {
+        if(!enter())return;
+        if(committed_==f.id)committed_=0;
+        if(active_==f.id)invalid_=true;
+        leave();
     }
     // Call only after the actual native stereo submission has succeeded. This
     // reports submission, never exposure freshness or visible headset pixels.

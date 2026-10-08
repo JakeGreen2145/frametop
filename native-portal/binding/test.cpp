@@ -66,8 +66,9 @@ struct Native : Fake {
     static bool pipeline_bound(void *u, const Provenance &p, Registers &r) noexcept {
         auto &n = *static_cast<Native *>(u);
         n.provenances[p.eye] = p;
-        return n.command.backend_enter(scoped(n.owner, n.chain.backend[p.eye]), p) &&
-               Fake::pipeline(u, p, r);
+        // Preparation resolves pipelines only. The real backend scope starts
+        // later, when the committed packet actually reaches encoding.
+        return Fake::pipeline(u, p, r);
     }
     static bool submission_bound(void *u, const Provenance &a, const Provenance &b,
                                  Completion &out) noexcept {
@@ -142,9 +143,15 @@ struct Integrated {
         assert(adapter.enqueue(source.eye(0)));
         assert(adapter.enqueue(source.eye(1)));
         assert(adapter.outer_return());
+        Context ctx{native.binding.identity, native.owner.recording};
+        auto lookup = source.lookup(); lookup.x[0] = native.binding.identity.renderer;
+        auto input = pair_input(native, ctx, lookup);
+        input.eyes[1].pass = input.eyes[0].pass; // synthetic single-pass readiness
+        const auto generation = adapter.prepare(input);
+        assert(generation && adapter.commit(generation));
         for (unsigned i = 0; i < 2; ++i) {
-            Context ctx{native.binding.identity, native.owner.recording};
-            assert(adapter.backend(native.records[i], ctx, source.lookup()).decision == Decision::Portal);
+            assert(native.command.backend_enter(scoped(native.owner, native.chain.backend[i]), native.provenances[i]));
+            assert(adapter.backend(native.records[i], ctx, lookup).decision == Decision::Portal);
             assert(native.command.backend_return(scoped(native.owner, native.chain.backend[i]), true));
         }
     }

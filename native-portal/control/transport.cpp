@@ -75,6 +75,14 @@ struct Server::Impl {
     Reply reply(const Peer& p,const BackendStatus& b) {
         Reply r; r.instance=instance; r.origin=b.origin; r.sequence=p.sequence; r.epoch=p.epoch;
         r.capability=b.capable&&b.serialized;
+        // Render debt is independent of lease/owner/demand teardown. A released
+        // lease cannot report completed Off while its native work is retained.
+        if(bridge.render_pending()&&(!current.epoch||p.epoch!=current.epoch||
+           p.revoked!=Reason::None||!b.external_clear||b.fault||!r.capability)) {
+            r.state=State::Draining;
+            r.reason=p.revoked!=Reason::None?p.revoked:!current.epoch?Reason::Off:Reason::Busy;
+            return r;
+        }
         if(p.revoked!=Reason::None) { r.state=p.revoked==Reason::External?State::SuspendedExternal:State::Fault; r.reason=p.revoked; return r; }
         if(!b.capable||!b.serialized||!b.origin) { r.reason=Reason::Unsupported; return r; }
         if(b.fault) { r.state=State::Fault; r.reason=Reason::NativeFault; return r; }

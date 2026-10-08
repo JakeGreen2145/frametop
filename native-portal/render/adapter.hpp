@@ -64,6 +64,22 @@ struct Context {
     Identity identity;
     uint64_t recording_generation = 0;
 };
+// Binding contract, NOT a native extractor: complete_scan certifies that the
+// entire dispatch contains exactly these two owned packets (all stock untouched).
+// ready certifies actual per-pass state and exact lookup arguments are ready and
+// remain usable through encoding in this command generation. False is unsupported.
+struct EyePreparation {
+    Recorded record;
+    Context context;
+    Registers lookup;
+    Address pass = 0;
+    bool ready = false;
+};
+struct PairPreparation {
+    std::array<EyePreparation, 2> eyes{};
+    Address command = 0;
+    bool complete_scan = false;
+};
 struct Completion {
     uint64_t frame = 0, command = 0, synchronization = 0, serial = 0;
     int8_t subserial = 0;
@@ -79,8 +95,10 @@ struct Callbacks {
     bool (*headroom)(void *, const Binding &, const Arena &,
                      uint64_t aligned_end) noexcept = nullptr;
     bool (*stock_blend)(void *, const Binding &, Address) noexcept = nullptr;
-    // Execute exact x0..x3 lookup and approve its actual returned pipeline for
-    // this authenticated pair, marker and device. False/null means DROP.
+    // During prepare only: execute exact per-pass x0..x3 lookup without drawing,
+    // approve its actual pipeline and retain that pipeline's native lifetime
+    // through encoding. A cache hit still requires approval. False/null refuses
+    // BOTH eyes before commit; backend never calls this callback.
     bool (*pipeline)(void *, const Provenance &, Registers &) noexcept = nullptr;
     // Observe actual successful stereo queue submission and exact immutable token.
     bool (*submission)(void *, const Provenance &, const Provenance &,
@@ -112,6 +130,8 @@ struct BackendResult {
 struct State {
     bool initialized = false, frame_invalid = true, cpu_done = false, stereo_submitted = false,
          gpu_complete = false, retired = false, cpu_settled = false;
+    bool prepared = false, committed = false, pending = false;
+    uint64_t pair_generation = 0; // never reused, derived from the reserved ticket identity
     size_t tickets_used = 0; // resident entries, not lifetime identities
     size_t tickets_capacity = 0;
     uint64_t tickets_issued = 0; // cumulative identities reserved by this adapter
@@ -134,6 +154,11 @@ class Adapter {
     bool latch(const Frame &) noexcept;
     bool enqueue(const EyeInput &) noexcept;
     bool outer_return() noexcept;
+    // One prepare attempt per retained frame; resolves BOTH pipelines without
+    // drawing. Commit rechecks current authorization once, immediately before
+    // encoding. Off/expiry after commit stops new work, not the committed pair.
+    uint64_t prepare(const PairPreparation &) noexcept;
+    bool commit(uint64_t pair_generation) noexcept;
     BackendResult backend(const Recorded &, const Context &, Registers lookup) noexcept;
     bool submitted() noexcept;
     bool poll_completion() noexcept;

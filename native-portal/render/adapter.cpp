@@ -88,7 +88,9 @@ struct Adapter::Impl {
     bool attempted = false;
     Frame frame;
     unsigned eyes = 0;
-    bool returned = false;
+    bool returned = false, preparation_attempted = false;
+    std::array<EyePreparation, 2> prepared{};
+    std::array<Address, 2> pipelines{};
     std::array<size_t, 2> eye_slots{};
     ft::portal::Mat4 origin{};
     uint64_t recording = 0;
@@ -131,9 +133,13 @@ struct Adapter::Impl {
     bool call(Registers &r) const noexcept { return cb.call && cb.call(cb.user, r); }
     bool native_debt = false, stopped = false;
     bool reject() noexcept {
-        status.frame_invalid = true;
-        if (frame.id)
-            gate.end(frame);
+        // Admission failure cannot roll back a committed mixed native command.
+        // Stop new work but retain the pair's one-shot encoding authorization.
+        if (status.committed) stopped = true;
+        else {
+            status.frame_invalid = true;
+            if (frame.id) gate.end(frame);
+        }
         return false;
     }
     bool live() const noexcept {
@@ -146,6 +152,43 @@ struct Adapter::Impl {
                current.generation == frame.lease.generation &&
                current.revocation == frame.lease.revocation && current.flags == frame.lease.flags &&
                same_geometry(current.geometry, frame.lease.geometry);
+    }
+    Ticket *authenticate(const Recorded &record, const Context &context) noexcept {
+        uint64_t number = 0;
+        if (!decode_ticket(record.label, record.label_size, number)) return nullptr;
+        for (size_t i = 0; i < used; ++i) {
+            auto &ticket = tickets[i];
+            const auto &auth = ticket.provenance;
+            if (auth.ticket != number) continue;
+            if (auth.eye > 1 || !same(auth.identity, context.identity) ||
+                context.recording_generation != auth.recording_generation ||
+                auth.recording_generation != recording || auth.frame != frame.id ||
+                auth.lease != frame.lease.epoch || auth.origin != frame.lease.origin ||
+                auth.geometry != frame.lease.generation || auth.deadline != frame.lease.deadline_ns ||
+                auth.revocation != frame.lease.revocation || auth.marker != marker.load() ||
+                auth.wrapper != wrapper || record.prefix != ticket.prefix ||
+                !supported_pair(auth.vs, auth.ps) ||
+                !same(record.descriptors[0], auth.descriptors[0]) ||
+                !same(record.descriptors[4], auth.descriptors[1])) return nullptr;
+            return &ticket;
+        }
+        return nullptr;
+    }
+    bool native_current() noexcept {
+        Observation current;
+        if (!status.initialized || status.retired || status.frame_invalid ||
+            !validated(Phase::Current) || !observe(current) ||
+            !recording_progress(frame_arena, current.arena) ||
+            current.arena.cursor < highwater || current.wrapper_resource != wrapper_resource ||
+            current.wrapper_size != 592 || current.attachment != attachment ||
+            !validated(Phase::Current)) return false;
+        frame_arena = current.arena;
+        highwater = current.arena.cursor;
+        return true;
+    }
+    void pending(bool value) noexcept {
+        status.pending = value;
+        control.render_pending(value);
     }
     bool observe(Observation &o) const noexcept {
         return cb.observe && cb.observe(cb.user, binding, wrapper, marker.load(), o);
@@ -222,6 +265,11 @@ bool Adapter::latch(const Frame &frame) noexcept {
     p.status.stereo_submitted = false;
     p.status.gpu_complete = false;
     p.status.cpu_settled = false;
+    p.status.prepared = p.status.committed = false;
+    p.status.pair_generation = 0;
+    p.preparation_attempted = false;
+    p.prepared = {};
+    p.pipelines = {};
     if (!p.live())
         return p.reject();
     return true;
@@ -304,6 +352,7 @@ bool Adapter::enqueue(const EyeInput &in) noexcept {
            0,
            0};
     p.native_debt = true; // even an interrupted upload can register native references
+    p.pending(true);
     if (!p.call(r))
         return p.reject(); // never interpret upload x0 as Boolean
     Observation after;
@@ -368,66 +417,82 @@ bool Adapter::outer_return() noexcept {
     p.returned = true;
     return true; // deliberately NOT FrameGate::end
 }
+uint64_t Adapter::prepare(const PairPreparation &input) noexcept {
+    auto &p = *p_;
+    Impl::Guard guard(p);
+    if (!guard.ok) return 0;
+    if (p.preparation_attempted || p.status.committed || !p.live() ||
+        p.eyes != 3 || !p.returned || !p.gate.accept(p.frame, p.cb.clock())) {
+        p.reject(); return 0;
+    }
+    p.preparation_attempted = true;
+    // Copy all caller input before invoking callbacks. Never retain borrowed
+    // packet addresses or allow a callback to replace the other eye's snapshot.
+    const PairPreparation snapshot = input;
+    if (!snapshot.complete_scan || !p.native_current() ||
+        snapshot.command != p.frame_arena.command) { p.reject(); return 0; }
+    unsigned seen = 0;
+    for (const auto &eye : snapshot.eyes) {
+        auto *ticket = p.authenticate(eye.record, eye.context);
+        if (!ticket || !eye.ready || !eye.lookup.target ||
+            eye.lookup.x[0] != p.binding.identity.renderer ||
+            eye.pass < p.frame_arena.pass_begin || eye.pass >= p.frame_arena.pass_end ||
+            (eye.pass - p.frame_arena.pass_begin) % 0x98 || ticket->consumed ||
+            (seen & (1u << ticket->provenance.eye))) { p.reject(); return 0; }
+        seen |= 1u << ticket->provenance.eye;
+        p.prepared[ticket->provenance.eye] = eye;
+    }
+    if (seen != 3) { p.reject(); return 0; }
+    for (unsigned eye = 0; eye < 2; ++eye) {
+        Registers lookup = p.prepared[eye].lookup;
+        if (!p.live() || !p.cb.pipeline(p.cb.user, p.tickets[p.eye_slots[eye]].provenance, lookup) ||
+            !lookup.x[0] || !p.native_current() || !p.live() ||
+            !p.gate.accept(p.frame, p.cb.clock())) { p.reject(); return 0; }
+        p.pipelines[eye] = lookup.x[0];
+    }
+    p.status.prepared = true;
+    // Tickets are process-wide, never reused, and reserved in eye order.
+    p.status.pair_generation = p.tickets[p.eye_slots[0]].provenance.ticket;
+    return p.status.pair_generation;
+}
+bool Adapter::commit(uint64_t generation) noexcept {
+    auto &p = *p_;
+    Impl::Guard guard(p);
+    if (!guard.ok) return false;
+    if (!generation || generation != p.status.pair_generation || !p.status.prepared ||
+        p.status.committed || !p.native_current() || !p.live() ||
+        !p.gate.commit(p.frame, p.cb.clock())) return p.reject();
+    p.status.committed = true;
+    return true;
+}
 BackendResult Adapter::backend(const Recorded &record, const Context &context,
                                Registers lookup) noexcept {
     auto &p = *p_;
-    // Marker first. Spoofed labels on stock packets are irrelevant. This path
-    // forwards original registers without acquiring our owner-thread admission.
+    // Unmarked stock lookup is unchanged, including mixed-command stock work.
     const auto marker = load<Address>(record.prefix, 8);
     if (!marker || marker != p.marker.load()) {
-        if (!p.call(lookup))
-            return {Decision::Stock, 0};
+        if (!p.call(lookup)) return {Decision::Stock, 0};
         return {Decision::Stock, lookup.x[0]};
     }
     Impl::Guard guard(p);
-    if (!guard.ok)
-        return {};
-    auto drop = [&]() {
-        p.reject();
-        return BackendResult{};
-    };
-    uint64_t number = 0;
-    if (!decode_ticket(record.label, record.label_size, number))
+    if (!guard.ok) return {};
+    auto drop = [&]() { p.reject(); return BackendResult{}; };
+    auto *ticket = p.authenticate(record, context);
+    if (!ticket || ticket->consumed || !p.status.committed ||
+        !p.gate.committed(p.frame)) return drop();
+    const unsigned eye = ticket->provenance.eye;
+    const auto &cached = p.prepared[eye];
+    if (lookup.target != cached.lookup.target || lookup.x != cached.lookup.x ||
+        record.label != cached.record.label || record.label_size != cached.record.label_size)
         return drop();
-    Ticket *found = nullptr;
-    for (size_t i = 0; i < p.used; ++i)
-        if (p.tickets[i].provenance.ticket == number) {
-            found = &p.tickets[i];
-            break;
-        }
-    if (!found)
-        return drop();
-    auto &ticket = *found;
-    const auto &auth = ticket.provenance;
-    if (ticket.consumed)
-        return drop();
-    ticket.consumed = true; // consume once, also when later checks fail
-    if (!p.live() || p.eyes != 3 || !p.returned || auth.eye > 1 ||
-        !same(auth.identity, context.identity) ||
-        context.recording_generation != auth.recording_generation ||
-        auth.recording_generation != p.recording || auth.frame != p.frame.id ||
-        auth.lease != p.frame.lease.epoch || auth.origin != p.frame.lease.origin ||
-        auth.geometry != p.frame.lease.generation || auth.deadline != p.frame.lease.deadline_ns ||
-        auth.revocation != p.frame.lease.revocation || auth.marker != marker ||
-        auth.wrapper != p.wrapper || record.prefix != ticket.prefix ||
-        !supported_pair(auth.vs, auth.ps) || !same(record.descriptors[0], auth.descriptors[0]) ||
-        !same(record.descriptors[4], auth.descriptors[1]) || !p.gate.accept(p.frame, p.cb.clock()))
-        return drop();
-    Observation current;
-    if (!p.observe(current) || !recording_progress(p.frame_arena, current.arena) ||
-        current.arena.cursor < p.highwater || current.wrapper_resource != p.wrapper_resource ||
-        current.wrapper_size != 592 || current.attachment != attachment)
-        return drop();
-    if (!p.cb.pipeline(p.cb.user, auth, lookup) || !lookup.x[0] || !p.live() ||
-        !p.gate.accept(p.frame, p.cb.clock()))
-        return drop();
-    // Remember actual accepted progress so the second deferred backend cannot
-    // roll back to a prior extent/cursor that merely exceeds the upload boundary.
-    p.frame_arena = current.arena;
-    p.highwater = current.arena.cursor;
-    ticket.admitted = true;
+    for (unsigned i = 0; i < record.descriptors.size(); ++i)
+        if (!same(record.descriptors[i], cached.record.descriptors[i])) return drop();
+    // Revocation/expiry/external demand is NOT native lifetime revocation. Only
+    // that latter condition can forbid finishing an already committed pair.
+    if (!p.native_current()) { p.status.frame_invalid = true; return drop(); }
+    ticket->consumed = ticket->admitted = true;
     p.status.cpu_done = p.tickets[p.eye_slots[0]].admitted && p.tickets[p.eye_slots[1]].admitted;
-    return {Decision::Portal, lookup.x[0]};
+    return {Decision::Portal, p.pipelines[eye]}; // no new per-eye pipeline lookup
 }
 bool Adapter::submitted() noexcept {
     auto &p = *p_;
@@ -488,6 +553,8 @@ bool Adapter::reclaim() noexcept {
         p.tickets[i] = {};
     p.used = p.status.tickets_used = 0;
     p.status.cpu_settled = true;
+    p.gate.settle(p.frame);
+    p.pending(false);
     return true;
 }
 void Adapter::off() noexcept {
@@ -522,6 +589,8 @@ bool Adapter::retire() noexcept {
     // Retain marker identity as a tombstone: late owned records must never stock-forward.
     p.status.retired = true;
     p.status.initialized = false;
+    p.gate.settle(p.frame);
+    p.pending(false);
     return true;
 }
 State Adapter::state() const noexcept {

@@ -34,6 +34,10 @@ struct Fake {
     std::array<Recorded, 32> records{};
     std::array<ft::portal::PortalConstants, 32> payloads{};
     Adapter *reenter = nullptr;
+    int fail_pipeline_eye = -1;
+    bool check_lookup = false;
+    std::array<Registers, 2> expected_lookup{};
+    void (*during_pipeline)(Fake &, unsigned) = nullptr;
     Fake() {
         obs.arena = {0x1000, 0x11c8, 3, 4, 5, 6, 0x100000, 0x80000, 0, 64, 7};
         obs.wrapper_resource = 0x600;
@@ -111,9 +115,14 @@ struct Fake {
         assert(p.marker == f.marker && p.wrapper == f.wrapper);
         assert(p.identity.device == f.binding.identity.device && supported_pair(p.vs, p.ps));
         assert(p.descriptors[0].range == 592 && p.descriptors[1].range == 592);
+        if (f.check_lookup) {
+            assert(r.target == f.expected_lookup[p.eye].target);
+            assert(r.x == f.expected_lookup[p.eye].x);
+        }
         ++f.lookups;
-        r.x[0] = 0x777;
-        return f.pipeline_ok;
+        r.x[0] = 0x777 + p.eye;
+        if (f.during_pipeline) f.during_pipeline(f, p.eye);
+        return f.pipeline_ok && int(p.eye) != f.fail_pipeline_eye;
     }
     static bool submission(void *u, const Provenance &a, const Provenance &b,
                            Completion &c) noexcept {
@@ -135,6 +144,21 @@ struct Fake {
                 pipeline, submission, completed, retire_marker, clock_now};
     }
 };
+// Explicit CPU-only pass/readiness contract. No native extraction is implied.
+static PairPreparation pair_input(const Fake &f, Context context, Registers lookup) {
+    PairPreparation input;
+    input.complete_scan = true;
+    input.command = f.obs.arena.command;
+    for (unsigned eye = 0; eye < 2; ++eye)
+        input.eyes[eye] = {f.records[eye], context, lookup,
+                          f.obs.arena.pass_begin + eye * 0x98, true};
+    return input;
+}
+static bool prepare_commit(Adapter &a, const Fake &f, Context context, Registers lookup) {
+    if (a.state().committed) return true;
+    const auto generation = a.prepare(pair_input(f, context, lookup));
+    return generation && a.commit(generation);
+}
 struct Fixture {
     Backend control;
     FrameGate gate{control};
@@ -193,6 +217,7 @@ struct Fixture {
         return r;
     }
     BackendResult draw(unsigned eye) {
+        prepare_commit(adapter, fake, context(), lookup());
         return adapter.backend(fake.records[eye], context(), lookup());
     }
     void stereo() {
@@ -230,6 +255,7 @@ static void stereo_bytes_and_deferred() {
     assert(f.adapter.enqueue(left));
     assert(f.adapter.enqueue(right));
     assert(f.adapter.outer_return()); // keep FrameGate alive through actual deferred schedule
+    assert(prepare_commit(f.adapter, f.fake, f.context(), f.lookup()));
     for (unsigned eye = 0; eye < 2; ++eye) {
         auto original = eye ? right : left;
         const auto &rec = f.fake.records[eye];
@@ -709,6 +735,7 @@ struct QueueFixture {
         assert(adapter.outer_return());
     }
     BackendResult draw(unsigned eye) {
+        prepare_commit(adapter, fake, source.context(), source.lookup());
         return adapter.backend(fake.records[eye], source.context(), source.lookup());
     }
     void cpu() {
@@ -772,8 +799,10 @@ static void submission_observation_negatives() {
     for (unsigned mode = 0; mode < 2; ++mode) {
         QueueFixture f;
         assert(f.draw(0).decision == Decision::Portal);
-        if (mode == 0) now = 100;
-        else f.adapter.off();
+        // Off/expiry now finish a committed pair (covered in commit tests).
+        // Genuine native lifetime loss still forbids second-eye encoding.
+        if (mode == 0) ++f.fake.obs.arena.recording_generation;
+        else f.fake.valid = false;
         assert(f.draw(1).decision == Decision::Drop);
         assert(!f.adapter.state().cpu_done);
         // Even a claimed token cannot replace missing second-eye CPU admission.
