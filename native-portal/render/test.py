@@ -19,7 +19,7 @@ out = build / ('test-sanitize' if a.sanitize else 'test')
 cmd = ['g++', '-std=c++17', '-Wall', '-Wextra', '-Werror', '-g', '-pthread', '-I'+str(root/'include')]
 if a.sanitize:
     cmd += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie']
-cmd += [str(root/x) for x in ['render/test.cpp','render/adapter.cpp','src/aperture.cpp','control/protocol.cpp','control/policy.cpp']]
+cmd += [str(root/x) for x in ['render/continuous_test.cpp','render/adapter.cpp','src/aperture.cpp','control/protocol.cpp','control/policy.cpp']]
 cmd += ['-o', str(out)]
 subprocess.run(cmd, check=True)
 args = [str(out)]

@@ -85,6 +85,12 @@ struct Callbacks {
     // No decoded blend destroy ABI is assumed: lifecycle owner retires marker.
     bool (*retire_marker)(void *, const Binding &, Address) noexcept = nullptr;
     Clock clock = boottime;
+    // Read-only, nonblocking native lifetime evidence. True promises all CPU and
+    // recording references to BOTH exact tickets are settled, including commands
+    // that could be queued again. GPU completion alone does not establish this.
+    // No binding means no reclamation. Must not queue work or reauthorize a lease.
+    bool (*settled)(void *, const Binding &, const Provenance &, const Provenance &,
+                    const Completion &) noexcept = nullptr;
 };
 struct EyeInput {
     unsigned eye = 0;
@@ -100,12 +106,15 @@ struct BackendResult {
 };
 struct State {
     bool initialized = false, frame_invalid = true, cpu_done = false, stereo_submitted = false,
-         gpu_complete = false, retired = false;
-    size_t tickets_used = 0;
+         gpu_complete = false, retired = false, cpu_settled = false;
+    size_t tickets_used = 0; // resident entries, not lifetime identities
+    size_t tickets_capacity = 0;
+    uint64_t tickets_issued = 0; // cumulative identities reserved by this adapter
 };
 // Construct/initialize on the established native owner thread, outside callbacks.
-// Capacity is lifetime-bounded: neither tickets nor slots are recycled. Keep this
-// owner alive through native cache/device teardown, including Off and exhaustion.
+// Storage is bounded and recyclable only after exact GPU and CPU/recording
+// settlement. Ticket identities never recycle. Keep this owner alive through
+// native cache/device teardown, including Off and missing settlement.
 class Adapter {
     struct Impl;
     std::unique_ptr<Impl> p_;
@@ -123,6 +132,7 @@ class Adapter {
     BackendResult backend(const Recorded &, const Context &, Registers lookup) noexcept;
     bool submitted() noexcept;
     bool poll_completion() noexcept;
+    bool reclaim() noexcept; // no new work; explicit CPU/recording settlement
     void off() noexcept;
     bool retire() noexcept;
     State state() const noexcept; // owner thread only, no native calls

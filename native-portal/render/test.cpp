@@ -556,7 +556,8 @@ static void capacity_and_retirement() {
     PolicyInput p;
     p.enabled = true;
     auto next = exhaustion.gate.begin(2, p, true, true, false, now);
-    assert(exhaustion.adapter.latch(next));
+    assert(!exhaustion.adapter.reclaim()); // no CPU/recording settlement binding
+    assert(!exhaustion.adapter.latch(next));
     assert(!exhaustion.adapter.enqueue(exhaustion.eye(0)));
     assert(exhaustion.adapter.state().tickets_used == 2);
     assert(exhaustion.draw(0).decision == Decision::Drop);
@@ -899,4 +900,5 @@ int main(int argc, char **argv) {
     else
         assert(argc == 1);
     std::puts("render adapter tests passed");
+    return 0;
 }

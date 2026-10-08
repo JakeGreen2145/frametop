@@ -73,7 +73,9 @@ struct Adapter::Impl {
     Address wrapper_resource = 0;
     Impl(Backend &b, FrameGate &g, Binding bind, Callbacks c, size_t cap, uint64_t first)
         : control(b), gate(g), binding(bind), cb(c), capacity(cap <= 4096 ? cap : 0), next(first),
-          tickets(capacity ? new Ticket[capacity] : nullptr) {}
+          tickets(capacity ? new Ticket[capacity] : nullptr) {
+        status.tickets_capacity = capacity;
+    }
     bool enter() noexcept {
         if (getpid() != pid || std::this_thread::get_id() != owner) {
             control.refuse();
@@ -178,8 +180,8 @@ bool Adapter::latch(const Frame &frame) noexcept {
     Impl::Guard guard(p);
     if (!guard.ok)
         return false;
-    // The one-frame adapter never loses unresolved native lifetime debt.
-    if (!p.status.initialized || p.status.retired || p.native_debt || !frame.id ||
+    // One retained frame: completion alone does not settle recorded CPU references.
+    if (!p.status.initialized || p.status.retired || p.native_debt || p.used || !frame.id ||
         frame.id <= p.frame.id || !frame.policy.portal || !valid(frame.lease.geometry))
         return p.reject();
     p.frame = frame;
@@ -194,6 +196,7 @@ bool Adapter::latch(const Frame &frame) noexcept {
     p.status.cpu_done = false;
     p.status.stereo_submitted = false;
     p.status.gpu_complete = false;
+    p.status.cpu_settled = false;
     if (!p.live())
         return p.reject();
     return true;
@@ -207,8 +210,8 @@ bool Adapter::enqueue(const EyeInput &in) noexcept {
         in.observed_origin != p.frame.lease.origin)
         return p.reject();
     if (p.eyes == 0) {
-        // Reserve a complete stereo pair before changing native state. Slots and
-        // numbers are never recycled, including on failed native operations.
+        // Reserve both entries before native work. Only reclaim() releases storage;
+        // the process-wide numbers never recycle, including after failed calls.
         if (p.capacity - p.used < 2 || !p.next)
             return p.reject();
         uint64_t observed = next_process_ticket.load();
@@ -222,6 +225,7 @@ bool Adapter::enqueue(const EyeInput &in) noexcept {
             p.tickets[p.eye_slots[eye]].provenance.ticket = p.next++;
         }
         p.status.tickets_used = p.used;
+        p.status.tickets_issued += 2;
         p.origin = in.raw_to_standing;
     } else if (p.origin.v != in.raw_to_standing.v)
         return p.reject();
@@ -434,6 +438,30 @@ bool Adapter::poll_completion() noexcept {
         return false;
     p.status.gpu_complete = true;
     p.native_debt = false;
+    return true;
+}
+bool Adapter::reclaim() noexcept {
+    auto &p = *p_;
+    Impl::Guard guard(p);
+    if (!guard.ok)
+        return false;
+    if (p.status.cpu_settled)
+        return true;
+    // Read-only lifetime evidence, not render authorization. Expiry/Off must not
+    // discard the R1 exact submission token or prevent settlement under its owner.
+    if (!p.status.initialized || p.status.retired || p.native_debt || p.used != 2 ||
+        !p.status.cpu_done || !p.status.stereo_submitted || !p.status.gpu_complete ||
+        !p.cb.settled || !p.validated(Phase::Current) ||
+        !p.cb.settled(p.cb.user, p.binding, p.tickets[p.eye_slots[0]].provenance,
+                      p.tickets[p.eye_slots[1]].provenance, p.completion) ||
+        !p.validated(Phase::Current))
+        return false;
+    // No tombstone collection: immutable marker recognition plus nonreused IDs
+    // makes every late old packet an owned DROP, including after slot reuse.
+    for (size_t i = 0; i < p.used; ++i)
+        p.tickets[i] = {};
+    p.used = p.status.tickets_used = 0;
+    p.status.cpu_settled = true;
     return true;
 }
 void Adapter::off() noexcept {
