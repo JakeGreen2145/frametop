@@ -18,13 +18,16 @@ run(['cc',*flags,'-fPIC','-fvisibility=hidden','-ftls-model=initial-exec','-shar
 with (B/'native-test.txt').open('w') as f:run(['build/test_native'],stdout=f,stderr=subprocess.STDOUT)
 with (B/'drain-test.txt').open('w') as f:run(['python3','-B','test_drain.py'],stdout=f,stderr=subprocess.STDOUT)
 with (B/'lifecycle-test.txt').open('w') as f:run(['python3','-B','test_lifecycle.py'],stdout=f,stderr=subprocess.STDOUT)
+with (B/'cache-test.txt').open('w') as f:run(['python3','-B','test_cache_join.py'],stdout=f,stderr=subprocess.STDOUT)
+with (B/'preservation-test.txt').open('w') as f:run(['python3','-B','test_machine.py'],stdout=f,stderr=subprocess.STDOUT)
+with (B/'cache-replay-test.txt').open('w') as f:run(['python3','-B','test_cache_replay.py'],stdout=f,stderr=subprocess.STDOUT)
 # Default-off and repeated opt-in non-target loads cannot reserve the shared log.
 with (B/'native-test.txt').open('a') as f:
     run(['python3','-B','check_preload.py',str(B/'libft_native_hooks.so'),str(B)],stdout=f,stderr=subprocess.STDOUT)
 run(['readelf','-d','build/libft_native_hooks.so'])
 run(['ldd','build/libft_native_hooks.so'])
 run(['nm','-D','--defined-only','build/libft_native_hooks.so'])
-files=['libft_native_hooks.so','test_native','test_emit','emitted.json','native-test.txt','drain-test.txt']
+files=['libft_native_hooks.so','test_native','test_emit','emitted.json','native-test.txt','drain-test.txt','lifecycle-test.txt','cache-test.txt','preservation-test.txt','cache-replay-test.txt']
 (B/'SHA256SUMS').write_text(''.join(hashlib.sha256((B/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in files))
 print((B/'native-test.txt').read_text(),end='');print((B/'SHA256SUMS').read_text(),end='')
 artifacts={'libft_native_hooks.so':B/'libft_native_hooks.so','decode.py':R/'decode.py','pins.h':R/'pins.h'}

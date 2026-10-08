@@ -18,6 +18,12 @@ static void flush(void) {
         assert(write_all(e,sizeof(*e)));
     }
 }
+static void cache_transition(struct saved *r,unsigned before,unsigned target) {
+    static unsigned char layer[0x26000];
+    layer[0x2568c]=before;r->x[20]=(uintptr_t)layer;r->x[27]=target;r->x[0]=(uintptr_t)layer+0x25000;
+    observe(r,ACTIVITY_COMPARE);r->x[0]=1;observe(r,LAYER_TRANSITION_RESULT);
+    r->x[0]=(uintptr_t)layer+0x25000;layer[0x2568c]=target;observe(r,CACHE_POSTSTORE);
+}
 static void *external_thread(void *unused) {
     (void)unused;struct saved r={0};observe(&r,EXTERNAL_RELEASE);return NULL;
 }
@@ -47,7 +53,7 @@ int main(int argc,char **argv) {
             if(frame==100 || frame==9000) {
                 r.x[0]=(uintptr_t)k;observe(&r,frame==100?ACQUIRE_ENTER:RELEASE_ENTER);
                 r.x[0]=1;observe(&r,frame==100?ACQUIRE_RETURN_TRUE:RELEASE_RETURN_SLOW);
-                r.x[0]=(uintptr_t)stack;observe(&r,CACHE_POSTSTORE);
+                cache_transition(&r,frame==100?0:1,frame==100?1:0);
                 final_frame=frame+1;
             }
             r.x[19]=(uintptr_t)state;observe(&r,POLICY_FEEDBACK);
@@ -91,7 +97,7 @@ int main(int argc,char **argv) {
     r.x[0]=(uintptr_t)renderer;observe(&r,RENDERER_WAIT);r.x[0]=1;observe(&r,RENDERER_WAIT_RETURN);
     r.x[22]=(uintptr_t)renderer;observe(&r,ARENA_RESET);
     r.x[1]=(uintptr_t)packet;r.x[0]=(uintptr_t)renderer;observe(&r,BACKEND_ENTER);observe(&r,BACKEND_RETURN_CLEANUP);
-    r.x[0]=(uintptr_t)stack;observe(&r,CACHE_POSTSTORE);
+    r.x[0]=(uintptr_t)renderer;observe(&r,OUTER_ENTER);cache_transition(&r,0,1);observe(&r,OUTER_RETURN);
     for(unsigned id=POLICY_STYLE;id<SITE_COUNT;id++)observe(&r,id);
     flush();
     /* RET x19 belongs to the caller, not entry K. */
@@ -99,7 +105,7 @@ int main(int argc,char **argv) {
     observe(&r,ACQUIRE_RETURN_TRUE);flush();
     /* Every unrecorded outer invocation still advances and closes its scope. */
     for(unsigned i=0;i<8;i++) {r.x[0]=(uintptr_t)renderer;observe(&r,OUTER_ENTER);observe(&r,OUTER_RETURN);flush();}
-    assert(atomic_load(&frame_seq)==9 && tls.depth==0 && atomic_load(&sampled_out)>0);
+    assert(atomic_load(&frame_seq)==10 && tls.depth==0 && atomic_load(&sampled_out)>0);
     /* A resource edge on a different callback thread requests the owner's next whole window. */
     pthread_t external;assert(!pthread_create(&external,NULL,external_thread,NULL));assert(!pthread_join(external,NULL));
     flush();uint64_t before_window=head;r.x[0]=(uintptr_t)renderer;observe(&r,OUTER_ENTER);observe(&r,OUTER_RETURN);

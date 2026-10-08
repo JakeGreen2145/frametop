@@ -78,9 +78,45 @@ static void packet_metadata(struct event *e,uint64_t packet,int recorded) {
         }
     }
 }
+/* 9eebc is a common join, not an unconditional store completion. x0 is the
+ * ldrb Boolean on b.eq, or the restored owner on the store arm. x20 remains
+ * the base on both. Existing 9eeb4 marks the store arm without moving the
+ * post-commit observation or adding a native call. Association is one-use,
+ * bound to the current outer scope, layer SP, address and target byte. */
+static void cache_tap(const struct saved *r,unsigned id,struct scope *s,
+                      struct cache_result *out,uint64_t *address,unsigned char *byte,int *ok) {
+    if(id!=ACTIVITY_COMPARE && id!=LAYER_TRANSITION_RESULT && id!=CACHE_POSTSTORE)return;
+    uint64_t at=r->x[20]<=UINT64_MAX-0x2568c?r->x[20]+0x2568c:0;
+    struct cache_scope *c=s?&s->cache:NULL;
+    if(id==ACTIVITY_COMPARE) {
+        if(!c)return;
+        *c=(struct cache_scope){.address=at,.sp=r->sp,.target=(uint32_t)r->x[27]};
+        unsigned char before=0;int read_ok=at && read_meta(&before,at,1);
+        if(!read_ok)atomic_fetch_add(&read_failures,1);
+        c->before=before;
+        c->valid=read_ok && !tls.ambiguous && before<=1 && c->target<=1 && r->x[0]==at-0x68c;
+        return;
+    }
+    int associated=c && c->valid && !tls.ambiguous && c->address==at && c->sp==r->sp && c->target==(uint32_t)r->x[27];
+    if(id==LAYER_TRANSITION_RESULT) {
+        if(c) {c->store_path=associated;c->valid=associated;}
+        return;
+    }
+    *address=at;*ok=at && read_meta(byte,at,1);
+    if(!*ok)atomic_fetch_add(&read_failures,1);
+    if(*ok)out->after=*byte;
+    if(associated) {
+        out->before=c->before;out->target=c->target;
+        if(*ok && *byte==c->target) {
+            if(c->store_path && c->before!=c->target && r->x[0]==at-0x68c)out->status=2;
+            else if(!c->store_path && c->before==c->target && r->x[0]==c->target)out->status=1;
+        }
+    }
+    if(c)c->valid=0; /* A second join or an unmatched frame is unknown, not an edge. */
+}
 static int resource_edge(unsigned id) {
     return id==EXTERNAL_ACQUIRE || id==EXTERNAL_RELEASE || id==LAYER_TRANSITION_RESULT || id==LAYER_ACQUIRE_RESULT ||
-        (id>=ACQUIRE_ENTER && id<=RELEASE_RETURN_SLOW) || id==CACHE_POSTSTORE;
+        (id>=ACQUIRE_ENTER && id<=RELEASE_RETURN_SLOW);
 }
 static int resource_return(unsigned id) {
     return id==ACQUIRE_RETURN_FALSE || id==ACQUIRE_RETURN_TRUE || id==RELEASE_RETURN_FAST || id==RELEASE_RETURN_SLOW;

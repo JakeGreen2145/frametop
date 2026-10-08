@@ -31,6 +31,9 @@ class LifecycleTests(unittest.TestCase):
             self.assertTrue(all(e['flags'] & 32 for e in events if e.get('event') in ('acquire_enter','acquire_return_true')))
             new_sites=set(range(25,len(decode.NAMES)))
             self.assertEqual(new_sites,{e['site'] for e in events if e['site'] in new_sites})
+            cache = next(e for e in events if e.get('event')=='cache_poststore')
+            evidence = next(c for c in cache['chunks'] if c['tag']==41).get('cache_join')
+            self.assertEqual(evidence,dict(before=0,target=1,after=1,status='committed-change'))
             wait = next(e for e in events if e.get('event')=='wait_return')
             entry = next(c for c in wait['chunks'] if c['tag']==34)['entry']
             self.assertEqual(entry['serial'],0x1122334455667788)

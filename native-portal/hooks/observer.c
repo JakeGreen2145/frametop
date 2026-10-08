@@ -42,7 +42,9 @@ struct chunk {uint32_t tag,len; uint64_t address;};
 struct policy_loads {uint64_t seen,conflict,value[14];};
 struct call_scope {uint64_t sp,lr,object,aux; unsigned selected,valid; unsigned char token[16];};
 struct call_stack {struct call_scope item[4]; unsigned depth,overflow;};
-struct scope {uint64_t frame,owner,sp; uint32_t eye,mask,selected;};
+struct cache_scope {uint64_t address,sp; uint32_t before,target,valid,store_path;};
+struct cache_result {uint32_t before,target,after,status;}; /* status: 0 unknown, 1 unchanged, 2 committed change */
+struct scope {uint64_t frame,owner,sp; uint32_t eye,mask,selected; struct cache_scope cache;};
 static __thread struct {
     struct scope scope[4]; unsigned depth,busy,ambiguous;
     uint64_t seq,tid;
@@ -153,16 +155,20 @@ static void observe(const struct saved *r,unsigned id) {
             memset(&tls.policy,0,sizeof(tls.policy));
             atomic_store(&window_open,selected);
         }
-        tls.scope[tls.depth++]=(struct scope){frame,r->x[0],r->sp,UINT32_MAX,0,selected};
+        tls.scope[tls.depth++]=(struct scope){.frame=frame,.owner=r->x[0],.sp=r->sp,.eye=UINT32_MAX,.selected=selected};
     }
     struct scope *s=tls.depth?&tls.scope[tls.depth-1]:NULL;
     if(s && id>=LAYER_LEFT_EARLY && id<=LAYER_RIGHT_LATE)s->eye=(uint32_t)r->x[1];
     if(s && id==CAMERA_ENQUEUE && r->x[19]<2)s->mask|=1u<<r->x[19];
     unsigned selected=!lifecycle || (s?s->selected:atomic_load(&window_open));
     unsigned critical=lifecycle && resource_edge(id);
+    struct cache_result cache_result={UINT32_MAX,UINT32_MAX,UINT32_MAX,0};
+    uint64_t cache_address=0;unsigned char cache_byte=0;int cache_ok=0;
     unsigned char policy_snapshot[sizeof(struct policy_loads)+38]={0};int policy_ok=1;
     struct call_scope *call=NULL;
     if(lifecycle) {
+        cache_tap(r,id,s,&cache_result,&cache_address,&cache_byte,&cache_ok);
+        if(id==CACHE_POSTSTORE && cache_result.status==2)critical=1;
         policy_tap(r,id);
         if(id==POLICY_FEEDBACK) {
             memcpy(policy_snapshot,&tls.policy,sizeof(tls.policy));
@@ -260,7 +266,11 @@ static void observe(const struct saved *r,unsigned id) {
         chunk(e,10,r->sp+0xc70+0xc38,64);break;
     case ACTIVITY_COMPARE:chunk(e,11,r->x[0]+0x68c,1);break;
     case ACQUIRE_ENTER:case RELEASE_ENTER:chunk(e,12,r->x[0]+0x340,0x28);break;
-    case CACHE_POSTSTORE:chunk(e,11,r->x[0]+0x68c,1);break;
+    case CACHE_POSTSTORE:
+        copied_chunk(e,11,cache_address,&cache_byte,1,cache_ok);
+        copied_chunk(e,41,0,&cache_result,sizeof(cache_result),1);
+        if(!cache_result.status)e->flags|=16;
+        break;
     case ACQUIRE_RETURN_FALSE:case ACQUIRE_RETURN_TRUE:case RELEASE_RETURN_FAST:case RELEASE_RETURN_SLOW:
         if(!lifecycle)break;
         call_chunk(e,34,call,r,1);
