@@ -67,6 +67,8 @@ The first command is read-only. On and Off change native portal intent. Success 
 
 `PortalSettings.qml` is the shipped Qt Quick component embedded in the unchanged Kirigami settings shell. The native tab appears only for the `screens` backend, and `FT_DISPLAY_PAGE=passthrough` opens it. A separate "Request portal Off" button permits an explicit Off even when state is unknown and the switch cannot represent it. Closing settings stops polling only. It sends no Off and does not claim to stop camera hardware.
 
+Closing rejects new submissions but preserves every already accepted command, including Off queued behind a pending On. The adapter connects `aboutToQuit` to this nonblocking close. A non-daemon worker drains the finite queue without relying on Qt completion delivery, so event-loop exit or destruction of the parent QObject cannot discard the next command. Python waits for that worker before normal process exit; the GUI thread does not join it or pump events. There is no retry-until-success loop and no implicit lifecycle On/Off. Each intent has one shared acknowledgement/readback timeout. Other jobs use at most four timeout budgets for network and layout-lock waits, plus lock retry, scheduling and filesystem overhead. Total exit delay scales with the accepted queue, not a fixed global shutdown timeout. Failed requests still advance the queue; an unreachable backend remains unconfirmed, not successfully Off. Forced process termination is not a graceful drain.
+
 Independent placement and preference controls remain available without native-camera support:
 
 - Show controls toggles resize handles, edges and the grab bar, independent of intent and legacy `enabled`.
@@ -74,7 +76,7 @@ Independent placement and preference controls remain available without native-ca
 - Width, height, depth, X, Y, Z, yaw, pitch and roll retain the existing geometry limits. Field commits query current `state3d` before changing only the edited component. Focused or edited QML drafts survive polling while other fields update. Legacy `enabled` is preserved, not exposed as a camera switch or an unsupported desktop cut-through feature.
 - Place at desk reads `head`, places the center 0.65 m forward and 0.55 m below it, and adopts head yaw. Size, legacy enabled, pitch and roll survive.
 - Geometry setters validate the native legacy-yaw acknowledgement and full `state3d` readback. Existing native replies print six significant digits, so comparison allows their rounding. Geometry renderer suffixes do not become native camera status.
-- Offline placement edits save preferences without claiming they applied live. Controls and layer setters require exact acknowledgement and readback. Saved and live states are shown separately.
+- If the initial `state3d` query fails, placement edits save preferences only and show "Saved placement; not applied". They never send a full setter using saved fallback axes, even if the backend recovers immediately. A later explicit edit must obtain a fresh valid live placement before applying. Controls and layer setters require exact acknowledgement and readback. Saved and live states are shown separately.
 
 Writes use the existing shared `ft_layout.LOCK_PATH`, raw-JSON `_write_layout_field` helper and atomic writer. Lock acquisition is nonblocking with a bounded worker-side retry, so a busy layout process cannot stall queued Off indefinitely. Only the owned top-level placement/preference field is replaced. Raw screens, named profiles and unknown keys survive. Invalid roots or validation failures are not overwritten. No native intent is persisted. Startup restore remains the existing layout implementation, with no added native On dispatch.
 
@@ -94,7 +96,7 @@ QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
 
 This host lacked `libEGL.so.1`. Debian `libegl1`, `libopengl0`, `libgl1`, `libglx0` and `libglvnd0` packages were downloaded and extracted only under ignored `build/qt-libs`; `LD_LIBRARY_PATH` pointed at that private extraction. No host package installation was performed.
 
-Actual local result: **95 passed, 1 skipped**. This includes the production Qt Quick component, keyboard-driven On/Off, numeric draft/readback behavior, bounded protocol failures, serialized commands, stale polls, raw JSON preservation and existing layout regressions. The single skip is the full Kirigami shell because those KDE modules are absent locally. It is not counted as a GUI pass.
+Actual local repair result: **102 passed, 1 skipped**. This includes the production Qt Quick component, keyboard-driven On/Off, numeric draft/readback behavior, bounded protocol failures, serialized commands, stale polls, raw JSON preservation and existing layout regressions. Seven added regression cases failed before the repair and passed afterward: object close with pending On/Off, four real `QCoreApplication` subprocess exits, and failed initial placement queries for field edits and Place at desk. Subprocess coverage includes QObject destruction, missing replies and a held layout lock, with the private server observing commands after the child exits. The single skip is the full Kirigami shell because those KDE modules are absent locally. It is not counted as a GUI pass.
 
 The new isolated Frame mirror is `/home/steamos/dev/frametop-native-settings`, not the active checkout. Its distrobox dev interpreter supplies PySide6/Kirigami. A private `build/qt-venv` with system site packages supplies pytest. Execute there:
 
@@ -105,6 +107,6 @@ QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software NATIVE_PORTAL_KIRIGAMI=1 \
   -q -p no:cacheprovider --basetemp build/pytest-native-qt
 ```
 
-Actual Frame dev result: **55 passed, zero skipped**, including the complete shipped Kirigami window opening directly on Native portal, both Qt implementations, private-socket CLI On/Off/status, and every native settings test. Local red-phase logs and final execution logs are in ignored `build/`. No services, runtime overrides, active app, native source or user configuration were changed.
+Actual Frame dev repair result: **62 passed, zero skipped**, retaining all 55 original Qt/protocol cases plus the seven regressions. This includes the complete shipped Kirigami window opening directly on Native portal, both Qt implementations, private-socket CLI On/Off/status, and every native settings test. Repair evidence is in ignored `build/native-settings-repair-{red,green,local,frame}.log`. No services, runtime overrides, active app, native source or user configuration were changed.
 
 These results do not establish native camera activation, stereo pixels, world registration, fresh exposures, composition above Steam or comfort. Those require the parent backend implementation and separately authorized live verification.

@@ -2,7 +2,9 @@
 import importlib
 import json
 import os
+import subprocess
 import sys
+import textwrap
 import threading
 import time
 
@@ -153,6 +155,109 @@ def test_closing_settings_leaves_confirmed_native_on_intent_alone(setup):
     assert server.value["wanted"] is True
 
 
+def test_close_preserves_accepted_off_after_pending_on(setup):
+    model, server, config, _ = setup
+    model._timer.stop()
+    before = config.read_bytes()
+    gate, entered = threading.Event(), threading.Event()
+    original = server.handler
+    def delayed(cmd):
+        if cmd == "passthrough portal on":
+            entered.set()
+            gate.wait(.2)
+        return original(cmd)
+    server.handler = delayed
+    server.commands.clear()
+    model.setWanted(True)
+    assert entered.wait(.5)
+    model.setWanted(False)
+    start = time.monotonic()
+    model.close()
+    assert time.monotonic() - start < .05
+    gate.set()
+    wait(lambda: not model.busy)
+    assert server.commands == [f"passthrough portal {c}" for c in ("on", "status", "off", "status")]
+    assert server.value["wanted"] is False
+    assert config.read_bytes() == before
+
+
+@pytest.mark.parametrize("mode", ["quit", "destroyed", "unresponsive", "locked"])
+def test_application_exit_completes_accepted_commands_without_qt_delivery(setup, tmp_path, mode):
+    # Server lives in the parent so assertions see what survived interpreter exit.
+    # The child has a real Qt event loop, private paths, and no manual drain helper.
+    model, server, config, _ = setup
+    model.close()
+    before = config.read_bytes()
+    gate = threading.Event()
+    original = server.handler
+    def delayed(cmd):
+        if cmd == "passthrough portal on":
+            gate.wait(2)
+        reply = original(cmd)
+        return None if mode == "unresponsive" else reply
+    server.handler = delayed
+    server.commands.clear()
+    child = textwrap.dedent('''
+        import fcntl, sys
+        from PySide6.QtCore import QCoreApplication, QObject, QTimer
+        import shiboken6
+        sys.path.insert(0, sys.argv[1] + "/display-settings")
+        from native_portal_settings import PortalSettings, ft_layout
+        ft_layout.LAYOUT_PATH, ft_layout.LOCK_PATH, ft_layout.CONF_PATH = sys.argv[3:6]
+        app = QCoreApplication([])
+        app.aboutToQuit.connect(lambda: print("quitting", flush=True))
+        parent = QObject()
+        model = PortalSettings(parent, address="\\0" + sys.argv[2], timeout=.3)
+        model._timer.stop()
+        # Replace only the initial read-only poll with a wait for it to finish.
+        def submit():
+            if model.busy:
+                QTimer.singleShot(2, submit)
+                return
+            if sys.argv[6] == "locked":
+                global lock
+                lock = open(ft_layout.LOCK_PATH, "w")
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                model.setGeometry("yaw", -1, 44.)
+            model.setWanted(True)
+            model.setWanted(False)
+            if sys.argv[6] == "destroyed":
+                shiboken6.delete(parent)
+            QTimer.singleShot(20, app.quit)
+        QTimer.singleShot(0, submit)
+        app.exec()
+        if sys.argv[6] != "destroyed":
+            assert model._closed, "aboutToQuit must stop polling and new submissions"
+            model.setWanted(True)
+            model.refresh()
+    ''')
+    process = subprocess.Popen([sys.executable, "-c", child, str(REPO), server.address[1:],
+        str(config), str(tmp_path / "lock"), str(tmp_path / "frametop.conf"), mode],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        # Do not release the delayed ACK until Qt actually starts exiting.
+        import select
+        assert process.stdout is not None
+        assert select.select([process.stdout], [], [], 3)[0], "Qt quit was blocked"
+        assert process.stdout.readline().strip() == "quitting"
+        gate.set()
+        start = time.monotonic()
+        _out, err = process.communicate(timeout=3)
+        assert process.returncode == 0, err
+        assert time.monotonic() - start < 2
+    finally:
+        gate.set()
+        if process.poll() is None:
+            process.kill()
+            process.communicate()
+    intents = [c for c in server.commands if c.endswith((" on", " off"))]
+    assert intents == ["passthrough portal on", "passthrough portal off"]
+    if mode != "unresponsive":
+        assert server.commands[-4:] == [f"passthrough portal {c}" for c in ("on", "status", "off", "status")]
+    assert server.value["wanted"] is False
+    assert config.read_bytes() == before
+
+
 def test_stale_poll_cannot_overwrite_new_command(setup):
     model, server, *_ = setup
     gate, entered = threading.Event(), threading.Event()
@@ -233,6 +338,46 @@ def test_geometry_edits_start_from_live_preserve_rotation_and_unknown_json(setup
     model.setGeometry("size", 0, float("nan"))
     wait(lambda: not model.busy)
     assert config.read_bytes() == before
+
+
+@pytest.mark.parametrize("kind", ["geometry", "place"])
+def test_failed_initial_geometry_query_saves_only_without_overwriting_live_axes(setup, kind):
+    model, server, config, raw = setup
+    model._timer.stop()
+    server.volume.update(pitch=23., roll=19.)
+    live_before = json.loads(json.dumps(server.volume))
+    original = server.handler
+    failed = False
+    def fail_first_query(cmd):
+        nonlocal failed
+        if cmd == "passthrough state3d" and not failed:
+            failed = True
+            return "error temporarily unavailable"
+        return original(cmd)
+    server.handler = fail_first_query
+    server.commands.clear()
+    if kind == "geometry":
+        model.setGeometry("size", 0, 1.25)
+    else:
+        model.placeAtDesk()
+    wait(lambda: not model.busy)
+    assert server.volume == live_before
+    assert not any(c.startswith("passthrough set ") for c in server.commands)
+    assert not model.geometryKnown
+    assert "Saved" in model.geometrySummary and "not applied" in model.geometrySummary
+    saved = json.loads(config.read_text())
+    assert saved == dict(raw, passthrough=model.volume)
+    assert saved["passthrough"]["pitch"] == 7.
+    assert saved["passthrough"]["roll"] == -4.
+    if kind == "geometry":
+        assert saved["passthrough"]["size"][0] == 1.25
+    else:
+        assert saved["passthrough"]["center"] == pytest.approx([.35, 1.25, -2.])
+    # A later explicit edit must re-read live state, not apply the saved fallback.
+    model.setGeometry("size", 0, 1.4)
+    wait(lambda: not model.busy)
+    assert server.volume == dict(live_before, size=[1.4, .1, .6])
+    assert model.geometryKnown
 
 
 def test_place_at_desk_preserves_size_tilt_and_legacy_enabled(setup):

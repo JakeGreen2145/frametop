@@ -7,7 +7,7 @@ import threading
 import time
 from collections import deque
 
-from PySide6.QtCore import Property, QObject, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import Property, QCoreApplication, QObject, Qt, QTimer, Signal, Slot
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "layout"))
 import ft_layout
@@ -43,11 +43,16 @@ class PortalSettings(QObject):
                              for key, saved in (("controls", ft_layout.passthrough_controls(layout)),
                                                 ("layer", ft_layout.portal_above_steam(layout)))}
         self._queue = deque()
-        self._working = False
+        self._queue_lock = threading.Lock()
+        self._running = False
+        self._pending = 0
         self._closed = False
         self._generation = 0
         self._done.connect(self._finish, Qt.QueuedConnection)
         self._timer = QTimer(self, interval=1500, timeout=self.refresh)
+        app = QCoreApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.close)
         self._timer.start()
         self.refresh()
 
@@ -65,7 +70,7 @@ class PortalSettings(QObject):
 
     @Property(bool, notify=changed)
     def busy(self):
-        return self._working or bool(self._queue)
+        return self._pending != 0
 
     @Property(bool, notify=changed)
     def geometryKnown(self):
@@ -77,10 +82,9 @@ class PortalSettings(QObject):
 
     @Slot()
     def close(self):
-        """Stop GUI polling only. Never send Off, stop cameras, or alter native intent."""
+        """Stop polling and new submissions, not accepted work. No implicit On/Off."""
         self._closed = True
         self._timer.stop()
-        self._queue.clear()
 
     @Slot()
     def refresh(self):
@@ -117,16 +121,28 @@ class PortalSettings(QObject):
             return
         if kind != "poll":
             self._generation += 1
-        self._queue.append((self._generation, kind, value))
+        self._pending += 1
+        with self._queue_lock:
+            self._queue.append((self._generation, kind, value))
         self._start()
         self.changed.emit()
 
     def _start(self):
-        if self._working or not self._queue:
-            return
-        generation, kind, value = self._queue.popleft()
-        self._working = True
-        def work():
+        with self._queue_lock:
+            if self._running or not self._queue:
+                return
+            self._running = True
+            # Python waits for this finite queue at interpreter exit. Advancing it
+            # must not depend on Qt delivering a signal or the QObject surviving.
+            threading.Thread(target=self._work, daemon=False).start()
+
+    def _work(self):
+        while True:
+            with self._queue_lock:
+                if not self._queue:
+                    self._running = False
+                    return
+                generation, kind, value = self._queue.popleft()
             try:
                 result = self._perform(kind, value)
             except (OSError, RuntimeError, ValueError) as exc:
@@ -134,8 +150,7 @@ class PortalSettings(QObject):
             try:
                 self._done.emit(generation, kind, result)
             except RuntimeError:
-                pass  # the window may be destroyed while this bounded request finishes
-        threading.Thread(target=work, daemon=True).start()
+                pass  # UI destruction must not discard the next accepted command.
 
     def _status(self):
         try:
@@ -212,6 +227,10 @@ class PortalSettings(QObject):
                 raise ValueError("Unknown placement field")
         volume = ft_layout.validate_passthrough(volume)
         self._save_field("passthrough", volume)
+        if not live:
+            # The full setter would replace unedited live axes with saved values.
+            return {"volume": volume, "geometryKnown": False,
+                    "geometrySummary": "Saved placement; not applied: live placement unavailable"}
         try:
             deadline = time.monotonic() + self._client.timeout
             ack = self._client.ask(ft_layout.passthrough_command({"passthrough": volume}), deadline=deadline)
@@ -247,7 +266,7 @@ class PortalSettings(QObject):
 
     @Slot(int, str, object)
     def _finish(self, generation, kind, result):
-        self._working = False
+        self._pending -= 1
         # Commands are always sent serially. A pre-command poll cannot overwrite newer UI intent.
         if not self._closed and (kind != "poll" or generation == self._generation):
             if "error" in result:
@@ -263,5 +282,4 @@ class PortalSettings(QObject):
                 self._volume = result["volume"]
                 self._geometry_known = result["geometryKnown"]
                 self._geometry_summary = result["geometrySummary"]
-        self._start()
         self.changed.emit()
