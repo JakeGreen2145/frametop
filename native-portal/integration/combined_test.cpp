@@ -219,7 +219,56 @@ struct ControlWire {
     }
     ~ControlWire(){client.close();server.stop();std::filesystem::remove_all(path);}
 };
+static void rejected_before_dispatch(bool cold,bool expiry) {
+    Combined f;ControlWire wire(f);
+    // Seed a real published frame so a rejected replacement cannot clear or
+    // advance submission status while settling its distinct native command.
+    f.start();f.record();assert(f.prepare());f.draw(0);f.draw(1);
+    f.n.queue();assert(f.adapter.submitted());f.n.wait();assert(f.adapter.poll_completion());
+    f.n.dispose();f.n.reset_command();assert(f.adapter.reclaim());
+    f.n.reset();f.n.attach();f.start(2);f.record();
+    std::optional<Recorded> stock;if(cold)stock=f.cold_stock();
+    const auto epoch=wire.q.epoch;
+    const auto lookups=f.n.lookups;bool stock_materialized=false;
+    BackendStatus published;assert(f.source.control.status(published) && published.submitted_frame==1);
+    auto unchanged=[&]() {
+        BackendStatus s;assert(f.source.control.status(s));
+        assert(s.submitted_frame==published.submitted_frame && s.submitted_epoch==published.submitted_epoch);
+        assert(!f.adapter.state().stereo_submitted && !f.adapter.state().committed);
+        assert(!f.n.command->state().admitted && f.n.lookups==lookups+unsigned(stock_materialized));
+    };
+    if(expiry)now=1000000000000ULL;
+    else wire.release(); // actual same-connection Off, before PassGate entry
+    assert(!f.prepare() && f.scan.pair.suppression_scan);
+    assert(f.scan.pair.complete_scan==!cold && !f.adapter.state().prepared);
+    assert(f.skip(0) && !f.adapter.state().rejected);
+    assert(!f.adapter.reclaim() && f.adapter.state().pending);unchanged();
+    assert(f.skip(1));
+    assert(f.adapter.state().rejected && f.n.command->state().rejected);
+    assert(!f.adapter.state().cpu_done && !f.adapter.state().gpu_complete && !f.adapter.state().cpu_settled);
+    if(stock) {f.materialize_stock(*stock);stock_materialized=true;}
+    assert(!f.adapter.reclaim() && f.adapter.state().tickets_used==2);wire.release();unchanged();
+    f.n.queue();assert(!f.adapter.submitted() && f.adapter.state().queue_observed);
+    assert(!f.adapter.reclaim());wire.release();unchanged();
+    f.n.wait();assert(f.adapter.poll_completion());
+    assert(!f.adapter.reclaim());wire.release();unchanged();
+    f.n.dispose();assert(!f.adapter.reclaim());wire.release();unchanged();
+    f.n.reset_command();assert(f.adapter.reclaim());
+    if(expiry) {
+        // Expiry remains a latched control fault after render debt settles;
+        // same-epoch Release observes it, never renews or clears that fault.
+        wire.q.op=Operation::Release;++wire.q.sequence;
+        assert(wire.client.exchange(wire.q,wire.reply));
+        assert(wire.reply.state==native_portal::State::Fault && wire.reply.reason==Reason::Expired);
+    } else wire.release(false);
+    unchanged();
+    assert(wire.q.epoch==epoch && wire.reply.epoch==epoch && !f.adapter.state().tickets_used && !f.adapter.state().pending);
+    std::printf("combined: pre-dispatch %s, %s pair, exact settlement and same-epoch Release, submitted_frame unchanged\n",
+                expiry?"expiry":"Release",cold?"cold":"warm");
+}
 int main() {
+    for(unsigned cold=0;cold<2;++cold) for(unsigned expiry=0;expiry<2;++expiry)
+        rejected_before_dispatch(cold,expiry);
     for(unsigned order=0;order<2;++order) for(unsigned encoding=0;encoding<2;++encoding) {
         Combined f;ControlWire wire(f);f.start();f.record(order);assert(f.prepare());
         f.draw(encoding);wire.release();f.draw(1-encoding); // actual socket Off between encodings

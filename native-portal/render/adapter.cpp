@@ -595,11 +595,13 @@ uint64_t Adapter::prepare(const PairPreparation &input) noexcept {
     auto &p = *p_;
     Impl::Guard guard(p);
     if (!guard.ok) return 0;
-    if (p.preparation_attempted || p.status.committed || !p.live() ||
-        p.eyes != 3 || !p.returned || !p.gate.accept(p.frame, p.cb.clock())) {
+    if (p.preparation_attempted || p.status.committed) { p.reject(); return 0; }
+    // Observing dispatch is one-shot even after Off/expiry. Rejection settlement
+    // still authenticates the full recording and both actual skips separately.
+    p.preparation_attempted = true;
+    if (!p.live() || p.eyes != 3 || !p.returned || !p.gate.accept(p.frame, p.cb.clock())) {
         p.reject(); return 0;
     }
-    p.preparation_attempted = true;
     // Copy all caller input before invoking callbacks. Never retain borrowed
     // packet addresses or allow a callback to replace the other eye's snapshot.
     const PairPreparation snapshot = input;
