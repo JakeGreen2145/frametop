@@ -18,6 +18,11 @@ bool Bridge::context(uint64_t r) noexcept {
         get(a+0xb0,b) && b==buffer_ && get(a+0xb8,cap) && cap==Capacity &&
         mem_.coherent(mem_.user,a);
 }
+bool Bridge::geometry_matches(uint64_t camera,const void* matrices) noexcept {
+    std::array<unsigned char,128> actual{};
+    return camera && camera<=UINT64_MAX-0x180 && matrices &&
+        read(camera+0x100,actual.data(),actual.size()) && !std::memcmp(actual.data(),matrices,actual.size());
+}
 bool Bridge::offer(const Owned& o) noexcept {
     if(!ready() || !o.camera || o.camera>UINT64_MAX-0x1000 || !o.stock_wrapper ||
        !o.wrapper || o.wrapper>UINT64_MAX-0x20 || !o.staging || o.staging>UINT64_MAX-592 ||

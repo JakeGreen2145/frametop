@@ -20,7 +20,7 @@ template <class T, class A> static T get(const A &a, size_t o) {
     return v;
 }
 struct Fake {
-    Binding binding{{123, 0x100, 1, 0x200, 1}, {0x60, 0x78, 0x2988a8, 0x228, 0xb0, 0x1a8}, 991};
+    Binding binding{{123, 0x100, 1, 0x200, 1}, {0x60, 0x78, 0x2988a8, 0x228, 0xb0, 0x1a8}, 991, nullptr, true};
     Observation obs;
     Address wrapper = 0x400, marker = 0x500;
     bool valid = true, budget = true, blend_ok = true, pipeline_ok = true, queue_ok = true,

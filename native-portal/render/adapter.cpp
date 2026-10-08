@@ -42,7 +42,7 @@ bool valid_arena(const Arena &a) noexcept {
            a.pass_end - a.pass_begin <= INT64_MAX &&
            (a.pass_end - a.pass_begin) % stride == 0 &&
            a.command_wrapper && a.command && a.resource && a.buffer && a.map &&
-           a.recording_generation && a.capacity == 0x80000 && a.alignment &&
+           a.recording_generation && (a.capacity == 0x80000 || a.capacity == arena::Capacity) && a.alignment &&
            a.alignment <= a.capacity && !(a.alignment & (a.alignment - 1)) &&
            a.cursor <= a.capacity && !(a.cursor % a.alignment) &&
            a.map <= UINT64_MAX - a.capacity;
@@ -98,6 +98,16 @@ struct Adapter::Impl {
     Arena frame_arena{};
     uint64_t highwater = 0;
     Address wrapper_resource = 0;
+    struct Upload {
+        bool active=false, offered=false, entered=false, ready=false;
+        Address camera=0, stock=0;
+        uint64_t ticket=0;
+        EyeInput input{};
+        Observation before{}, after{};
+        arena::Owned offer{};
+        std::array<Descriptor,2> descriptors{};
+        ft::portal::PortalConstants staging{};
+    } upload;
     Impl(Backend &b, FrameGate &g, Binding bind, Callbacks c, size_t cap, uint64_t first)
         : control(b), gate(g), binding(bind), cb(c), capacity(cap <= 4096 ? cap : 0), next(first),
           tickets(capacity ? new Ticket[capacity] : nullptr) {
@@ -177,7 +187,9 @@ struct Adapter::Impl {
     bool native_current() noexcept {
         Observation current;
         if (!status.initialized || status.retired || status.frame_invalid ||
-            !validated(Phase::Current) || !observe(current) ||
+            !validated(Phase::Current) ||
+            (binding.upstream && !binding.upstream->bound(binding.identity.renderer,binding.identity.renderer_generation)) ||
+            !observe(current) ||
             !recording_progress(frame_arena, current.arena) ||
             current.arena.cursor < highwater || current.wrapper_resource != wrapper_resource ||
             current.wrapper_size != 592 || current.attachment != attachment ||
@@ -214,8 +226,10 @@ bool Adapter::initialize() noexcept {
     const auto &t = b.targets;
     if (!p.capacity || !p.next || !id.process_instance || !id.renderer || !id.renderer_generation ||
         !id.device || !id.device_generation || !t.allocate || !t.upload || !t.descriptor ||
-        !t.enqueue || !t.destroy || !t.blend || !b.headroom_evidence || !p.cb.clock || !p.cb.call ||
-        !p.cb.observe || !p.cb.headroom || !p.cb.stock_blend || !p.cb.pipeline || !p.capability() ||
+        !t.enqueue || !t.destroy || !t.blend || !p.cb.clock || !p.cb.call ||
+        !(b.upstream ? (!b.legacy_test_upload && b.upstream->bound(id.renderer,id.renderer_generation))
+                     : (b.legacy_test_upload && b.headroom_evidence && p.cb.headroom)) ||
+        !p.cb.observe || !p.cb.stock_blend || !p.cb.pipeline || !p.capability() ||
         !p.validated(Phase::Initialize))
         return false;
     Registers r;
@@ -276,6 +290,7 @@ bool Adapter::latch(const Frame &frame) noexcept {
 }
 bool Adapter::enqueue(const EyeInput &in) noexcept {
     auto &p = *p_;
+    if (!p.binding.legacy_test_upload || p.binding.upstream) return false;
     Impl::Guard guard(p);
     if (!guard.ok)
         return false;
@@ -406,6 +421,158 @@ bool Adapter::enqueue(const EyeInput &in) noexcept {
     p.highwater = aligned;
     p.eyes |= 1u << in.eye;
     return true;
+}
+uint64_t Adapter::reserve_upload(const EyeInput &in, Address camera, Address stock) noexcept {
+    auto &p=*p_;
+    Impl::Guard guard(p);
+    if(!guard.ok) return 0;
+    auto fail=[&]() -> uint64_t {p.reject();return 0;};
+    if(!p.binding.upstream || p.binding.legacy_test_upload) return fail();
+    // Do not overwrite an unconsumed invocation or permit its late enqueue to
+    // borrow a newer offer. A failed claim is still owned, never stock fallback.
+    if(p.upload.active) return fail();
+    auto &u=p.upload;
+    u={};u.active=true;u.camera=camera;u.stock=stock;u.input=in;
+    if(!camera || !stock || !p.live() || p.returned || in.eye>1 ||
+       (p.eyes & (1u<<in.eye)) || in.observed_origin!=p.frame.lease.origin ||
+       !p.binding.upstream->bound(p.binding.identity.renderer,p.binding.identity.renderer_generation)) return fail();
+    if(!p.eyes) {
+        if(p.used || p.capacity<2 || !p.next) return fail();
+        uint64_t observed=next_process_ticket.load();
+        const uint64_t first=observed>p.next?observed:p.next;
+        if(first>UINT64_MAX-2 || !next_process_ticket.compare_exchange_strong(observed,first+2)) return fail();
+        p.next=first+2;
+        // Issue in actual upload order, while preserving eye-indexed provenance.
+        p.eye_slots[in.eye]=0;p.eye_slots[1-in.eye]=1;
+        p.tickets[0].provenance.ticket=first;p.tickets[1].provenance.ticket=first+1;
+        p.used=p.status.tickets_used=2;p.status.tickets_issued+=2;
+        p.origin=in.raw_to_standing;
+    } else if(p.origin.v!=in.raw_to_standing.v) return fail();
+    ft::portal::Draw draw;
+    const auto &g=p.frame.lease.geometry;
+    draw.box.center={g.center[0],g.center[1],g.center[2]};
+    draw.box.size={g.size[0],g.size[1],g.size[2]};
+    for(unsigned i=0;i<4;++i) draw.box.quaternion[i]=g.quaternion[i];
+    draw.raw_to_standing=in.raw_to_standing;draw.opacity=g.opacity;
+    draw.epoch=p.frame.lease.epoch;draw.tracking_valid=true;
+    for(unsigned i=0;i<16;++i) {
+        draw.raw_to_eye.v[i]=load<float>(in.constants,64+i*4);
+        draw.projection.v[i]=load<float>(in.constants,128+i*4);
+    }
+    const auto geometry=ft::portal::compute(draw);
+    if(!geometry || !p.observe(u.before)) return fail();
+    const auto &a=u.before.arena;
+    if(!valid_arena(a) || a.capacity!=arena::Capacity || a.alignment!=64 ||
+       u.before.wrapper_resource!=p.wrapper_resource || u.before.wrapper_size!=592 ||
+       u.before.attachment!=attachment ||
+       p.binding.upstream->policy().check(a.cursor,592,true)!=arena::Result::Admit ||
+       (p.eyes ? (!recording_progress(p.frame_arena,a) || a.cursor<p.highwater)
+               : a.recording_generation<=p.recording)) return fail();
+    if(!p.gate.eye(p.frame,in.eye,in.observed_origin) || !p.live()) return fail();
+    auto &auth=p.tickets[p.eye_slots[in.eye]].provenance;
+    const auto number=auth.ticket;
+    auth={p.binding.identity,number,p.frame.id,p.frame.lease.epoch,p.frame.lease.origin,
+          p.frame.lease.generation,p.frame.lease.deadline_ns,p.frame.lease.revocation,
+          a.recording_generation,in.eye,p.wrapper,p.marker.load(),0,0,{}};
+    p.recording=a.recording_generation;p.frame_arena=a;
+    const auto payload=ft::portal::snapshot(in.constants,geometry);
+    u.offer={camera,stock,p.wrapper,reinterpret_cast<Address>(u.staging.data()),number,{}};
+    std::memcpy(u.offer.portal.data(),payload.data()+528,64);
+    u.ticket=number;
+    return number;
+}
+void Adapter::upstream(arena::Saved &s,unsigned site,uint64_t lifetime,uint64_t thread) noexcept {
+    auto &p=*p_;
+    auto *bridge=p.binding.upstream;
+    if(!bridge) {s.pad=arena::Unsupported;return;}
+    if(getpid()!=p.pid || std::this_thread::get_id()!=p.owner) {
+        p.control.refuse();s.pad=arena::Unsupported;return;
+    }
+    // Classifier hooks can be reached by the two immediate descriptor calls.
+    // These only touch the serialized Bridge, not Adapter admission state.
+    if(site!=arena::Upload && site!=arena::UploadReturn) {
+        bridge->dispatch(s,site,lifetime,thread);return;
+    }
+    Impl::Guard guard(p);
+    if(!guard.ok) {s.pad=arena::Unsupported;return;}
+    s.pad=arena::Original;
+    auto &u=p.upload;
+    if(!u.active || s.x[27]!=u.camera) {
+        bridge->dispatch(s,site,lifetime,thread);return;
+    }
+    auto fail=[&]() {u.ready=false;p.reject();if(site==arena::Upload && s.pad!=arena::Unsupported)bridge->skip(s);};
+    if(site==arena::Upload) {
+        Observation current;
+        if(u.entered || !u.ticket || !p.live() || !p.observe(current) ||
+           !same_upload(u.before.arena,current.arena) || current.arena.cursor!=u.before.arena.cursor ||
+           current.wrapper_resource!=p.wrapper_resource || current.wrapper_size!=592 ||
+           current.attachment!=attachment ||
+           !bridge->geometry_matches(u.camera,u.input.constants.data()+64) ||
+           !bridge->offer(u.offer)) {fail();return;}
+        u.offered=true;u.entered=true;
+        // Native ownership debt starts BEFORE any external copy/reference work.
+        p.native_debt=true;p.pending(true);
+        bridge->dispatch(s,site,lifetime,thread);
+        if(s.pad!=arena::Replacement || !p.live()) fail();
+        return;
+    }
+    bridge->dispatch(s,site,lifetime,thread);
+    arena::Descriptor descriptor;
+    const auto &a=u.before.arena;
+    const uint64_t aligned=(a.cursor+592+63)&~uint64_t{63};
+    if(!u.entered || u.ready || !p.live() || !bridge->descriptor(descriptor) ||
+       descriptor.ticket!=u.ticket || descriptor.buffer!=a.buffer || descriptor.offset!=a.cursor ||
+       descriptor.range!=592 || !p.observe(u.after) || !same_upload(a,u.after.arena) ||
+       u.after.arena.cursor!=aligned || u.after.wrapper_resource!=p.wrapper_resource ||
+       u.after.wrapper_size!=592 || u.after.wrapper_offset!=a.cursor || u.after.attachment!=attachment) {fail();return;}
+    // Snapshot both native stage resolutions NOW, before the shared wrapper moves.
+    for(auto &d:u.descriptors) {
+        Registers r{p.binding.targets.descriptor,{p.binding.identity.renderer,reinterpret_cast<Address>(&d),p.wrapper}};
+        if(!p.call(r) || !same(d,Descriptor{descriptor.buffer,descriptor.offset,descriptor.range})) {fail();return;}
+    }
+    Observation final;
+    if(!p.live() || !p.observe(final) || !same_upload(u.after.arena,final.arena) ||
+       final.arena.cursor!=aligned || final.wrapper_resource!=p.wrapper_resource ||
+       final.wrapper_size!=592 || final.wrapper_offset!=a.cursor || final.attachment!=attachment) {fail();return;}
+    u.ready=true;p.frame_arena=u.after.arena;p.highwater=aligned;
+}
+bool Adapter::enqueue(uint64_t number,const EyeInput &in) noexcept {
+    auto &p=*p_;
+    Impl::Guard guard(p);
+    if(!guard.ok) return false;
+    auto &u=p.upload;
+    auto finish=[&](bool ok) {
+        if(p.binding.upstream && u.offered) p.binding.upstream->release(u.ticket);
+        u.active=false;u.ready=false;
+        return ok?true:p.reject();
+    };
+    if(!p.binding.upstream || !u.active || !u.ready || !number || number!=u.ticket ||
+       in.eye!=u.input.eye || in.observed_origin!=u.input.observed_origin ||
+       in.raw_to_standing.v!=u.input.raw_to_standing.v || !p.live() || p.returned ||
+       (p.eyes & (1u<<in.eye))) return finish(false);
+    // The original packet prefix is only final at 0x161ed8. Never clone the
+    // earlier camera prefix; constants are already captured by the upstream hook.
+    const auto vs=load<uint32_t>(in.prefix,0x20),ps=load<uint32_t>(in.prefix,0x30);
+    if(!supported_pair(vs,ps) || !p.cb.stock_blend(p.cb.user,p.binding,load<Address>(in.prefix,8))) return finish(false);
+    Observation current;
+    if(!p.observe(current) || !recording_progress(u.after.arena,current.arena) ||
+       current.arena.cursor<p.highwater || current.wrapper_resource!=p.wrapper_resource ||
+       current.wrapper_size!=592 || current.wrapper_offset!=u.descriptors[0].offset ||
+       current.attachment!=attachment || !p.live()) return finish(false);
+    auto &ticket=p.tickets[p.eye_slots[in.eye]];
+    auto &auth=ticket.provenance;
+    if(auth.ticket!=number || auth.recording_generation!=current.arena.recording_generation) return finish(false);
+    auth.vs=vs;auth.ps=ps;auth.descriptors=u.descriptors;
+    ticket.prefix=in.prefix;store(ticket.prefix,8,auth.marker);
+    store(ticket.prefix,0x38,p.wrapper);store(ticket.prefix,0x58,p.wrapper);
+    const auto label=encode_ticket(number);
+    Registers r{p.binding.targets.enqueue,{p.binding.identity.renderer,
+        reinterpret_cast<Address>(ticket.prefix.data()),reinterpret_cast<Address>(label.data()),0,p.binding.targets.enqueue}};
+    // No managed upload or late descriptor resolution here.
+    u.ready=false;
+    if(!p.call(r) || !p.live()) return finish(false);
+    p.frame_arena=current.arena;p.highwater=current.arena.cursor;p.eyes|=1u<<in.eye;
+    return finish(true);
 }
 bool Adapter::outer_return() noexcept {
     auto &p = *p_;

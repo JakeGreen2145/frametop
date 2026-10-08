@@ -2,6 +2,7 @@
 #pragma once
 #include "../control/frame.hpp"
 #include "../include/ft_aperture.hpp"
+#include "../arena/bridge.hpp"
 #include <memory>
 
 namespace native_portal::render {
@@ -17,7 +18,9 @@ struct Targets {
 struct Binding {
     Identity identity;
     Targets targets;
-    uint64_t headroom_evidence = 0;
+    uint64_t headroom_evidence = 0; // legacy CPU fixture only
+    arena::Bridge *upstream = nullptr; // same owner/lifetime; must outlive Adapter
+    bool legacy_test_upload = false; // explicitly unbound fixture, never live integration
 };
 // Register-call transport, NOT invented native C++ declarations. A true return
 // means the trampoline completed. x[0] is meaningful only for native value returns.
@@ -152,7 +155,13 @@ class Adapter {
     Adapter &operator=(const Adapter &) = delete;
     bool initialize() noexcept;
     bool latch(const Frame &) noexcept;
-    bool enqueue(const EyeInput &) noexcept;
+    bool enqueue(const EyeInput &) noexcept; // only explicit legacy_test_upload
+    // Claim an owned invocation BEFORE native upload. Zero still means owned DROP.
+    // Constants provide M1/M2 for immutable suffix; final prefix comes at enqueue.
+    uint64_t reserve_upload(const EyeInput &, Address camera, Address stock_wrapper) noexcept;
+    // Route all nine arena islands here, on the established native owner thread.
+    void upstream(arena::Saved &, unsigned site, uint64_t lifetime, uint64_t thread) noexcept;
+    bool enqueue(uint64_t ticket, const EyeInput &) noexcept;
     bool outer_return() noexcept;
     // One prepare attempt per retained frame; resolves BOTH pipelines without
     // drawing. Commit rechecks current authorization once, immediately before

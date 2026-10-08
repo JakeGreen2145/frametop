@@ -38,8 +38,18 @@ public:
     explicit Bridge(Memory memory) noexcept : mem_(memory) {}
     bool arm(Scope,bool pinned) noexcept;
     bool offer(const Owned&) noexcept;
+    bool geometry_matches(uint64_t camera,const void* matrices) noexcept;
+    void skip(Saved& s) const noexcept {s.pad=SkipOwned;s.x[30]=scope_.base+0x161d68;}
     void dispatch(Saved&,unsigned site,uint64_t lifetime,uint64_t thread) noexcept;
     bool ready() const noexcept {return policy_.ready() && !failed_;}
+    bool bound(uint64_t renderer,uint64_t lifetime) const noexcept {
+        return ready() && scope_.renderer==renderer && scope_.lifetime==lifetime;
+    }
+    // End one authenticated invocation, not its reservation/reset interval.
+    bool release(uint64_t ticket) noexcept {
+        if(!ticket || owned_.ticket!=ticket) return false;
+        owned_={};descriptor_={};used_=charged_=false;return true;
+    }
     bool descriptor(Descriptor& d) const noexcept {if(!descriptor_.ticket || failed_) return false; d=descriptor_; return true;}
     const Policy& policy() const noexcept {return policy_;}
 };
