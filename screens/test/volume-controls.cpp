@@ -178,6 +178,7 @@ int main(int argc, char **argv) {
 #ifdef FT_CPU_KEYBOARD
     if (argc == 2 && std::string(argv[1]) == "--keyboard-release") return KeyboardReleaseRegression();
     if (argc == 2 && std::string(argv[1]) == "--catcher-ownership") return CatcherOwnershipRegression();
+    if (argc == 2 && std::string(argv[1]) == "--desktop-buttons") return DesktopButtonOwnershipRegression();
 #endif
     assert(Reply("passthrough state3d") == "ok 0 0 0.75 -0.65 1 0.35 0.65 0 0 0 no-vr");
     assert(Reply("passthrough committed") == Reply("passthrough state3d"));

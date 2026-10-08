@@ -96,6 +96,39 @@ int KeyboardReleaseRegression() {
     std::puts("PASS keyboard owner/button release: move, resize, desktop, keys/modifiers");
     return 0;
 }
+int DesktopButtonOwnershipRegression() {
+    ReleaseFixtureSetup();
+    systemVR.controllerStateAvailable = false;
+    ft_vr_screen_create(0,800,600);
+    auto &screen = g_screens.at(0);
+    screen.shown = &screen; Tick(); screen.visible = true;
+    AimGrab(3); AimGrab(4);
+    std::vector<ft_event> events;
+    auto record = [](const ft_event *e, void *p) {
+        if (e->type == FT_BUTTON) static_cast<std::vector<ft_event> *>(p)->push_back(*e);
+    };
+    auto button = [&](unsigned device, uint32_t type, uint32_t b) {
+        Send(screen.overlay, type, device, b); ft_vr_poll(record, &events);
+    };
+    button(3, vr::VREvent_MouseButtonDown, vr::VRMouseButton_Left);
+    button(4, vr::VREvent_MouseButtonDown, vr::VRMouseButton_Right);
+    button(4, vr::VREvent_MouseButtonUp, vr::VRMouseButton_Right);
+    button(3, vr::VREvent_MouseButtonUp, vr::VRMouseButton_Left);
+    g_press.idleSince = NowMs() - kStuckMs - 1;
+    ft_vr_poll(record, &events);
+    assert(events.size() == 2 && !g_press.buttons);
+    assert(events[0].button == BTN_LEFT && events[0].pressed);
+    assert(events[1].button == BTN_LEFT && !events[1].pressed);
+    // After the first owner releases, the other device can click normally.
+    events.clear();
+    button(4, vr::VREvent_MouseButtonDown, vr::VRMouseButton_Right);
+    button(4, vr::VREvent_MouseButtonUp, vr::VRMouseButton_Right);
+    assert(events.size() == 2 && !g_press.buttons);
+    assert(events[0].button == BTN_RIGHT && events[0].pressed);
+    assert(events[1].button == BTN_RIGHT && !events[1].pressed);
+    std::puts("PASS desktop press/release ownership and subsequent device handoff");
+    return 0;
+}
 int CatcherOwnershipRegression() {
     ReleaseFixtureSetup();
     systemVR.controllerStateAvailable = false; // outside-game state unknown

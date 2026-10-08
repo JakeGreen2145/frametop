@@ -82,5 +82,5 @@ else:
     sources += [root / "screens/test/volume-boundary.cpp"]
 run_test("volume-controls-vr-tests", sources, extra)
 if not args.native_deps:
-    for mode in ("--keyboard-release", "--catcher-ownership"):
+    for mode in ("--keyboard-release", "--catcher-ownership", "--desktop-buttons"):
         subprocess.run([str(output / "volume-controls-vr-tests"), mode], check=True)

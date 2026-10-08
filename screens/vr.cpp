@@ -2504,9 +2504,9 @@ void ft_vr_poll(void (*handle)(const struct ft_event *, void *), void *data) {
                     e.type = FT_BUTTON;
                     e.button = LinuxButton(ev.data.mouse.button);
                     e.pressed = ev.eventType == vr::VREvent_MouseButtonDown;
-                    // A rejected second-device portal press may release here.
-                    // Only the desktop owner can release its held KWin button.
-                    if (!e.pressed && g_press.buttons && g_press.device != ev.trackedDeviceIndex) return;
+                    // Admit presses and releases from the same desktop owner.
+                    // A second device must not send a down whose up we reject.
+                    if (g_press.buttons && g_press.device != ev.trackedDeviceIndex) return;
                     e.controller = IsHandController(ev.trackedDeviceIndex);
                     at();
                     if (!e.pressed && s.titleCarry) e.x = s.carryX, e.y = s.carryY, s.titleCarry = false;
