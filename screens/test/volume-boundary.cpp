@@ -21,6 +21,9 @@ void EyePositions(const Mat &, double out[2][3]) {
 bool Project(const Panel &, const std::vector<Capsule> &, const double[2][3], std::vector<Capsule2D>[]) { std::abort(); }
 double CurveRadius(double width, double requested) { return requested > 0 ? width / (2 * std::acos(-1.) * requested) : 0; }
 }
+#ifdef FT_CPU_KEYBOARD
+#include "keyboard-boundary.inc"
+#else
 namespace keyboard {
 bool Show(const vr::HmdMatrix34_t &) { std::abort(); }
 void Hide() {}
@@ -32,3 +35,4 @@ void SetLasers(bool) {}
 void Poll(void (*)(const Event &, void *), void *) {}
 void Destroy() {}
 }
+#endif

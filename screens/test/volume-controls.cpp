@@ -109,9 +109,9 @@ struct FakeOverlay : vr::DefaultIVROverlay {
 } overlay;
 struct FakeSystem : vr::DefaultIVRSystem {
     vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount]{};
-    bool tipModel = false;
+    bool tipModel = false, controllerStateAvailable = true;
     bool GetControllerState(vr::TrackedDeviceIndex_t, vr::VRControllerState_t *state, uint32_t size) override {
-        assert(size == sizeof(*state)); *state = {}; return true;
+        assert(size == sizeof(*state)); *state = {}; return controllerStateAvailable;
     }
     void GetDeviceToAbsoluteTrackingPose(vr::ETrackingUniverseOrigin, float, vr::TrackedDevicePose_t *out,
                                          uint32_t count) override {
@@ -172,8 +172,15 @@ void ControlsShown(bool shown) {
     for (const auto &[o, part] : overlay.parts)
         if (part.key.find("passthrough") != std::string::npos) assert(part.shown == shown);
 }
+#include "volume-release-regressions.h"
 int main(int argc, char **argv) {
+    if (argc == 2 && std::string(argv[1]) == "--persistence-fixture") return PersistenceFixture();
+#ifdef FT_CPU_KEYBOARD
+    if (argc == 2 && std::string(argv[1]) == "--keyboard-release") return KeyboardReleaseRegression();
+    if (argc == 2 && std::string(argv[1]) == "--catcher-ownership") return CatcherOwnershipRegression();
+#endif
     assert(Reply("passthrough state3d") == "ok 0 0 0.75 -0.65 1 0.35 0.65 0 0 0 no-vr");
+    assert(Reply("passthrough committed") == Reply("passthrough state3d"));
     assert(Reply("passthrough presentation state") == "ok presentation 0 0");
     assert(Reply("passthrough controls state") == "ok controls 0"); // safe without VR
     assert(Reply("passthrough controls 1") == "ok controls 1");
@@ -304,7 +311,7 @@ int main(int argc, char **argv) {
     assert(overlay.parts.at(handle).alpha == 1.f);
     const auto other = overlay.Find("frametop.passthrough.face.3");
     Send(other, vr::VREvent_MouseButtonUp); Tick(); // release over another overlay
-    assert(launches.size() == 1 && launches[0].size() == 2 && launches[0][1] == "passthrough-capture");
+    assert(launches.size() == 1 && launches[0].size() == 2 && launches[0][1] == "passthrough-capture-release");
     char executable[PATH_MAX]; assert(realpath("/proc/self/exe", executable));
     std::string helper(executable);
     for (int up=0;up<3;++up) helper.resize(helper.rfind('/'));
@@ -405,7 +412,7 @@ int main(int argc, char **argv) {
     Screen screen;
     StartDrag(screen, Drag::Move, 4); assert(screen.drag == Drag::None);
     Send(other, vr::VREvent_MouseButtonUp); Tick();
-    assert(!g_volumeMove.Active() && launches.size() == 1 && launches.back()[1] == "passthrough-capture");
+    assert(!g_volumeMove.Active() && launches.size() == 1 && launches.back()[1] == "passthrough-capture-release");
     launches.clear();
     beginMove();
     Command("passthrough controls 0");
@@ -592,7 +599,7 @@ int main(int argc, char **argv) {
         // Both translation and rotation are sampled on the release tick itself.
         Send(g_catcher,vr::VREvent_MouseButtonUp,device); Tick();
         assertPose(Mul(final,Mul(Inverse(press2),initial))); assertControls();
-        assert(!g_volumeMove.Active() && launches.size()==1 && launches[0][1]=="passthrough-capture");
+        assert(!g_volumeMove.Active() && launches.size()==1 && launches[0][1]=="passthrough-capture-release");
         launches.clear();
     }
     for(int reason=0;reason<5;++reason) {

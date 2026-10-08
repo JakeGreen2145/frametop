@@ -73,5 +73,14 @@ else:
     stubs.mkdir(exist_ok=True)
     (stubs / "drm_fourcc.h").write_text("#pragma once\n#define DRM_FORMAT_ABGR8888 0x34324241u\n")
     extra += ["-I" + str(stubs)]
+    # Keep the real keyboard event pump; stub only unrelated drawing/pose work.
+    keyboard = (root / "screens/keyboard.cpp").read_text()
+    begin = keyboard.index("void Poll(void (*handle)")
+    end = keyboard.index("\nvoid Destroy()", begin)
+    (output / "keyboard-poll.inc").write_text(keyboard[begin:end])
+    extra += ["-DFT_CPU_KEYBOARD"]
     sources += [root / "screens/test/volume-boundary.cpp"]
 run_test("volume-controls-vr-tests", sources, extra)
+if not args.native_deps:
+    for mode in ("--keyboard-release", "--catcher-ownership"):
+        subprocess.run([str(output / "volume-controls-vr-tests"), mode], check=True)

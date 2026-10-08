@@ -250,6 +250,8 @@ long g_tick = 0;                     // ft_vr_poll calls
 bool g_vr = false;                   // connected to SteamVR (ft-screens --no-vr runs without it)
 // Authoritative placement. Legacy enabled is data only, never native camera intent.
 passthrough::Volume g_passthrough;
+// Held edits stay live for camera consumers, never for delayed release persistence.
+passthrough::Volume g_passthroughCommitted;
 constexpr vr::TrackedDeviceIndex_t kNone = vr::k_unTrackedDeviceIndexInvalid;
 
 // A popup or dialog of a floating window: a small panel over it, cut from the same buffer.
@@ -1060,7 +1062,7 @@ bool VolumeControlsReady(Mat &head) {
            DevicePose(vr::k_unTrackedDeviceIndex_Hmd, &head) && RigidPose(head);
 }
 void CancelVolumeDrag();
-bool ScreenPressedBy(vr::TrackedDeviceIndex_t dev);
+bool ScreenPressed();
 long g_volumeUpAt = -1; // pointer helper release fallback, independent of KWin clicks
 
 passthrough::Ray VolumeRay(const Mat &laser) {
@@ -1251,9 +1253,11 @@ void PollVolumeControls(void (*handle)(const ft_event *, void *), void *data) {
             else if (event.eventType == vr::VREvent_FocusLeave) part.hover = false;
             if (event.eventType == vr::VREvent_MouseButtonDown && event.data.mouse.button == vr::VRMouseButton_Left &&
                 ready && part.shown && event.trackedDeviceIndex != kNone && !VolumeDragging()) {
-                const bool busy = ScreenPressedBy(event.trackedDeviceIndex) ||
-                    std::any_of(g_screens.begin(), g_screens.end(), [&](const auto &entry) {
-                        return entry.second.drag != Drag::None && entry.second.dragDevice == event.trackedDeviceIndex;
+                // The single catcher belongs to either a desktop or portal gesture,
+                // including when different controllers press the two targets.
+                const bool busy = ScreenPressed() ||
+                    std::any_of(g_screens.begin(), g_screens.end(), [](const auto &entry) {
+                        return entry.second.drag != Drag::None;
                     });
                 if (!busy && LaserPose(event.trackedDeviceIndex, &laser) && RigidPose(laser)) {
                     if (control == 6) {
@@ -1401,7 +1405,7 @@ vr::TrackedDeviceIndex_t WristOnLaser(const Screen &s, const Mat &d, const Mat &
 }
 
 void StartDrag(Screen &s, Drag mode, vr::TrackedDeviceIndex_t dev) {
-    if (VolumeDragging() && VolumeDevice() == dev) return;
+    if (VolumeDragging()) return;
     Mat d, p;
     if (dev == kNone || !DevicePose(dev, &d) || !ScreenPose(s, &p)) return;
     s.pinTarget = kNone;
@@ -1499,9 +1503,12 @@ void EndDragsBy(vr::TrackedDeviceIndex_t dev, uint32_t button) {
         g_volumeUpAt = -1;
         const bool changed = g_volumeDrag.Active() ? g_volumeDrag.Finish(g_passthrough, dev) :
                                                     g_volumeMove.Finish(g_passthrough, dev);
-        if (changed && g_vr) RunLayout("passthrough-capture");
+        if (changed) {
+            g_passthroughCommitted = g_passthrough;
+            if (g_vr) RunLayout("passthrough-capture-release");
+        }
     }
-    keyboard::EndDragBy(dev);
+    if (button == vr::VRMouseButton_Left) keyboard::EndDragBy(dev);
     for (auto &[index, s] : g_screens)
         if (s.drag != Drag::None && s.dragDevice == dev) FinishDrag(s, index);
 }
@@ -1717,7 +1724,7 @@ struct Press {
     int64_t idleSince = -1;                   // the pressing controller has held nothing since (ms, ReleaseStuck)
 };
 Press g_press;
-bool ScreenPressedBy(vr::TrackedDeviceIndex_t dev) { return g_press.buttons && g_press.device == dev; }
+bool ScreenPressed() { return g_press.buttons != 0; }
 vr::VROverlayHandle_t g_catcher = vr::k_ulOverlayHandleInvalid;
 bool g_catcherShown = false;
 
@@ -2475,7 +2482,7 @@ void ft_vr_poll(void (*handle)(const struct ft_event *, void *), void *data) {
         // The screen itself (and a floating window's popups): input for KWin.
         auto panelEvent = [&](const vr::VREvent_t &ev, bool sub) {
             // A desk gesture may cross a desktop panel, but never belongs to KWin.
-            if (VolumeDragging() && VolumeDevice() == ev.trackedDeviceIndex) {
+            if (VolumeDragging()) {
                 if (ev.eventType == vr::VREvent_MouseButtonUp)
                     EndDragsBy(ev.trackedDeviceIndex, ev.data.mouse.button);
                 return;
@@ -2497,6 +2504,9 @@ void ft_vr_poll(void (*handle)(const struct ft_event *, void *), void *data) {
                     e.type = FT_BUTTON;
                     e.button = LinuxButton(ev.data.mouse.button);
                     e.pressed = ev.eventType == vr::VREvent_MouseButtonDown;
+                    // A rejected second-device portal press may release here.
+                    // Only the desktop owner can release its held KWin button.
+                    if (!e.pressed && g_press.buttons && g_press.device != ev.trackedDeviceIndex) return;
                     e.controller = IsHandController(ev.trackedDeviceIndex);
                     at();
                     if (!e.pressed && s.titleCarry) e.x = s.carryX, e.y = s.carryY, s.titleCarry = false;
@@ -2651,6 +2661,12 @@ void ft_vr_poll(void (*handle)(const struct ft_event *, void *), void *data) {
     } forward{handle, data};
     keyboard::Poll(
         [](const keyboard::Event &k, void *f) {
+            auto *forward = static_cast<Forward *>(f);
+            if (k.type == keyboard::Event::RawMouseButtonUp) {
+                EndDragsBy(k.device, k.button);
+                ReleaseAwayBy(k.device, k.button, forward->handle, forward->data);
+                return;
+            }
             ft_event e{};
             e.screen = -1;
             e.type = k.type == keyboard::Event::Key ? FT_KEY : FT_KEYBOARD_CLOSED;
@@ -2804,9 +2820,15 @@ void ft_vr_command(const char *cmd, char *reply, int size) {
         }
         return (void)std::snprintf(reply, size, "ok controls %d", g_volumeControls);
     }
-    if (passthrough::Command(cmd, g_passthrough, reply, size, &g_volumeDrag, &g_volumeMove)) {
+    const bool committed = subsystem == "passthrough" && action == "committed";
+    if (committed && input >> extra)
+        return (void)std::snprintf(reply, size, "error passthrough committed");
+    if (passthrough::Command(committed ? "passthrough state3d" : cmd,
+                             committed ? g_passthroughCommitted : g_passthrough,
+                             reply, size, &g_volumeDrag, &g_volumeMove)) {
         if (!VolumeDragging()) g_volumeUpAt = -1;
         if (std::strncmp(reply, "ok ", 3) == 0) {
+            if (action == "set") g_passthroughCommitted = g_passthrough;
             const int used = int(std::strlen(reply));
             if (used < size) std::snprintf(reply + used, size - used, " %s", !g_vr ? "no-vr" : "idle");
         }

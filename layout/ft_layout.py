@@ -451,20 +451,23 @@ def parse_passthrough_state(reply):
     return volume, fields[end] if len(fields) > end else None
 
 
-def capture_passthrough():
-    """Capture only the volume, serialized with other ft-layout operations."""
+def capture_passthrough(*, committed=False):
+    """Capture only the volume; release helpers exclude any later held edits."""
     try:
-        return _capture_passthrough()
+        return _capture_passthrough(committed=committed)
     except (OSError, ValueError) as e:
         raise RuntimeError(f"couldn't capture passthrough: {e}") from e
 
 
-def _capture_passthrough():
+def _capture_passthrough(*, committed=False):
     with open(LOCK_PATH, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         sock = screens_socket()
         try:
-            volume, _status = parse_passthrough_state(sock.ask("passthrough state3d", timeout=1.0))
+            # Query after acquiring the lock: old helpers coalesce to the latest
+            # release or external set, without sampling a later uncommitted drag.
+            command = "passthrough committed" if committed else "passthrough state3d"
+            volume, _status = parse_passthrough_state(sock.ask(command, timeout=1.0))
         finally:
             sock.sock.close()
         _write_passthrough(volume)
@@ -1212,6 +1215,8 @@ def main(argv):
             print(remote_view())
         elif cmd == "passthrough-capture" and len(argv) == 2:
             log(f"passthrough: {capture_passthrough()}")
+        elif cmd == "passthrough-capture-release" and len(argv) == 2:
+            log(f"passthrough: {capture_passthrough(committed=True)}")
         elif cmd == "toggle":
             log(screens_socket().ask("toggle"))
         elif cmd in ("hide", "show") and len(argv) == 3:
