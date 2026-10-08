@@ -404,8 +404,10 @@ bool Adapter::submitted() noexcept {
     Impl::Guard guard(p);
     if (!guard.ok)
         return false;
-    if (!p.live() || !p.status.cpu_done || p.status.stereo_submitted || !p.cb.submission ||
-        !p.gate.accept(p.frame, p.cb.clock()))
+    // Observe already-submitted work under native lifetime ownership, not lease
+    // authorization. This read-only callback must never queue new work.
+    if (!p.status.initialized || p.status.retired || !p.status.cpu_done ||
+        p.status.stereo_submitted || !p.cb.submission || !p.validated(Phase::Current))
         return p.reject();
     Completion c;
     if (!p.cb.submission(p.cb.user, p.tickets[p.eye_slots[0]].provenance,
@@ -413,7 +415,7 @@ bool Adapter::submitted() noexcept {
         c.frame != p.frame.id || !c.command || c.command != p.frame_arena.command ||
         !c.synchronization || !c.serial)
         return p.reject();
-    // Capture actual lifetime token even if authorization expires during submit.
+    // Save the exact lifetime token once, even if authorization has already ended.
     p.completion = c;
     p.status.stereo_submitted = true;
     if (!p.live() || !p.gate.submitted(p.frame, p.cb.clock()))

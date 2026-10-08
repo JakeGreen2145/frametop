@@ -651,6 +651,194 @@ static void lifetime_regressions() {
     assert(partial.adapter.retire());
     assert(partial.fake.destroys == 1);
 }
+// Read-only queue evidence is distinct from authorization and CPU admission.
+struct QueueObserver : Fake {
+    bool queued = false, expire_inside = false;
+    unsigned submissions = 0, completions = 0;
+    Completion token{}, observed_completion{};
+    static bool validate_queue(void *u, const Binding &b, Phase phase) noexcept {
+        auto &f = *static_cast<QueueObserver *>(u);
+        const auto &a = b.identity;
+        const auto &current = f.binding.identity;
+        return Fake::validate(&f, b, phase) && a.process_instance == current.process_instance &&
+               a.renderer == current.renderer && a.renderer_generation == current.renderer_generation &&
+               a.device == current.device && a.device_generation == current.device_generation;
+    }
+    static bool submission_queue(void *u, const Provenance &a, const Provenance &b,
+                                 Completion &out) noexcept {
+        auto &f = *static_cast<QueueObserver *>(u);
+        ++f.submissions;
+        assert(a.eye == 0 && b.eye == 1 && a.frame == b.frame);
+        out = f.token; // even populated output is not evidence when returning false
+        if (f.expire_inside)
+            now = 100;
+        return f.queued;
+    }
+    static bool completed_queue(void *u, const Binding &, const Completion &c) noexcept {
+        auto &f = *static_cast<QueueObserver *>(u);
+        ++f.completions;
+        f.observed_completion = c;
+        return f.complete;
+    }
+    Callbacks callbacks(bool observer) {
+        auto c = Fake::callbacks();
+        c.user = this;
+        c.validate = validate_queue;
+        c.submission = observer ? submission_queue : nullptr;
+        c.completed = completed_queue;
+        return c;
+    }
+};
+struct QueueFixture {
+    Fixture source;
+    QueueObserver fake;
+    Adapter adapter;
+    Frame frame;
+    explicit QueueFixture(bool observer = true)
+        : adapter(source.control, source.gate, fake.binding, fake.callbacks(observer)) {
+        assert(adapter.initialize());
+        PolicyInput policy;
+        policy.enabled = true;
+        frame = source.gate.begin(1, policy, true, true, false, now);
+        assert(adapter.latch(frame));
+        assert(adapter.enqueue(source.eye(0)));
+        assert(adapter.enqueue(source.eye(1)));
+        assert(adapter.outer_return());
+    }
+    BackendResult draw(unsigned eye) {
+        return adapter.backend(fake.records[eye], source.context(), source.lookup());
+    }
+    void cpu() {
+        assert(draw(0).decision == Decision::Portal);
+        assert(draw(1).decision == Decision::Portal);
+        assert(adapter.state().cpu_done);
+    }
+    void queue_success() {
+        // Synthetic external queue success happens while the frame is authorized.
+        // The submission callback only reads this immutable result; it queues nothing.
+        assert(now < frame.lease.deadline_ns);
+        assert(adapter.state().cpu_done);
+        fake.queued = true;
+        fake.token = {frame.id, fake.obs.arena.command, 0x901, 23, -2};
+    }
+    void unpublished() {
+        BackendStatus s;
+        assert(source.control.status(s) && !s.submitted_frame && !s.submitted_epoch);
+    }
+    void retained() {
+        assert(!adapter.state().stereo_submitted);
+        assert(!adapter.poll_completion());
+        assert(!fake.completions);
+        adapter.off();
+        fake.retire_ok = true;
+        assert(!adapter.retire() && !fake.destroys);
+        unpublished();
+    }
+};
+static void submission_observation_negatives() {
+    // Invalid/absent queue evidence stays fail-closed, even after authorization ends.
+    for (unsigned mode = 0; mode < 7; ++mode) {
+        QueueFixture f(mode != 6);
+        f.cpu();
+        f.queue_success();
+        switch (mode) {
+        case 0: f.fake.queued = false; break;
+        case 1: ++f.fake.token.frame; break;
+        case 2: ++f.fake.token.command; break;
+        case 3: f.fake.token.command = 0; break;
+        case 4: f.fake.token.synchronization = 0; break;
+        case 5: f.fake.token.serial = 0; break;
+        }
+        now = 100;
+        assert(!f.adapter.submitted());
+        f.retained();
+    }
+    // Native binding validation must still run before read-only observation.
+    for (unsigned mode = 0; mode < 3; ++mode) {
+        QueueFixture f;
+        f.cpu();
+        f.queue_success();
+        if (mode == 0) ++f.fake.binding.identity.renderer_generation;
+        if (mode == 1) ++f.fake.binding.identity.device_generation;
+        if (mode == 2) ++f.fake.binding.identity.process_instance;
+        now = 100;
+        assert(!f.adapter.submitted());
+        assert(!f.fake.submissions);
+        f.retained();
+    }
+    for (unsigned mode = 0; mode < 2; ++mode) {
+        QueueFixture f;
+        assert(f.draw(0).decision == Decision::Portal);
+        if (mode == 0) now = 100;
+        else f.adapter.off();
+        assert(f.draw(1).decision == Decision::Drop);
+        assert(!f.adapter.state().cpu_done);
+        // Even a claimed token cannot replace missing second-eye CPU admission.
+        f.fake.queued = true;
+        f.fake.token = {f.frame.id, f.fake.obs.arena.command, 0x901, 23, -2};
+        assert(!f.adapter.submitted());
+        assert(!f.fake.submissions);
+        f.retained();
+    }
+    QueueFixture other_thread;
+    other_thread.cpu();
+    other_thread.queue_success();
+    now = 100;
+    std::thread t([&] { assert(!other_thread.adapter.submitted()); });
+    t.join();
+    assert(!other_thread.fake.submissions);
+    assert(!other_thread.adapter.state().stereo_submitted);
+    assert(!other_thread.adapter.poll_completion() && !other_thread.fake.completions);
+    other_thread.adapter.off();
+    other_thread.fake.retire_ok = true;
+    assert(!other_thread.adapter.retire() && !other_thread.fake.destroys);
+    BackendStatus refused;
+    assert(!other_thread.source.control.status(refused));
+}
+static void submission_observation_after_authorization() {
+    bool all_preserved = true;
+    for (unsigned mode = 0; mode < 3; ++mode) {
+        QueueFixture f;
+        f.cpu();
+        f.queue_success();
+        const Completion exact = f.fake.token;
+        if (mode == 0) f.fake.expire_inside = true;
+        if (mode == 1) now = 100;
+        if (mode == 2) f.adapter.off();
+        assert(!f.adapter.submitted()); // never publish expired/revoked authorization
+        f.unpublished();
+        const bool saved = f.adapter.state().stereo_submitted;
+        all_preserved = all_preserved && saved;
+        std::printf("submission evidence %s: observations=%u saved=%d\n",
+                    mode == 0 ? "expiry-inside" : mode == 1 ? "expiry-before" : "off-before",
+                    f.fake.submissions, saved);
+        std::fflush(stdout);
+        // A duplicate must not observe again or replace the exact saved token.
+        ++f.fake.token.serial;
+        ++f.fake.token.subserial;
+        assert(!f.adapter.submitted());
+        assert(f.fake.submissions == (saved ? 1u : 0u));
+        assert(!f.adapter.poll_completion());
+        f.adapter.off();
+        f.fake.retire_ok = true;
+        assert(!f.adapter.retire() && !f.fake.destroys);
+        if (saved) {
+            f.fake.complete = true;
+            assert(f.adapter.poll_completion());
+            assert(f.fake.completions == 2);
+            const auto &seen = f.fake.observed_completion;
+            assert(seen.frame == exact.frame && seen.command == exact.command &&
+                   seen.synchronization == exact.synchronization && seen.serial == exact.serial &&
+                   seen.subserial == exact.subserial);
+            assert(f.adapter.retire() && f.fake.destroys == 1);
+            assert(f.adapter.poll_completion() && f.fake.completions == 2);
+            assert(f.adapter.retire() && f.fake.destroys == 1);
+        }
+        assert(f.fake.uploads == 2 && f.fake.enqueues == 2 && f.fake.lookups == 2);
+        f.unpublished();
+    }
+    assert(all_preserved && "expiry/Off must preserve already-successful exact queue evidence");
+}
 static void ticket_wrap() {
     Fixture wrap(16, UINT64_MAX);
     wrap.start();
@@ -703,6 +891,8 @@ int main(int argc, char **argv) {
     threads_pipeline_and_reentry();
     binding_and_arena_regressions();
     lifetime_regressions();
+    submission_observation_negatives();
+    submission_observation_after_authorization();
     ticket_wrap();
     if (argc == 2)
         captured_fixtures(argv[1]);
