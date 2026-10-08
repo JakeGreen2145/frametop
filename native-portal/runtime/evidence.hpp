@@ -3,6 +3,7 @@
 #include "../binding/pass.hpp"
 #include "../binding/lifecycle.hpp"
 #include <optional>
+#include <atomic>
 #include <sys/types.h>
 
 namespace native_portal::runtime {
@@ -17,7 +18,7 @@ bool read_self(uint64_t, void *, size_t) noexcept;
 // IPC inputs. A digest supplied here is a preparer contract, not live-image proof.
 // Native objects remain owned by the compositor; this object owns only evidence.
 // Recording attachment is event-issued; dynamic graph retention is not proved.
-// PassReader::live and native staging writes remain unsupported.
+// PassReader::live remains unsupported. Staging is a separate call-local borrow.
 class Evidence {
  public:
     Evidence() noexcept;
@@ -31,6 +32,15 @@ class Evidence {
     // Paired direct Adapter-owned native calls; no user-authored wrapper pointer.
     bool call_enter(const render::Registers &) noexcept;
     bool call_return(const render::Registers &) noexcept;
+    // Exact pinned camera call/return/enqueue scopes. Eye/origin/standing remain
+    // independent authenticated frame-owner inputs, never native readiness.
+    // 161d64 returns a nonreused invocation ticket. Pass that exact ticket to
+    // 161d68 and 161ed8; 161f00 aborts an unfinished invocation before epilogue.
+    // Upload success means original BLR once; enqueue success means SkipOwned
+    // with LR=161edc because Adapter already issued the replacement call.
+    // False never means stock fallback. No pointer is registered by this API.
+    uint64_t stage(render::Adapter &,uint64_t pc,arena::Saved &,const render::EyeInput &,
+                   uint64_t invocation=0) noexcept;
     bool initialized() const noexcept;
     // Command must outlive Evidence. No caller generation or reader is accepted.
     // Owner's queue/signal identities still belong to the separate Command binding.
@@ -46,6 +56,15 @@ class Evidence {
     const pid_t pid_,tid_;
     uint64_t base_=0,epoch_=0,allocation_sp_=0,allocation_slot_=0,borrowed_slot_=0;
     arena::Bridge *bridge_=nullptr;
+    // Native call-local borrow; never exported as a general read/write registry.
+    render::Adapter *staging_writer_=nullptr;
+    const render::Adapter *staging_owner_=nullptr; // compared only, never dereferenced
+    uint64_t camera_=0,stock_=0,stock_resource_=0,staging_sp_=0,staging_ticket_=0;
+    render::EyeInput staging_input_{};
+    bool staging_reads_=false,staging_returned_=false;
+    std::atomic<bool> staging_poisoned_{false};
+    bool staging_read(uint64_t,void *,size_t) const noexcept;
+    void clear_staging() noexcept;
     uint64_t resource_=0,command_wrapper_=0,wrapper_=0,wrapper_resource_=0,marker_=0;
     uint64_t call_=0,backing_=0,map_=0,buffer_=0,allocation_bytes_=0;
     uint32_t requested_size_=0,type_index_=0,type_flags_=0,type_count_=0;

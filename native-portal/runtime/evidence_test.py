@@ -25,7 +25,7 @@ if __name__=='__main__':
     exe=B/('evidence-test'+suffix)
     cmd=['g++','-std=c++17','-Wall','-Wextra','-Werror','-O1','-g','-pthread','-I'+str(R.parent/'include')]
     if a.sanitize:cmd+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
-    sources=['runtime/evidence.cpp','runtime/recording.cpp','runtime/evidence_test.cpp',
+    sources=['runtime/evidence.cpp','runtime/recording.cpp','runtime/staging.cpp','runtime/evidence_test.cpp',
              'binding/lifecycle.cpp','binding/command.cpp','binding/pass.cpp',
              'render/adapter.cpp','arena/bridge.cpp','src/aperture.cpp',
              'control/protocol.cpp','control/policy.cpp','control/transport.cpp']
@@ -33,7 +33,7 @@ if __name__=='__main__':
     report['commands']=[]
     no_layer=cmd[:-1]+[str(exe)+'-no-layer','-DEVIDENCE_NO_LAYER']
     exit_code=0
-    for c in [cmd,[str(exe)],no_layer,[str(exe)+'-no-layer']] + ([[sys.executable,'-B',str(R/'evidence_machine.py')]] if a.machine else []):
+    for c in [cmd,[str(exe)],no_layer,[str(exe)+'-no-layer']] + ([[sys.executable,'-B',str(R/name)] for name in ('evidence_machine.py','staging_machine.py')] if a.machine else []):
         p=subprocess.run(c,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=env)
         print(p.stdout,end='');report['commands'].append({'argv':c,'returncode':p.returncode,'output':p.stdout})
         exit_code=p.returncode

@@ -5,6 +5,7 @@
 #include "../arena/bridge.hpp"
 #include <memory>
 
+namespace native_portal::runtime { class Evidence; }
 namespace native_portal::render {
 using Address = uint64_t;
 using Prefix = std::array<std::byte, 352>;
@@ -155,6 +156,9 @@ struct State {
 class Adapter {
     struct Impl;
     std::unique_ptr<Impl> p_;
+    friend class native_portal::runtime::Evidence;
+    bool staging_owner(const arena::Bridge *, const Identity &,uint64_t base) const noexcept;
+    bool staging_write(uint64_t ticket,Address destination,const void *,size_t) noexcept;
 
   public:
     Adapter(Backend &, FrameGate &, Binding, Callbacks, size_t capacity = 1024,

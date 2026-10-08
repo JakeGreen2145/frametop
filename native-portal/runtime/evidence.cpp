@@ -44,6 +44,7 @@ bool Evidence::add(unsigned i,uint64_t p,size_t n) noexcept {
 bool Evidence::read(uint64_t p,void *out,size_t n) const noexcept {
     if(!owner() || failed_ || !constructed_ || !bounded(p,n)) return false;
     if(borrowed_slot_ && p==borrowed_slot_ && n==8) return read_self(p,out,n);
+    if(staging_read(p,out,n)) return true;
     for(const auto &s:spans_) {
         if(s.epoch==epoch_ && p>=s.begin && p-s.begin<=s.size && n<=s.size-(p-s.begin))
             return read_self(p,out,n);
@@ -51,6 +52,7 @@ bool Evidence::read(uint64_t p,void *out,size_t n) const noexcept {
     return false;
 }
 bool Evidence::fail() noexcept {
+    clear_staging();
     failed_=true;ready_=false;allocation_open_=false;call_=0;spans_={};recordings_={};recording_=0;return false;
 }
 bool Evidence::initialized() const noexcept {return owner() && ready_ && !failed_;}
@@ -83,7 +85,8 @@ bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
         if(s.x[0]!=R) return false;
         uint64_t object=0;
         if(!read_self(s.x[1],&object,8)) return fail();
-        if((pc==0x2966a0 && object==wrapper_) || (pc==0x294678 && object==marker_)) {
+        if((pc==0x2966a0 && (object==wrapper_ || (staging_ticket_ && object==stock_))) ||
+           (pc==0x294678 && object==marker_)) {
             fail();return true; // revoke before native destruction, never read freed storage
         }
         return false;
@@ -244,10 +247,15 @@ bool Evidence::snapshot(uint64_t wrapper,uint64_t marker,render::Observation &ou
     o.wrapper_size=size;o.wrapper_offset=offset;out=o;return true;
 }
 bool Evidence::read_callback(void *p,uint64_t a,void *out,size_t n) noexcept {return p && static_cast<Evidence*>(p)->read(a,out,n);}
-bool Evidence::write_callback(void *,uint64_t,const void *,size_t) noexcept {
-    // Adapter staging is privately owned. No verified registration path exists
-    // yet, so even a writable mapped address must not become a write capability.
-    return false;
+bool Evidence::write_callback(void *p,uint64_t destination,const void *source,size_t size) noexcept {
+    if(!p) return false;
+    auto &e=*static_cast<Evidence*>(p);
+    if(!e.owner()) {e.staging_poisoned_.store(true);return false;}
+    if(!e.initialized() || e.staging_poisoned_.load() || !e.staging_writer_) return false;
+    auto *writer=e.staging_writer_;e.staging_writer_=nullptr; // consume BEFORE copy
+    const bool ok=writer->staging_write(e.staging_ticket_,destination,source,size);
+    if(!ok)e.staging_poisoned_.store(true);
+    return ok;
 }
 bool Evidence::coherent_callback(void *p,uint64_t a) noexcept {return p && static_cast<Evidence*>(p)->coherent(a);}
 bool Evidence::live_callback(void *,const render::Context &) noexcept {

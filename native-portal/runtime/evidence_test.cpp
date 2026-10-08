@@ -217,7 +217,10 @@ static void unpaired_begin_revokes() {
     assert(!f.evidence.event(0x300a08,f.s));
     assert(!Evidence::observe(&f.evidence,b,addr(f.wrapper),addr(f.marker),o));
 }
+#include <sys/syscall.h>
+#include "staging_test.inc"
 int main() {
+    for(unsigned fault=0;fault<=34;++fault)staging_self_process(fault);
     unpaired_begin_revokes();initial_failures();adapter_and_pass_refusal();
     // Real kernel self-read, including page boundary, EFAULT and integer overflow.
     long page=sysconf(_SC_PAGESIZE);assert(page>0);
@@ -366,5 +369,7 @@ int main() {
     call.target=Fixture::base+0x296c00;call.x={addr(nested.r),592,0,0,0,0,0,0};
     assert(nested.evidence.call_enter(call));assert(!nested.evidence.call_enter(call));
     call.x[0]=addr(nested.wrapper);assert(!nested.evidence.call_return(call));
-    std::puts("evidence: real self-read, scoped begin/publication, Bridge bootstrap, Adapter initialization/latch, Lifecycle bind/refusal and fail-closed PassGate passed");
+    std::puts(expected_device_generation
+        ? "evidence: real self-read, scoped begin/publication, Bridge bootstrap, bounded staging with 35 synthetic cases, Adapter descriptor capture, Lifecycle bind/refusal and fail-closed PassGate passed"
+        : "evidence: no-layer initialization refusal and existing self-read/lifetime negatives passed; positive staging skipped without the synthetic layer export");
 }

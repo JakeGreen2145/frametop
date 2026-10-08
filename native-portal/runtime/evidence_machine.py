@@ -192,7 +192,7 @@ initial_begin=[InitialBegin(raw).check() for raw in [0,-4,1]]
 out={'initial_begin':initial_begin,'elf_sha256':p.PIN,'layout_guards':len(guards),'allocation_paths':results,'selector_cases':selector,
      'source_sha256':{str(f):hashlib.sha256(f.read_bytes()).hexdigest() for f in [pathlib.Path(__file__),WORK/'frame-native-live-render-analysis/analyze.py',ROOT/'evidence.cpp',ROOT/'evidence.hpp',ROOT/'recording.cpp']},
      'output_slot_consumed_and_cleared':True,'external_boundaries':'synthetic Vulkan, debug strings, libc allocation and selector vector storage; no native GPU calls',
-     'unproven':'exhaustive destruction coverage, whole-dispatch graph/cache/pipeline retention, K ownership and Adapter staging registration, runtime image/transport, owner thread handoff'}
+     'unproven':'exhaustive destruction coverage, whole-dispatch graph/cache/pipeline retention, runtime image/transport and exhaustive camera caller invalidation, owner thread handoff'}
 B=ROOT.parent/'integration'/'build'/'runtime-evidence';B.mkdir(parents=True,exist_ok=True)
 (B/'instruction-results.json').write_text(json.dumps(out,indent=2)+'\n')
 print(json.dumps(out,indent=2))

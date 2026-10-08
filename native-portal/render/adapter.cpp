@@ -102,7 +102,7 @@ struct Adapter::Impl {
     uint64_t highwater = 0;
     Address wrapper_resource = 0;
     struct Upload {
-        bool active=false, offered=false, entered=false, ready=false;
+        bool active=false, offered=false, entered=false, ready=false, writable=false;
         Address camera=0, stock=0;
         uint64_t ticket=0;
         EyeInput input{};
@@ -213,7 +213,13 @@ Adapter::Adapter(Backend &b, FrameGate &g, Binding bind, Callbacks c, size_t cap
     : p_(new Impl(b, g, bind, c, cap, first)) {}
 // Deliberately no native destruction here: absence of proven completion leaks
 // native handles safely. Integration must retain this owner until retire succeeds.
-Adapter::~Adapter() = default;
+Adapter::~Adapter() {
+    auto &p=*p_;
+    // Revoke the private staging offer before its allocation dies. This is only
+    // local bookkeeping: no native destruction, settlement, or debt rollback.
+    if(getpid()==p.pid && std::this_thread::get_id()==p.owner && p.binding.upstream && p.upload.offered)
+        p.binding.upstream->release(p.upload.ticket);
+}
 bool Adapter::initialize() noexcept {
     auto &p = *p_;
     Impl::Guard guard(p);
@@ -519,7 +525,9 @@ void Adapter::upstream(arena::Saved &s,unsigned site,uint64_t lifetime,uint64_t 
         u.offered=true;u.entered=true;
         // Native ownership debt starts BEFORE any external copy/reference work.
         p.native_debt=true;p.pending(true);
+        u.writable=true;
         bridge->dispatch(s,site,lifetime,thread);
+        u.writable=false;
         if(s.pad!=arena::Replacement || !p.live()) fail();
         return;
     }
@@ -542,6 +550,29 @@ void Adapter::upstream(arena::Saved &s,unsigned site,uint64_t lifetime,uint64_t 
        final.arena.cursor!=aligned || final.wrapper_resource!=p.wrapper_resource ||
        final.wrapper_size!=592 || final.wrapper_offset!=a.cursor || final.attachment!=attachment) {fail();return;}
     u.ready=true;p.frame_arena=u.after.arena;p.highwater=aligned;
+}
+bool Adapter::staging_owner(const arena::Bridge *bridge,const Identity &identity,uint64_t base) const noexcept {
+    const auto &p=*p_;
+    return getpid()==p.pid && std::this_thread::get_id()==p.owner &&
+        p.binding.upstream==bridge && same(p.binding.identity,identity) &&
+        p.binding.targets.upload==base+0x2993f8 && p.binding.targets.descriptor==base+0x2988a8 &&
+        p.binding.targets.enqueue==base+0x29b278;
+}
+bool Adapter::staging_write(uint64_t number,Address destination,const void *source,size_t size) noexcept {
+    auto &p=*p_;
+    if(getpid()!=p.pid || std::this_thread::get_id()!=p.owner) {p.control.refuse();return false;}
+    auto &u=p.upload;
+    const bool window=u.writable;u.writable=false; // one attempt; never a retained host address grant
+    if(!window || !u.active || !u.entered || !u.offered || !number || number!=u.ticket ||
+       !source || size!=sizeof(u.staging) || destination!=reinterpret_cast<Address>(u.staging.data()) ||
+       !p.live() || u.input.eye>1) return p.reject();
+    const auto &auth=p.tickets[p.eye_slots[u.input.eye]].provenance;
+    if(auth.ticket!=number || auth.frame!=p.frame.id || auth.recording_generation!=p.recording)
+        return p.reject();
+    // Destination is derived ONLY from this Adapter's private current allocation.
+    // Never register/dereference a caller-chosen host destination.
+    std::memcpy(u.staging.data(),source,sizeof(u.staging));
+    return true;
 }
 bool Adapter::enqueue(uint64_t number,const EyeInput &in) noexcept {
     auto &p=*p_;
