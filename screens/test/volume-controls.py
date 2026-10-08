@@ -9,6 +9,8 @@ from pathlib import Path
 import argparse
 import re
 import subprocess
+import tempfile
+import os
 
 root = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -32,11 +34,19 @@ if args.sanitize:
 def run_test(name, sources, extra=()):
     exe = output / name
     subprocess.run(["g++", *flags, *map(str, sources), *extra, "-Wl,--gc-sections", "-o", str(exe)], check=True)
-    subprocess.run([str(exe)], check=True)
+    with tempfile.TemporaryDirectory(prefix="np-test-", dir=os.environ.get("TMPDIR")) as runtime:
+        subprocess.run([str(exe)], check=True, env={**os.environ, "XDG_RUNTIME_DIR": runtime})
     print(f"PASS {name}: exit 0", flush=True)
 
 for source in ("passthrough", "volume-translate", "volume-rotation"):
     run_test(source + "-tests", [root / f"screens/test/{source}.cpp", root / "screens/passthrough.cpp"])
+
+control_sources = [root / "native-portal/control" / source for source in ("protocol.cpp", "transport.cpp", "policy.cpp")]
+for source in ("test", "adversarial_test", "frame_test"):
+    unit_sources = [root / "native-portal/control" / (source + ".cpp"), *control_sources]
+    if source == "test":
+        unit_sources += [root / "screens/native_portal.cpp", root / "screens/passthrough.cpp"]
+    run_test("native-portal-" + source, unit_sources, ["-pthread"])
 
 header = args.openvr_header.resolve()
 if not header.is_file():
@@ -60,7 +70,10 @@ for name in ("IVROverlay", "IVRSystem", "IVRApplications", "IVRRenderModels"):
 defaults.append("}\n")
 (output / "volume-openvr-defaults.h").write_text("".join(defaults))
 extra = ["-isystem", str(include), "-I" + str(output)]
-sources = [root / "screens/test/volume-controls.cpp", root / "screens/passthrough.cpp"]
+sources = [root / "screens/test/volume-controls.cpp", root / "screens/passthrough.cpp",
+           root / "screens/native_portal.cpp", root / "native-portal/control/protocol.cpp",
+           root / "native-portal/control/transport.cpp", root / "native-portal/control/policy.cpp"]
+extra += ["-pthread"]
 if args.native_deps:
     extra += ["-I" + str(header.parent)]  # bundled stb_truetype.h for keyboard.cpp
     extra += subprocess.check_output(["pkg-config", "--cflags", "--libs", "egl", "glesv2", "gbm", "libdrm"], text=True).split()
@@ -84,3 +97,4 @@ run_test("volume-controls-vr-tests", sources, extra)
 if not args.native_deps:
     for mode in ("--keyboard-release", "--catcher-ownership", "--desktop-buttons"):
         subprocess.run([str(output / "volume-controls-vr-tests"), mode], check=True)
+run_test("native-portal-vr-tests", [root / "screens/test/native-portal-vr.cpp", *sources[1:]], extra)

@@ -74,6 +74,7 @@
 
 #include "handcut.h"
 #include "passthrough.h"
+#include "native_portal.h"
 #include "portal_presentation.hpp"
 #include <sstream>
 #include "keyboard.h"
@@ -252,6 +253,7 @@ bool g_vr = false;                   // connected to SteamVR (ft-screens --no-vr
 passthrough::Volume g_passthrough;
 // Held edits stay live for camera consumers, never for delayed release persistence.
 passthrough::Volume g_passthroughCommitted;
+native_portal::Owner g_nativePortal;
 constexpr vr::TrackedDeviceIndex_t kNone = vr::k_unTrackedDeviceIndexInvalid;
 
 // A popup or dialog of a floating window: a small panel over it, cut from the same buffer.
@@ -2255,6 +2257,7 @@ bool ft_vr_init(void) {
 }
 
 void ft_vr_shutdown(void) {
+    g_nativePortal.shutdown();
     if (!g_vr) return;
     if (g_cutterState == 1)
         for (auto &[i, s] : g_screens) g_cutter.DropPanel(i);  // drops their imports while SteamVR is up
@@ -2701,6 +2704,11 @@ void ft_vr_poll(void (*handle)(const struct ft_event *, void *), void *data) {
     UpdateLasers();
     UpdateControls();
     UpdateVolumeControls();
+    // Publish after this tick's manipulation/cancellation, never saved GUI geometry.
+    const auto &portalHead = g_poses[vr::k_unTrackedDeviceIndex_Hmd];
+    g_nativePortal.tick(g_passthrough, portalHead.bPoseIsValid && portalHead.bDeviceIsConnected &&
+        portalHead.eTrackingResult == vr::TrackingResult_Running_OK &&
+        RigidPose(portalHead.mDeviceToAbsoluteTracking), g_paused, g_portalMenu.active(vr::VROverlay()));
     UpdateGuides();
     UpdateCutouts();
     UpdateCatcher();
@@ -2789,6 +2797,7 @@ void ft_vr_keyboard_hide(void) {
 // numbered from 1 here, like everywhere the user sees them. "screens" and "all" leave out
 // floating windows.
 void ft_vr_command(const char *cmd, char *reply, int size) {
+    if (g_nativePortal.command(cmd, reply, size)) return;
     // Keep controls separate: the original passthrough state wire form is unchanged.
     std::istringstream input(cmd);
     std::string subsystem, action, value, extra;

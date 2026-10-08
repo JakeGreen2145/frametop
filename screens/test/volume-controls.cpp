@@ -700,4 +700,5 @@ int main(int argc, char **argv) {
     assert(overlay.parts.empty());
     assert(overlay.lifetime.back().find("destroy:") == 0);
     std::puts("volume OpenVR adapter: independent controls, grab/resize, sort/input/lifetime, cancellation, ownership and capture");
+    return 0;
 }
