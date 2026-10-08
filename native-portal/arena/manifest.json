@@ -1,0 +1,25 @@
+{
+  "elf_sha256": "9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265",
+  "fixture_sha256": {
+    "frame-native-live-render-analysis/analyze.py": "4db7b7f49b1225cadbd60107e54c68bf07a87ada4d725dcec7a8eda18e386cd2",
+    "frame-native-transaction-feasibility/probes.py": "dfa315e71954b61adee7e121f7753771b27cd4b22b832323f84df95590e53d8c",
+    "frame-native-transaction-feasibility/explore.py": "23cd08b548ca1fd4efe99533b84752090f2e1de00c3557135e924ac8a3927b78"
+  },
+  "direct_predecessors": {
+    "0x7fdbc": [], "0x161d64": [], "0x161d68": [], "0x2987d4": [],
+    "0x2988b0": [], "0x2990c8": ["0x2992f4", "0x299454"], "0x299110": [],
+    "0x299208": ["reloc:0x599c58"], "0x2993f8": ["reloc:0x599cb0"],
+    "0x29a14c": [], "0x29a150": [], "0x29f358": []
+  },
+  "contexts": {
+    "upload": "2ed2dff48157a9264b2ec806178d4644b3b7a1af0aae9a29a5bb645615a817ec",
+    "allocation_return": "ad70cee17de362f6b6d55148017af35666adacb59fe4b21d2694345a5178721e",
+    "allocation": "23b6c02d542b5fa801982775c1f7c5b5d60a1e6cec4378dfce434ee7ee46ca51",
+    "admission": "c27ff03abfeb26370d51b643d9f4b560dc39f7728b0824cdf48736c6222c9c5b",
+    "ubo_classifier": "9be5a9d7a922a190e5db668e96b0a0c219d896ec1c5425dec37c073d007de9d8",
+    "geometry_classifier": "95b0c9504159e689467e54dd40d9dce0894c81baf104d474da13cc3132e70735",
+    "initialized": "3ab5bc964437e366528b11b351dae8b61777047ce653919df3dcd8c7d789899b",
+    "reset": "eebbd1317fdd0e5abe1ce461101798b0f2776bfbff4cb249be4ae38f1a921ad3",
+    "upload_return": "68f817e572d2efab60584fc6a09d5337e421cb5d823e394f0cca23d29d722520"
+  }
+}
