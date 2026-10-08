@@ -75,6 +75,8 @@ The atomic-word mailbox uses lock-free u64 payload words and sequentially consis
 
 Local RED was observed for missing control/frame APIs, the unimplemented native command, pre-menu submission reuse, failed-handoff ledger clearing, and asynchronous GUI state/epoch inconsistencies. Focused regression tests passed after their fixes.
 
+The lifecycle repair also reproduced both failures under ASan/UBSan before changing production code. Private-socket tests now reject an old same-connection Release without revoking the newer lease, then update that newer lease successfully. Replay revocation and same-epoch Release idempotence remain covered. Owner tests wait for worker status acknowledgements across tracking/pause transitions: failed acquisition and observed revocation still require explicit On, while previously valid connections recover automatically without changing the public intent epoch. The actual `ft_vr_poll` fake-backend test covers refused-On recovery too. Both sanitizer suites passed locally and in the isolated Frame mirror, and the complete isolated `ft-screens` build produced an AArch64 executable. These tests did not connect to live VR.
+
 ```
 python3 -B native-portal/control/test.py --sanitize
 python3 -B native-portal/control/test.py --sanitize \

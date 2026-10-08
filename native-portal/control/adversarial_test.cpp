@@ -74,7 +74,22 @@ int main(int argc,char** argv) {
     q.op=Operation::Update; q.epoch=epoch; q.origin=3; ++q.sequence; q.generation=1; assert(c.exchange(q,r));
     Client stranger; assert(stranger.connect(server.path())); Request wrong_epoch=q; wrong_epoch.op=Operation::Release; assert(stranger.exchange(wrong_epoch,r)&&r.reason==Reason::Epoch);
     Lease l; assert(bridge.lease(l,time_ns)); stranger.close();
-    q.op=Operation::Release; ++q.sequence; assert(c.exchange(q,r)&&r.state==State::Off); ++q.sequence; assert(c.exchange(q,r)&&r.state==State::Off); c.close();
+    q.op=Operation::Release; ++q.sequence; assert(c.exchange(q,r)&&r.state==State::Off); ++q.sequence; assert(c.exchange(q,r)&&r.state==State::Off);
+    // A delayed release from this same connection cannot revoke its newer lease.
+    q.op=Operation::Acquire; q.epoch=q.origin=0; ++q.sequence;
+    assert(c.exchange(q,r)&&r.epoch>epoch); const auto newer=r.epoch;
+    q.op=Operation::Update; q.epoch=newer; q.origin=3; ++q.sequence; assert(c.exchange(q,r));
+    assert(bridge.lease(l,time_ns)&&l.epoch==newer);
+    q.op=Operation::Release; q.epoch=epoch; ++q.sequence;
+    assert(c.exchange(q,r)&&r.reason==Reason::Epoch);
+    assert(bridge.lease(l,time_ns)&&l.epoch==newer);
+    q.op=Operation::Update; q.epoch=newer; ++q.sequence; ++q.generation; q.geometry.center[0]=.25f;
+    assert(c.exchange(q,r)&&r.state==State::Warming);
+    assert(bridge.lease(l,time_ns)&&l.epoch==newer&&l.generation==q.generation&&l.geometry.center[0]==.25f);
+    q.op=Operation::Release; q.epoch=epoch; ++q.sequence;
+    assert(c.exchange(q,r)&&r.reason==Reason::Epoch); assert(bridge.lease(l,time_ns));
+    // The stale-release exception does not bypass the connection replay guard.
+    assert(c.exchange(q,r)&&r.reason==Reason::Replay); assert(!bridge.lease(l,time_ns)); c.close();
     // Malformed trailing packet bytes revoke an active owner, not truncate.
     int fd=raw_connect(server.path()); q=Request{}; q.sequence=1; q.sent_ns=time_ns; r=raw_exchange(fd,q); q.epoch=r.epoch; q.origin=r.origin; q.op=Operation::Update; q.sequence=2; q.generation=1; raw_exchange(fd,q);
     uint8_t over[129]{}; auto wire=encode(q); memcpy(over,wire.data(),128); assert(send(fd,over,129,MSG_NOSIGNAL)==129); assert(recv(fd,over,129,0)==128); assert(decode(over,128,r)&&r.reason==Reason::Invalid); assert(!bridge.lease(l,time_ns)); close(fd);

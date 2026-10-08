@@ -107,6 +107,11 @@ struct Server::Impl {
         // Revoked connections cannot renew, release another lease, or restore old
         // geometry. Only a fresh explicit Acquire may create a new epoch.
         if(p.revoked!=Reason::None)return reply(p,b);
+        // A delayed Release is scoped to its old lease, not this connection's
+        // newer one. Decode, sequence and owner checks above still apply.
+        if(q.op==Operation::Release&&q.epoch&&q.epoch<p.epoch) {
+            auto r=reply(p,b); r.reason=Reason::Epoch; return r;
+        }
         if(!q.epoch||q.epoch!=p.epoch)return bad(Reason::Epoch);
         if(q.op==Operation::Release) {
             if(writer==int(i))revoke(Reason::Off);

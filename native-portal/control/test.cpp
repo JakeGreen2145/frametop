@@ -17,7 +17,58 @@ static uint64_t clock_now() { return now.load(); }
 template<class F> void until(F f) { for (int i=0;i<500;++i) { if(f())return; std::this_thread::sleep_for(std::chrono::milliseconds(2)); } assert(false && "timeout"); }
 static int calls=0; static bool result=true;
 static bool native_call(void*) { ++calls; return result; }
+static void owner_recovery() {
+    std::string base=std::string(std::getenv("TMPDIR"))+"/nr-XXXXXX"; assert(mkdtemp(base.data()));
+    Backend bridge; Server server(base,bridge,clock_now); assert(server.start());
+    Owner owner(server.path(),clock_now); passthrough::Volume v; Lease lease; char text[512];
+    auto status=[&](const char* reason) {
+        assert(owner.command("passthrough portal status",text,sizeof text));
+        return strstr(text,reason)!=nullptr;
+    };
+    owner.tick(v,true,false,false); owner.command("passthrough portal on",text,sizeof text);
+    until([&]{return status("unsupported-backend");});
+    BackendStatus b; b.capable=b.serialized=b.external_clear=true; b.origin=23; bridge.publish(b);
+    auto recover_refused=[&](const char* reason,bool paused) {
+        owner.tick(v,paused,paused,false);
+        until([&]{return status("tracking-invalid");}); // worker acknowledged loss/pause
+        owner.tick(v,true,false,false);
+        until([&]{
+            assert(!bridge.lease(lease,now) && "recovery must not bypass explicit On");
+            return status(reason); // worker acknowledged ready with its original refusal
+        });
+        assert(strstr(text,"\"epoch\":1,"));
+    };
+    recover_refused("unsupported-backend",false);
+    recover_refused("unsupported-backend",true);
+    // Only another explicit On clears the failed-acquire latch.
+    owner.command("passthrough portal on",text,sizeof text);
+    until([&]{return bridge.lease(lease,now);});
+    const auto active_epoch=lease.epoch;
+    // Previously valid connections still recover automatically, without new intent.
+    for(bool paused:{false,true}) {
+        const auto previous=lease.epoch;
+        owner.tick(v,paused,paused,false);
+        until([&]{return status("tracking-invalid")&&!bridge.lease(lease,now);});
+        owner.tick(v,true,false,false);
+        until([&]{return bridge.lease(lease,now)&&lease.epoch>previous;});
+        assert(lease.epoch>active_epoch); status("warming"); assert(strstr(text,"\"epoch\":2,"));
+    }
+    // Observed revocation also remains latched across both recovery paths.
+    b.origin++; bridge.publish(b); now+=50000000; owner.tick(v,true,false,false);
+    until([&]{return status("origin-changed");});
+    for(bool paused:{false,true}) {
+        owner.tick(v,paused,paused,false); until([&]{return status("tracking-invalid");});
+        owner.tick(v,true,false,false);
+        until([&]{assert(!bridge.lease(lease,now)); return status("origin-changed");});
+        assert(strstr(text,"\"epoch\":2,"));
+    }
+    owner.command("passthrough portal on",text,sizeof text);
+    until([&]{return bridge.lease(lease,now)&&lease.origin==b.origin;});
+    status("warming"); assert(strstr(text,"\"epoch\":3,"));
+    owner.shutdown(); server.stop(); std::filesystem::remove_all(base);
+}
 int main() {
+    owner_recovery();
     Request q; q.op=Operation::Acquire; q.sequence=1; q.sent_ns=now;
     auto wire=encode(q); Request decoded;
     assert(wire.size()==128 && decode(wire.data(),wire.size(),decoded));

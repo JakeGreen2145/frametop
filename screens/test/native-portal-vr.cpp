@@ -19,6 +19,17 @@ int main() {
     wait_for([&]{return Reply("passthrough portal status").find("unsupported-backend")!=std::string::npos;});
     native_portal::Lease lease; assert(!bridge.lease(lease,native_portal::boottime()));
     native_portal::BackendStatus backend; backend.capable=true; backend.serialized=true; backend.external_clear=true; backend.origin=19; bridge.publish(backend);
+    // Real poll-loop recovery must retain the failed On, even after capability appears.
+    for(bool paused:{false,true}) {
+        g_paused=paused; systemVR.poses[0].bPoseIsValid=paused;
+        wait_for([&]{return Reply("passthrough portal status").find("tracking-invalid")!=std::string::npos;});
+        g_paused=false; systemVR.poses[0].bPoseIsValid=true;
+        wait_for([&]{
+            assert(!bridge.lease(lease,native_portal::boottime()));
+            return Reply("passthrough portal status").find("unsupported-backend")!=std::string::npos;
+        });
+        assert(Reply("passthrough portal status").find("\"epoch\":1,")!=std::string::npos);
+    }
     Command("passthrough set 0 0.4 0.8 -0.7 1.2 0.3 0.6 37 25 -15");
     Command("passthrough portal on");
     wait_for([&]{return bridge.lease(lease,native_portal::boottime());});

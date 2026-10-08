@@ -20,15 +20,15 @@ struct Owner::Impl {
         while(!quit) {
             auto ticket=intent.load(); bool want=wanted.load(); Sample s; bool have=sample.read(s); auto now=clock();
             bool ready=have&&s.tracking&&!s.paused&&s.time&&now>=s.time&&now-s.time<250000000;
+            if(ticket!=seen) { client.close(); connected=false; q=Request{}; seen=ticket; last=0; }
             if(!want||!ready) {
-                if(connected) { client.close(); connected=false; }
-                r=Reply{}; r.state=want?State::Warming:State::Off; r.reason=want?Reason::Tracking:Reason::Off; status.publish({r,ticket});
-                seen=0; last=0;
+                // Only an intentional close of a still-valid connection permits
+                // automatic recovery. Failed/revoked attempts keep their latch.
+                if(connected) { client.close(); connected=false; last=0; }
+                Reply waiting; waiting.state=want?State::Warming:State::Off; waiting.reason=want?Reason::Tracking:Reason::Off; status.publish({waiting,ticket});
             } else {
-                if(ticket!=seen) { client.close(); connected=false; q=Request{}; seen=ticket; last=0; }
                 if(!connected) {
-                    // No retries for a failed/revoked epoch until explicit On, or
-                    // a tracking/suppression recovery starts a new acquire.
+                    // Failed/revoked attempts require a new explicit On generation.
                     if(!last) {
                         r=Reply{}; r.reason=Reason::MissingBridge;
                         if(client.connect(path)) {
@@ -37,8 +37,9 @@ struct Owner::Impl {
                                 connected=true; q.epoch=r.epoch; q.origin=r.origin; q.op=Operation::Update;
                             } else client.close();
                         }
-                        status.publish({r,ticket}); last=now;
+                        last=now;
                     }
+                    status.publish({r,ticket});
                 }
                 uint32_t flags=1|(s.menu?2:0);
                 if(connected&&((q.op==Operation::Update&&q.sequence==1) || flags!=last_flags || now-last>=50000000)) {
