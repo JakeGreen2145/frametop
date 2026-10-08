@@ -1,6 +1,6 @@
 # Combined native binding reconciliation
 
-This reconciliation keeps the upstream upload, warm-pass extraction, command certificate and lifecycle implementations unchanged. It installs nothing and does not publish capability.
+The original reconciliation preserved the upstream upload, warm-pass extraction, command certificate and lifecycle implementations. The later [rejected-pair settlement contract](native-portal-rejected-settlement.md) adds a separate fully recorded, never-encoded path. Neither change installs hooks or publishes capability.
 
 ## Link dependency repair
 
@@ -29,7 +29,7 @@ Coverage:
 - All four independent recording/encoding order combinations. Real private-socket Release between backend eyes reports Draining. The second committed eye still completes. Successful queue evidence survives Off without publishing submitted status. GPU-only and CPU-disposal-only progress remain Draining; successful old-command reset plus reclamation finally yields Off on repeated same-epoch Release.
 - Seven retained-debt cases: failed queue result, unobserved queue result, missing GPU completion, missing CPU disposal, failed reset, repeated queue observation and unknown command-generation queue observation. No refused observation cancels native work or synthesizes queue success.
 - A known cold stock-only pass refuses both owned packets before any pipeline lookup. The exact stock packet is not skipped and its Adapter stock forwarding still executes.
-- Either pipeline failure admits neither eye and retains the already-created upload debt.
+- Either pipeline failure admits neither eye. Upload debt remains until both actual skips and exact queue/GPU/disposal/reset proof permit the separate rejected-pair settlement path.
 - 2000 consecutive fully settled frames through one persistent Adapter and Bridge. The loop observes 4000 upstream replacements, at most two resident tickets, one wrapper allocation and zero hot C++ allocations. It retains one generation issuer across command-address reuse and replaces Command/Lifecycle storage only after proved old-generation settlement. Queue/reclaim leave arena accounting at 1280; the separate native cursor-reset callback clears it for the next frame.
 
 ## Facts and limitations
@@ -40,7 +40,7 @@ The combined CPU fixture models the native vector swap and destruction memory tr
 
 Lease Off and `Command::off` are different operations. Calling the latter between committed eyes would stop the second Command admission. The combined fixture therefore retains native command admission through both committed eyes and invokes Command::off afterward. A future live owner must preserve this scheduling contract; wiring Release directly to Command::off or lifetime invalidation is unsupported. No new live owner or callback registry is installed here.
 
-Cold-pass materialization remains unsupported. Unknown/repeated submission remains conservative retained debt, not a cancellation policy. Live lifetime readers, all external packet aliases, cache/pipeline retention, exhaustive native callbacks and reset ordering still require integration proof. No GPU execution, headset pixels, optical alignment, finite Off latency or end-to-end screens-owner/native-compositor activation is established. The real screens-owner/GUI parser tests run independently in the control suite.
+Owned encoding in a cold dispatch remains unsupported. Stock cold-pass materialization stays at its native position; fully recorded owned pairs can now settle after authenticated skips and retry on a later warm frame. Partial uploads and unrecorded pairs remain unsupported retained debt. Unknown/repeated submission remains conservative retained debt, not a cancellation policy. Live lifetime readers, all external packet aliases, cache/pipeline retention, exhaustive native callbacks and reset ordering still require integration proof. No GPU execution, headset pixels, optical alignment, finite Off latency or end-to-end screens-owner/native-compositor activation is established. The real screens-owner/GUI parser tests run independently in the control suite.
 
 ## Reproduce
 

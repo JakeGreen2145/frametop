@@ -82,6 +82,9 @@ struct PairPreparation {
     std::array<EyePreparation, 2> eyes{};
     Address command = 0;
     bool complete_scan = false;
+    // Complete bounded packet scan, even when cold passes prohibit preparation.
+    // No pre-dispatch mutation; only Ready/ColdPass may supply this proof.
+    bool suppression_scan = false;
 };
 struct Completion {
     uint64_t frame = 0, command = 0, synchronization = 0, serial = 0;
@@ -103,7 +106,8 @@ struct Callbacks {
     // through encoding. A cache hit still requires approval. False/null refuses
     // BOTH eyes before commit; backend never calls this callback.
     bool (*pipeline)(void *, const Provenance &, Registers &) noexcept = nullptr;
-    // Observe actual successful stereo queue submission and exact immutable token.
+    // Observe actual successful native queue submission and exact immutable token.
+    // Includes a proved rejected pair's uploads/stock command, never invented work.
     bool (*submission)(void *, const Provenance &, const Provenance &,
                        Completion &) noexcept = nullptr;
     bool (*completed)(void *, const Binding &, const Completion &) noexcept = nullptr;
@@ -117,6 +121,10 @@ struct Callbacks {
     // No binding means no reclamation. Must not queue work or reauthorize a lease.
     bool (*settled)(void *, const Binding &, const Provenance &, const Provenance &,
                     const Completion &) noexcept = nullptr;
+    // Called only after both exact packets took the pre-encoding DROP path.
+    // Register the immutable pair on its actual upload command, NOT GPU completion.
+    bool (*rejected)(void *, Address command, const Provenance &,
+                     const Provenance &) noexcept = nullptr;
 };
 struct EyeInput {
     unsigned eye = 0;
@@ -134,6 +142,7 @@ struct State {
     bool initialized = false, frame_invalid = true, cpu_done = false, stereo_submitted = false,
          gpu_complete = false, retired = false, cpu_settled = false;
     bool prepared = false, committed = false, pending = false;
+    bool rejected = false, queue_observed = false;
     uint64_t pair_generation = 0; // never reused, derived from the reserved ticket identity
     size_t tickets_used = 0; // resident entries, not lifetime identities
     size_t tickets_capacity = 0;
@@ -168,7 +177,13 @@ class Adapter {
     // encoding. Off/expiry after commit stops new work, not the committed pair.
     uint64_t prepare(const PairPreparation &) noexcept;
     bool commit(uint64_t pair_generation) noexcept;
+    // Serialized dispatch-only rejection transaction. Missing/changed/duplicate
+    // skips retain debt. Never applicable to committed or partially encoded work.
+    bool reject_recorded(const PairPreparation &) noexcept;
+    bool suppressed(const EyePreparation &, Address command) noexcept;
     BackendResult backend(const Recorded &, const Context &, Registers lookup) noexcept;
+    // Always false for rejected pairs, even after saving their native queue token.
+    // queue_observed is lifetime evidence; stereo_submitted is owned draw evidence.
     bool submitted() noexcept;
     bool poll_completion() noexcept;
     bool reclaim() noexcept; // no new work; explicit CPU/recording settlement

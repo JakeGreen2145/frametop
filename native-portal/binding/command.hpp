@@ -32,6 +32,7 @@ struct State {
     bool bound = false, recording_debt = false, success_debt = false;
     bool certificate = false, gpu_complete = false, stopped = false, unsupported = false;
     unsigned admitted = 0, returned = 0;
+    bool rejected = false;
 };
 // One owner, one recording, one command generation, two immutable provenances.
 // No reuse/reset API. A new owner requires external lifetime proof for the old one.
@@ -43,6 +44,10 @@ class Command {
     bool bind(const Owner &) noexcept;
     bool backend_enter(const Scope &, const render::Provenance &) noexcept;
     bool backend_return(const Scope &, bool admitted) noexcept;
+    // Adapter-issued full-pair actual skip proof, scoped to the registered upload
+    // command. No backend admission may have occurred. Observation survives Off.
+    bool rejected(const Scope &, uint64_t upload_command, const render::Provenance &,
+                  const render::Provenance &) noexcept;
     bool queue_enter(const Scope &, const SubmitSnapshot &, const Signal &) noexcept;
     bool queue_result(const Scope &, int32_t raw_vk_result) noexcept;
     bool stamp_enter(const Scope &queue, const Scope &stamp, const Signal &) noexcept;
@@ -68,6 +73,7 @@ class Command {
     bool thread() const noexcept;
     bool scope(const Scope &) const noexcept;
     bool fail() noexcept;
+    bool pair_recorded() const noexcept;
     const pid_t pid_;
     const std::thread::id thread_;
     Owner owner_{};

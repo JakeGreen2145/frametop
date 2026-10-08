@@ -126,8 +126,9 @@ struct Scan {
             }
         }
         if(out.owned!=2) { out.reason=out.owned?PassReason::PartialOrDuplicate:PassReason::NoOwned; return false; }
-        if(cold) { out.reason=PassReason::ColdPass; return false; }
         if(!reader.live(reader.user,request.context)) { out.reason=PassReason::Lifetime; return false; }
+        out.pair.suppression_scan=true;
+        if(cold) { out.reason=PassReason::ColdPass; return false; }
         out.pair.complete_scan=true;
         for(auto &eye:out.pair.eyes) eye.ready=true;
         out.reason=PassReason::Ready;
@@ -143,8 +144,10 @@ PassScan extract_passes(PassReader reader,const PassRequest &request) noexcept {
     }
     return scan.out;
 }
-uint64_t prepare_passes(Adapter &adapter,PassReader reader,const PassRequest &request) noexcept {
+uint64_t prepare_passes(Adapter &adapter,PassReader reader,const PassRequest &request,
+                        PairPreparation *rejected_snapshot) noexcept {
     const auto scan=extract_passes(reader,request);
+    if(rejected_snapshot) *rejected_snapshot=scan.pair;
     if(scan.reason==PassReason::InactiveMode) return 0;
     // Feed failures too, so a partial/duplicate/cold owned dispatch latches the
     // Adapter's one-shot refusal before any owned backend can admit a packet.
@@ -165,6 +168,9 @@ uint64_t prepare_passes(Adapter &adapter,PassReader reader,const PassRequest &re
                  a.record.descriptors[j].range==b.record.descriptors[j].range;
     }
     if(!same) {
+        // An unclassified post-prepare scan cannot become rejection proof just
+        // because a later packet scan looks valid again.
+        if(rejected_snapshot) rejected_snapshot->suppression_scan=false;
         // Reviewed one-shot prepare rejects a second attempt and latches invalid.
         adapter.prepare({});
         return 0;

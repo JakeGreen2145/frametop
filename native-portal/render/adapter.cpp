@@ -89,6 +89,9 @@ struct Adapter::Impl {
     Frame frame;
     unsigned eyes = 0;
     bool returned = false, preparation_attempted = false;
+    bool rejection_attempted = false, rejection_armed = false, rejection_bad = false;
+    unsigned suppressed_mask = 0;
+    std::array<EyePreparation, 2> rejected_inputs{};
     std::array<EyePreparation, 2> prepared{};
     std::array<Address, 2> pipelines{};
     std::array<size_t, 2> eye_slots{};
@@ -184,9 +187,9 @@ struct Adapter::Impl {
         }
         return nullptr;
     }
-    bool native_current() noexcept {
+    bool native_current(bool rejected_lifetime = false) noexcept {
         Observation current;
-        if (!status.initialized || status.retired || status.frame_invalid ||
+        if (!status.initialized || status.retired || (status.frame_invalid && !rejected_lifetime) ||
             !validated(Phase::Current) ||
             (binding.upstream && !binding.upstream->bound(binding.identity.renderer,binding.identity.renderer_generation)) ||
             !observe(current) ||
@@ -279,6 +282,10 @@ bool Adapter::latch(const Frame &frame) noexcept {
     p.status.stereo_submitted = false;
     p.status.gpu_complete = false;
     p.status.cpu_settled = false;
+    p.status.rejected = p.status.queue_observed = false;
+    p.rejection_attempted = p.rejection_armed = p.rejection_bad = false;
+    p.suppressed_mask = 0;
+    p.rejected_inputs = {};
     p.status.prepared = p.status.committed = false;
     p.status.pair_generation = 0;
     p.preparation_attempted = false;
@@ -632,6 +639,57 @@ bool Adapter::commit(uint64_t generation) noexcept {
     p.status.committed = true;
     return true;
 }
+bool Adapter::reject_recorded(const PairPreparation &input) noexcept {
+    auto &p = *p_;
+    Impl::Guard guard(p);
+    if (!guard.ok) return false;
+    auto fail = [&]() { p.rejection_bad = true; return false; };
+    if (p.rejection_attempted || !p.preparation_attempted || p.status.committed ||
+        p.status.cpu_done || p.eyes != 3 || !p.returned || p.used != 2 ||
+        !p.native_debt || !input.suppression_scan || !p.native_current(true) ||
+        input.command != p.frame_arena.command) return fail();
+    p.rejection_attempted = true;
+    unsigned seen = 0;
+    for (const auto &eye : input.eyes) {
+        const auto *ticket = p.authenticate(eye.record, eye.context);
+        if (!ticket || ticket->consumed || ticket->admitted ||
+            !eye.lookup.x[1] || eye.lookup.x[0] != p.binding.identity.renderer ||
+            eye.pass < p.frame_arena.pass_begin || eye.pass >= p.frame_arena.pass_end ||
+            (eye.pass-p.frame_arena.pass_begin)%0x98 ||
+            (seen & (1u << ticket->provenance.eye))) return fail();
+        seen |= 1u << ticket->provenance.eye;
+        p.rejected_inputs[ticket->provenance.eye] = eye;
+    }
+    if (seen != 3 || p.rejection_bad) return fail();
+    p.reject(); // no commit or new owned work after arming the actual skips
+    p.rejection_armed = true;
+    return true;
+}
+bool Adapter::suppressed(const EyePreparation &input, Address command) noexcept {
+    auto &p = *p_;
+    Impl::Guard guard(p);
+    if (!guard.ok) return false;
+    auto fail = [&]() { p.rejection_bad = true; return false; };
+    if (!p.rejection_armed || p.rejection_bad || p.status.committed ||
+        command != p.frame_arena.command || !p.native_current(true)) return fail();
+    auto *ticket = p.authenticate(input.record,input.context);
+    if (!ticket || ticket->admitted || ticket->consumed) return fail();
+    const unsigned eye = ticket->provenance.eye, bit = 1u << eye;
+    const auto &saved = p.rejected_inputs[eye];
+    if ((p.suppressed_mask & bit) || input.pass != saved.pass ||
+        input.lookup.x[1] != saved.lookup.x[1] || input.record.prefix != saved.record.prefix ||
+        input.record.label != saved.record.label || input.record.label_size != saved.record.label_size)
+        return fail();
+    for (unsigned i = 0; i < input.record.descriptors.size(); ++i)
+        if (!same(input.record.descriptors[i],saved.record.descriptors[i])) return fail();
+    p.suppressed_mask |= bit;
+    if (p.suppressed_mask != 3) return true;
+    if (!p.cb.rejected || !p.cb.rejected(p.cb.user,command,
+        p.tickets[p.eye_slots[0]].provenance,p.tickets[p.eye_slots[1]].provenance) ||
+        !p.native_current(true)) return fail();
+    p.status.rejected = true; // still requires real queue, GPU, disposal and reset
+    return true;
+}
 BackendResult Adapter::backend(const Recorded &record, const Context &context,
                                Registers lookup) noexcept {
     auto &p = *p_;
@@ -668,8 +726,9 @@ bool Adapter::submitted() noexcept {
         return false;
     // Observe already-submitted work under native lifetime ownership, not lease
     // authorization. This read-only callback must never queue new work.
-    if (!p.status.initialized || p.status.retired || !p.status.cpu_done ||
-        p.status.stereo_submitted || !p.cb.submission || !p.validated(Phase::Current))
+    if (!p.status.initialized || p.status.retired ||
+        (!p.status.cpu_done && (!p.status.rejected || p.rejection_bad)) ||
+        p.status.queue_observed || !p.cb.submission || !p.validated(Phase::Current))
         return p.reject();
     Completion c;
     if (!p.cb.submission(p.cb.user, p.tickets[p.eye_slots[0]].provenance,
@@ -679,6 +738,8 @@ bool Adapter::submitted() noexcept {
         return p.reject();
     // Save the exact lifetime token once, even if authorization has already ended.
     p.completion = c;
+    p.status.queue_observed = true;
+    if (p.status.rejected) return false; // never publish an owned stereo frame
     p.status.stereo_submitted = true;
     if (!p.live() || !p.gate.submitted(p.frame, p.cb.clock()))
         return p.reject();
@@ -691,7 +752,7 @@ bool Adapter::poll_completion() noexcept {
         return false;
     if (p.status.gpu_complete)
         return true;
-    if (!p.status.stereo_submitted || !p.cb.completed || !p.validated(Phase::Current) ||
+    if (!p.status.queue_observed || !p.cb.completed || !p.validated(Phase::Current) ||
         !p.cb.completed(p.cb.user, p.binding, p.completion))
         return false;
     p.status.gpu_complete = true;
@@ -708,7 +769,8 @@ bool Adapter::reclaim() noexcept {
     // Read-only lifetime evidence, not render authorization. Expiry/Off must not
     // discard the R1 exact submission token or prevent settlement under its owner.
     if (!p.status.initialized || p.status.retired || p.native_debt || p.used != 2 ||
-        !p.status.cpu_done || !p.status.stereo_submitted || !p.status.gpu_complete ||
+        (!p.status.cpu_done && (!p.status.rejected || p.rejection_bad)) ||
+        !p.status.queue_observed || !p.status.gpu_complete ||
         !p.cb.settled || !p.validated(Phase::Current) ||
         !p.cb.settled(p.cb.user, p.binding, p.tickets[p.eye_slots[0]].provenance,
                       p.tickets[p.eye_slots[1]].provenance, p.completion) ||

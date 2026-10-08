@@ -29,8 +29,12 @@ class PassGate {
             committed_=false;
             if(r.x[0]!=request_.context.identity.renderer) return;
             auto q=request_;q.dispatch_mode=0;
-            const auto generation=prepare_passes(adapter_,reader_,q);
+            PairPreparation rejected_snapshot;
+            const auto generation=prepare_passes(adapter_,reader_,q,&rejected_snapshot);
             committed_=generation && adapter_.commit(generation);
+            if(!committed_) {
+                adapter_.reject_recorded(rejected_snapshot);
+            }
             return;
         }
         if(site!=1) return;
@@ -43,6 +47,19 @@ class PassGate {
         const bool live=reader_.live && reader_.live(reader_.user,request_.context);
         // Off/expiry is NOT a lifetime failure. Finish the already committed pair.
         r.selector=(!committed_ || !live)?1:0;
+        if(!committed_) {
+            // Re-read the bounded dispatch at the actual packet skip. Never
+            // certify a planned skip or a marker-only/partially scanned packet.
+            const auto scan=extract_passes(reader_,request_);
+            if(live && scan.pair.suppression_scan) {
+                for(const auto &eye:scan.pair.eyes)
+                    if(eye.lookup.x[1]==r.x[19] && eye.pass==r.x[22]) {
+                        adapter_.suppressed(eye,scan.pair.command);
+                        return;
+                    }
+            }
+            adapter_.suppressed({},0);
+        }
     }
 };
 } // namespace native_portal::binding

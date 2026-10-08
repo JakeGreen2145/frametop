@@ -74,13 +74,13 @@ bool Lifecycle::capture(Site site,const Capture &r,uint64_t tid,uint64_t generat
     switch(site) {
     case Site::QueueEnter: {
         uint64_t actual=0;
-        if(queued_ || state_.invalidated || reset_open_ || command_.state_.returned!=3 ||
+        if(queued_ || state_.invalidated || reset_open_ || !command_.pair_recorded() ||
            !word(object+0x738,actual) || actual!=owner_.vk_command) return fail();
         queued_=true;return true;
     }
     case Site::CurrentEnter:
         if(current_open_ || state_.current || r.x[19]!=owner_.identity.renderer ||
-           command_.state_.returned!=3 || !scan(0x15a0,current) || current!=3 ||
+           !command_.pair_recorded() || !scan(0x15a0,current) || current!=3 ||
            !scan(0x15b8,retained) || retained) return fail();
         current_sp_=r.sp;current_open_=true;return true;
     case Site::CurrentPost:

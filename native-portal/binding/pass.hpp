@@ -35,5 +35,6 @@ inline constexpr size_t pass_limit = 64, packet_limit = 1024, cache_limit = 128;
 PassScan extract_passes(PassReader, const PassRequest &) noexcept;
 // Feeds the reviewed Adapter. It does not commit, install hooks or publish
 // capability. Call only at the serialized dispatch entry 0x2a1e18, w1=0.
-uint64_t prepare_passes(Adapter &, PassReader, const PassRequest &) noexcept;
+uint64_t prepare_passes(Adapter &, PassReader, const PassRequest &,
+                        PairPreparation *rejected_snapshot = nullptr) noexcept;
 } // namespace native_portal::binding

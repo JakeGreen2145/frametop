@@ -65,7 +65,7 @@ bool Command::bind(const Owner &o) noexcept {
 }
 bool Command::backend_enter(const Scope &s, const render::Provenance &p) noexcept {
     if (!thread()) return false;
-    if (!scope(s) || state_.stopped || bad_ || queue_seen_ || backend_open_ || p.eye > 1 ||
+    if (!scope(s) || state_.stopped || state_.rejected || bad_ || queue_seen_ || backend_open_ || p.eye > 1 ||
         (state_.admitted & (1u << p.eye)) || !same(p.identity,owner_.identity) ||
         p.recording_generation != owner_.recording || !p.ticket || !p.frame || !p.wrapper ||
         !p.marker || !render::supported_pair(p.vs,p.ps)) return fail();
@@ -89,6 +89,29 @@ bool Command::backend_return(const Scope &s, bool admitted) noexcept {
     state_.returned |= 1u << backend_eye_;
     return true;
 }
+bool Command::pair_recorded() const noexcept {
+    return !bad_ && (state_.returned == 3 ||
+           (state_.rejected && !state_.admitted && !state_.returned && !backend_open_));
+}
+bool Command::rejected(const Scope &s, uint64_t command, const render::Provenance &a,
+                       const render::Provenance &b) noexcept {
+    if (!thread()) return false;
+    if (!scope(s) || s.object != owner_.command || command != owner_.command ||
+        bad_ || queue_seen_ || backend_open_ || state_.admitted || state_.returned ||
+        state_.rejected || a.eye != 0 || b.eye != 1 || !pair(a,b) ||
+        !a.ticket || !b.ticket || a.ticket == b.ticket) return fail();
+    for (const auto *p : {&a,&b}) {
+        if (!same(p->identity,owner_.identity) || p->recording_generation != owner_.recording ||
+            !p->frame || !p->lease || !p->origin || !p->geometry || !p->deadline ||
+            !p->wrapper || !p->marker || !render::supported_pair(p->vs,p->ps)) return fail();
+        for (const auto &d : p->descriptors)
+            if (d.buffer != owner_.buffer || d.range != 592 || d.offset > owner_.capacity ||
+                d.range > owner_.capacity-d.offset) return fail();
+    }
+    tickets_ = {a,b}; backend_ = s;
+    state_.recording_debt = state_.rejected = true;
+    return true;
+}
 uint64_t Command::timeline_value(const Signal &s) noexcept {
     // Match native OR with SIGN extension, not uint8_t masking. Unsigned shift is defined.
     return (s.serial << 8) | static_cast<uint64_t>(static_cast<int64_t>(s.subserial));
@@ -101,7 +124,7 @@ bool Command::queue_enter(const Scope &s, const SubmitSnapshot &v, const Signal 
     }
     // This observes an actual native call, not permission to issue one. Off stops
     // backend admission but cannot erase a call for an already-recorded pair.
-    if (!scope(s) || bad_ || backend_open_ || state_.returned != 3 ||
+    if (!scope(s) || bad_ || backend_open_ || !pair_recorded() ||
         s.object != owner_.command) return fail();
     // Retain the attempt even if payload validation fails. A later raw success is debt.
     queue_seen_ = true;
