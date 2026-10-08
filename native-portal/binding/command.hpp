@@ -64,6 +64,7 @@ class Command {
                                    const render::Completion &) noexcept;
     static uint64_t timeline_value(const Signal &) noexcept;
   private:
+    friend class Lifecycle; // exact immutable certificate and owner-thread checks only
     bool thread() const noexcept;
     bool scope(const Scope &) const noexcept;
     bool fail() noexcept;

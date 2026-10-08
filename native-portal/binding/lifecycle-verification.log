@@ -1,0 +1,105 @@
+=== lifecycle-normal-final.log ===
+Running as unit: run-u157.service
+exact live03 frame 601: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 602: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 603: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 743: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 744: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 745: queue/stamps/wait -> production adapter; no CPU settlement
+submission evidence expiry-inside: observations=1 saved=1
+submission evidence expiry-before: observations=1 saved=1
+submission evidence off-before: observations=1 saved=1
+render adapter tests passed
+binding fixed storage bytes=1504; zero allocation lifecycle checks passed
+binding tests passed
+{"memory.max": "681574400", "memory.swap.max": "0", "memory.peak": "184651776", "sources": {"render/adapter.cpp": "864300d72cf636ffd4d8374848ba7a796a28e5f69fbec890fad8127e218ffcdf", "binding/command.cpp": "b3c94662a5f87f0df4e390cdffc3b364f90d94881e8505f627bda4e7712bfe56"}, "private_inputs": {"evidence.json": "66758c0662db1d37c94a6abde73c1d36ca7cf89be63d3a1b4844bf3eac01e055", "camera-chains.csv": "6c8487755c90b8851a844ca05a8117865e06538b671d775b58718aa8543ad502", "records.jsonl": "4b483a263c2346ee24a646138069dad96260300944bd722139b7d12f0bbfae18"}, "sanitized": false, "chains": 6}
+exact live03 frame 601: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 602: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 603: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 743: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 744: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 745: queue/stamps/wait -> production adapter; no CPU settlement
+submission evidence expiry-inside: observations=1 saved=1
+submission evidence expiry-before: observations=1 saved=1
+submission evidence off-before: observations=1 saved=1
+render adapter tests passed
+binding fixed storage bytes=1504; zero allocation lifecycle checks passed
+binding tests passed
+lifecycle fixed bytes=248, issuer bytes=32; zero hot-path allocations
+lifecycle: real Adapter reclamation, all six valid fact orders, reset failure and failed begin passed
+Pinned ELF, six queue routes, reset vtable, nine generated observation islands
+test_actual_swap_disposal_then_reset (__main__.InstructionTests.test_actual_swap_disposal_then_reset) ... ok
+test_delayed_disposal_and_failed_begin (__main__.InstructionTests.test_delayed_disposal_and_failed_begin) ... ok
+test_full_register_preservation_vs_original (__main__.InstructionTests.test_full_register_preservation_vs_original) ... ok
+test_nonempty_retained_native_append (__main__.InstructionTests.test_nonempty_retained_native_append) ... ok
+test_repeat_common_queue_not_suppressed (__main__.InstructionTests.test_repeat_common_queue_not_suppressed) ... ok
+test_reset_before_completion_retains_unsupported_debt (__main__.InstructionTests.test_reset_before_completion_retains_unsupported_debt) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.554s
+
+OK
+native reset raw=0 begin=0 lists empty in all cases, state=31
+native reset raw=-4 begin=0 lists empty in all cases, state=3
+native reset raw=0 begin=-4 lists empty in all cases, state=23
+native reset raw=2 begin=0 lists empty in all cases, state=3
+memory.max=681574400
+memory.swap.max=0
+memory.peak=363503616
+Finished with result: success
+Main processes terminated with: code=exited/status=0
+Service runtime: 9.886s
+CPU time consumed: 9.873s
+
+=== lifecycle-sanitize-final.log ===
+Running as unit: run-u158.service
+exact live03 frame 601: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 602: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 603: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 743: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 744: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 745: queue/stamps/wait -> production adapter; no CPU settlement
+submission evidence expiry-inside: observations=1 saved=1
+submission evidence expiry-before: observations=1 saved=1
+submission evidence off-before: observations=1 saved=1
+render adapter tests passed
+binding fixed storage bytes=1504; zero allocation lifecycle checks passed
+binding tests passed
+{"memory.max": "681574400", "memory.swap.max": "0", "memory.peak": "234893312", "sources": {"render/adapter.cpp": "864300d72cf636ffd4d8374848ba7a796a28e5f69fbec890fad8127e218ffcdf", "binding/command.cpp": "b3c94662a5f87f0df4e390cdffc3b364f90d94881e8505f627bda4e7712bfe56"}, "private_inputs": {"evidence.json": "66758c0662db1d37c94a6abde73c1d36ca7cf89be63d3a1b4844bf3eac01e055", "camera-chains.csv": "6c8487755c90b8851a844ca05a8117865e06538b671d775b58718aa8543ad502", "records.jsonl": "4b483a263c2346ee24a646138069dad96260300944bd722139b7d12f0bbfae18"}, "sanitized": true, "chains": 6}
+exact live03 frame 601: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 602: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 603: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 743: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 744: queue/stamps/wait -> production adapter; no CPU settlement
+exact live03 frame 745: queue/stamps/wait -> production adapter; no CPU settlement
+submission evidence expiry-inside: observations=1 saved=1
+submission evidence expiry-before: observations=1 saved=1
+submission evidence off-before: observations=1 saved=1
+render adapter tests passed
+binding fixed storage bytes=1504; zero allocation lifecycle checks passed
+binding tests passed
+lifecycle fixed bytes=248, issuer bytes=32; zero hot-path allocations
+lifecycle: real Adapter reclamation, all six valid fact orders, reset failure and failed begin passed
+Pinned ELF, six queue routes, reset vtable, nine generated observation islands
+test_actual_swap_disposal_then_reset (__main__.InstructionTests.test_actual_swap_disposal_then_reset) ... ok
+test_delayed_disposal_and_failed_begin (__main__.InstructionTests.test_delayed_disposal_and_failed_begin) ... ok
+test_full_register_preservation_vs_original (__main__.InstructionTests.test_full_register_preservation_vs_original) ... ok
+test_nonempty_retained_native_append (__main__.InstructionTests.test_nonempty_retained_native_append) ... ok
+test_repeat_common_queue_not_suppressed (__main__.InstructionTests.test_repeat_common_queue_not_suppressed) ... ok
+test_reset_before_completion_retains_unsupported_debt (__main__.InstructionTests.test_reset_before_completion_retains_unsupported_debt) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.530s
+
+OK
+native reset raw=0 begin=0 lists empty in all cases, state=31
+native reset raw=-4 begin=0 lists empty in all cases, state=3
+native reset raw=0 begin=-4 lists empty in all cases, state=23
+native reset raw=2 begin=0 lists empty in all cases, state=3
+memory.max=681574400
+memory.swap.max=0
+memory.peak=353312768
+Finished with result: success
+Main processes terminated with: code=exited/status=0
+Service runtime: 12.671s
+CPU time consumed: 12.650s
