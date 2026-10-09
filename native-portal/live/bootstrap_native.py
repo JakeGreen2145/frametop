@@ -50,6 +50,13 @@ def bootstrap_native():
             run(entry,0x900ff000)
             assert x(19)==0xabc and m.reg_read(A.UC_ARM64_REG_SP)==stack
             if slot: assert get(slot)==0
+    # Shutdown entry keeps its incoming context x0 in x20, then obtains the
+    # exact worker from context+98 at the wait. Stop at external calls; their
+    # implementation/results are not modeled as successful joins.
+    put(context+0x98,region+0x51000)
+    x(0,context);m.reg_write(A.UC_ARM64_REG_SP,stack)
+    run(0x142620,0x185128);assert x(20)==context
+    run(0x1426fc,0x142704);assert x(0)==region+0x51000 and x(20)==context
     # Actual pre-Run branch, including the app+60 conditional tail. The large
     # configuration routine and provider are stopped at entry, not invented GPU
     # successes. Neither branch proves which caller produced the live release.

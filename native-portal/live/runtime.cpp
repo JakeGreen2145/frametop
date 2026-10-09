@@ -96,12 +96,19 @@ struct Runtime::Impl {
     LiveDiagnostics live{};Mailbox<LiveDiagnostics> live_published;
     // Owner callbacks only write live. Foreign/handoff observations use atomics,
     // never a second writer to the owner's non-atomic snapshot.
-    std::atomic<uint64_t> owner_events{0},first_owner_rejection{0},first_stop_pc{0};
+    std::atomic<uint64_t> owner_events{0},first_owner_rejection{0},first_stop{0};
     void owner_rejected(uint64_t pc,uint16_t predicate) noexcept {
         uint64_t empty=0;first_owner_rejection.compare_exchange_strong(empty,(pc<<16)|predicate);
     }
-    void stop_at(uint64_t pc) noexcept {
-        uint64_t empty=0;first_stop_pc.compare_exchange_strong(empty,pc);stopped=true;
+    void stop_at(uint64_t pc,const arena::Saved &s) noexcept {
+        // One atomic record even when bootstrap and Run race. No native reads.
+        // 142620's incoming x0 is the context, proved by pinned instructions.
+        const uint64_t flags=uint64_t(bool(context)) | uint64_t(context && s.x[0]==context)<<1 |
+            uint64_t(context && s.x[20]==context)<<2 | uint64_t(context && s.x[21]==context)<<3 |
+            uint64_t(tid()==bootstrap_tid)<<4 | uint64_t(handoff_wait.load())<<5 |
+            uint64_t(runtime_owned.load())<<6;
+        const uint64_t lr=s.x[30]>=base && s.x[30]-base<0x600000?s.x[30]-base:0;
+        uint64_t empty=0;first_stop.compare_exchange_strong(empty,(lr<<32)|(flags<<24)|pc);stopped=true;
     }
     std::atomic<bool> collector_stop{false};std::thread collector;
     Impl(){published.publish(diag);live_published.publish(live);}
@@ -119,7 +126,8 @@ struct Runtime::Impl {
                 if(live_published.read(snapshot)) {
                     snapshot.first_owner_rejection=first_owner_rejection.load();
                     snapshot.first_evidence_pc=evidence.first_failure_pc();
-                    snapshot.first_stop_pc=first_stop_pc.load();
+                    const auto stop=first_stop.load();
+                    snapshot.first_stop_pc=stop&0xffffff;snapshot.stop_flags=(stop>>24)&255;snapshot.stop_lr=stop>>32;
                     const size_t n=log.format(snapshot,owner_events.load(),line,sizeof line);
                     if(n) {
                         if(fd>=0)(void)write(fd,line,n);
@@ -141,7 +149,7 @@ struct Runtime::Impl {
         diag.origin=origin_epoch;diag.stopped=stopped.load();published.publish(diag);
         live.events=diag.events;live.frames=diag.frames;live.refusal=diag.refusal;
         live.capable=diag.capable;live.pending=diag.pending;live.stopped=diag.stopped;
-        live.initialized=evidence.initialized();
+        live.initialized=evidence.initialized();live.publication=evidence.publication_diagnostic();
         for(unsigned i=0;i<2;++i){live.uploads[i]=diag.uploads[i];live.encoded[i]=diag.encoded[i];}
         live.queue_success=diag.queue_success;live.submitted_frame=diag.submitted_frame;
         live_published.publish(live);
@@ -359,9 +367,9 @@ struct Runtime::Impl {
         // Shutdown guard is owned by the original initializer thread. It pairs
         // the real timed wait and actual pthread_join result before cleanup.
         if(tid()==bootstrap_tid) {
-            if(pc==0x142620) {stop_at(pc);backend.invalidate(Reason::Off);}
+            if(pc==0x142620) {stop_at(pc,s);backend.invalidate(Reason::Off);}
             if(pc==0x142704 && worker && s.x[0]==worker && s.x[20]==context) {
-                stop_at(pc);backend.invalidate(Reason::Off);wait_sp=s.sp;shutdown_wait=true;join_attempt=join_ok=false;
+                stop_at(pc,s);backend.invalidate(Reason::Off);wait_sp=s.sp;shutdown_wait=true;join_attempt=join_ok=false;
                 get(worker+8,native_handle);
             }
             if(pc==0x183f78 && shutdown_wait && s.x[20]==worker && s.sp+0x20==wait_sp && s.x[0]==native_handle && native_handle)join_attempt=true;
@@ -423,7 +431,7 @@ struct Runtime::Impl {
             evidence.arena_event(bridge,arena_site,s);
         }
         if(pc==0x142620 || pc==0x29bd18 || pc==0x29c238) {
-            stop_at(pc);backend.invalidate(Reason::Off);if(adapter)adapter->off();refuse(Refusal::Stopped);
+            stop_at(pc,s);backend.invalidate(Reason::Off);if(adapter)adapter->off();refuse(Refusal::Stopped);
         }
         if(pc==0x112e50 && uint8_t(s.x[1])) {
             backend.invalidate(Reason::External);owned=false;

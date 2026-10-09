@@ -19,6 +19,10 @@ bool read_self(uint64_t, void *, size_t) noexcept;
 // Native objects remain owned by the compositor; this object owns only evidence.
 // Recording attachment is event-issued; dynamic graph retention is not proved.
 // PassReader::live remains unsupported. Staging is a separate call-local borrow.
+struct PublicationDiagnostic {
+    uint64_t predicate=0,phase=0,flags=0,checked=0,passed=0;
+    uint64_t caller=0,return_pc=0,recording=0,generation=0,renewal=0,entries=0,attempt=0;
+};
 class Evidence {
  public:
     Evidence() noexcept;
@@ -47,6 +51,8 @@ class Evidence {
     // Optional predicate result is call-local, never authority or a second reader.
     bool owner_event(uint64_t,const arena::Saved &,uint16_t *rejection=nullptr) noexcept;
     uint64_t first_failure_pc() const noexcept {return first_failure_pc_.load();}
+    // Owner-only first invalidating publication, copied through the router mailbox.
+    PublicationDiagnostic publication_diagnostic() const noexcept {return owner()?publication_:PublicationDiagnostic{};}
     bool graph_event(uint64_t,const arena::Saved &) noexcept;
     bool graph_capable() const noexcept;
     bool settled(const render::Binding &,const render::Provenance &,const render::Provenance &,const render::Completion &) const noexcept;
@@ -103,7 +109,10 @@ class Evidence {
     struct Turnover {
         uint64_t sp=0,command=0,wrapper=0,vk=0,generation=0,pool=0;
         unsigned phase=0;
+        uint64_t caller=0;
     } turnover_;
+    PublicationDiagnostic publication_{};
+    uint64_t publication_attempts_=0;
     bool recording_event(uint64_t,const arena::Saved &) noexcept;
     bool same_identity(const render::Identity &) const noexcept;
     bool pinned_=false,constructed_=false,ready_=false,failed_=false,allocation_open_=false;

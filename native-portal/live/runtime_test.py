@@ -52,6 +52,8 @@ def main():
         ('--diagnostics-start-failed',5,'0x305260','0x29bd18','0x17'),
         ('--diagnostics-stop-unrelated',0,'0x0','0x29bd18','0x0'),
         ('--diagnostics-stop-waiting',0,'0x0','0x142620','0xf'),
+        ('--diagnostics-stop-same',0,'0x0','0x142620','0xf'),
+        ('--diagnostics-stop-unknown',0,'0x0','0x142620','0x0'),
         ('--diagnostics-run-lr',3,'0x0','0x0','0x1f')]:
         result=subprocess.run([str(binary),mode],capture_output=True,text=True,timeout=5)
         print(mode,result.stdout+result.stderr)
@@ -62,9 +64,34 @@ def main():
         expected_pc='0x14e5a8' if mode=='--diagnostics-run-lr' else '0x140dbc' if predicate else '0x0'
         assert fields['first_owner_pc']==expected_pc
         assert fields['first_evidence_pc']==failure and fields['first_stop_pc']==stop,(mode,fields)
+        if stop=='0x142620':
+            assert fields['stop_flags']=={'--diagnostics-stop-waiting':'0x31','--diagnostics-stop-same':'0x33','--diagnostics-stop-unknown':'0x10'}[mode]
+            assert fields['stop_lr']=='0x123456'
         assert fields['owner_events']==owners and fields['frames']=='0' and fields['seals']=='0'
         assert fields['uploads']=='0,0' and fields['handoff']=='0'
         assert fields['first_refusal']=='graph-ownership' and fields['first_pc']=='0x7fdbc'
+        results.append({'mode':mode,'code':result.returncode,'output':result.stdout+result.stderr})
+    for suffix,predicate in [('good',0),('alternate',0),('phase',5),('sp',6),('read',9),('owner',10),('null-vk',12),('member',13),('handle',14),('unbegun',15)]:
+        mode='--publication-'+suffix
+        result=subprocess.run([str(binary),mode],capture_output=True,text=True,timeout=5)
+        print(mode,result.stdout+result.stderr)
+        assert result.returncode==0,(mode,result.stderr)
+        lines=[line for line in result.stderr.splitlines() if line.startswith('ft-native-live ')]
+        fields=dict(word.split('=',1) for word in lines[-1].split()[1:])
+        assert fields.get('pub_pred')==str(predicate),(mode,fields)
+        if predicate:
+            assert int(fields['pub_checked'],16)==(1<<(predicate+1))-2
+            assert int(fields['pub_passed'],16)==(1<<predicate)-2
+            assert fields['pub_phase']==('4' if suffix=='phase' else '5')
+            assert fields['pub_caller']=='0x6caf0' and fields['pub_attempt']=='1' and fields['pub_entries']=='2'
+            assert fields['pub_recording']=='1'
+            pub_flags=int(fields['pub_flags'],16)
+            assert pub_flags&3==3 and not pub_flags&24 # Run+transfer, no Lifecycle or owned graph
+            assert bool(pub_flags&32)==(suffix!='sp')
+            if suffix=='handle':assert pub_flags&64 and not pub_flags&128
+            if suffix=='unbegun':assert pub_flags&128 and not pub_flags&64 and fields['pub_generation']=='1'
+        assert fields['first_evidence_pc']==('0x2a23f4' if predicate else '0x0')
+        assert fields['handoff']=='1' and fields['uploads']=='0,0' and fields['queue_success']=='0'
         results.append({'mode':mode,'code':result.returncode,'output':result.stdout+result.stderr})
     for mode in ['--diagnostics-good','--diagnostics-bad']:
         result=subprocess.run([str(binary),mode],capture_output=True,text=True)

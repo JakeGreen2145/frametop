@@ -77,12 +77,13 @@ struct Chain:Fixture {
         s.x[19]=addr(r);s.x[1]=turnover?addr(bootstrap_wrapper):addr(command);event(0x29a528);
         s.x[24]=addr(r);s.x[0]=1;event(0x7fdbc);
     }
-    void bootstrap_turnover(const std::string &mode) {
+    void bootstrap_turnover(const std::string &mode,bool post_run=false) {
         // Native call/LR/SP coordinates come from bootstrap_native.py. The
         // queue and pool memory transitions here are modeled, never GPU proof.
         put(r,0x15a8,addr(passes));
-        s={};s.x[19]=addr(worker);s.x[21]=addr(context);event(0x14099c);
+        if(!post_run){s={};s.x[19]=addr(worker);s.x[21]=addr(context);event(0x14099c);}
         s={};s.x[0]=addr(r);s.sp=addr(outer_stack)+0x1000;s.x[30]=base+FT_BOOT_DISPATCH_LR;
+        if(mode=="--publication-alternate")s.x[30]=base+0x9e6e0;
         if(mode=="--bootstrap-bad-caller")s.x[30]+=4;
         if(mode=="--bootstrap-bad-renderer")s.x[0]+=8;
         event(0x2a1e18);
@@ -100,8 +101,26 @@ struct Chain:Fixture {
         s.sp-=0x30;s.x[0]=addr(bootstrap_pool)+0xd0;s.x[1]=addr(bootstrap_command);
         s.x[19]=addr(bootstrap_wrapper);s.x[30]=base+FT_BOOT_POOL_LR;
         if(mode=="--bootstrap-bad-pool")s.x[30]+=4;
-        event(0x311648);
-        s.sp+=0x30;s.x[19]=addr(r);s.x[0]=addr(command);event(0x2a23f4);put(r,0x1380,addr(command));
+        if(mode!="--publication-phase")event(0x311648);
+        if(mode=="--publication-unbegun")put(command,8,addr(bootstrap_command));
+        if(mode=="--publication-read")put(command,8,uint64_t(1));
+        if(mode=="--publication-null-vk")put(executable,0x738,uint64_t(0));
+        if(mode=="--publication-handle")put(executable,0x738,uint64_t(0xc099));
+        if(mode=="--publication-owner")put(executable,8,uint64_t(1));
+        if(mode=="--publication-member")put(command,8,addr(other));
+        s.sp+=0x30;s.x[19]=addr(r);s.x[0]=addr(command);
+        if(mode=="--publication-sp")++s.sp;
+        event(0x2a23f4);put(r,0x1380,addr(command));
+        if(post_run) {
+            // Later ignored publications cannot overwrite the first refusal.
+            const bool good=mode=="--publication-good" || mode=="--publication-alternate";
+            if(!good){s.x[0]=1;event(0x2a23f4);}
+            // Probe actual capability through a frame; diagnostics.initialized
+            // in the exported ABI is the initial attach snapshot, not Evidence.
+            frame_start();frame_end();
+            assert(router.diagnostics().capable==good);
+            std::this_thread::sleep_for(std::chrono::milliseconds(600));return;
+        }
         if(mode=="--bootstrap-bad-reset" || mode=="--bootstrap-bad-begin") {
             s.x[0]=addr(bootstrap_command);event(mode=="--bootstrap-bad-reset"?0x300b20:0x300a08);
         }
@@ -380,14 +399,19 @@ int run_chain(Chain &f,const std::string &mode) {
 int main(int argc,char **argv) {
     const std::string mode=argc>1?argv[1]:"";
     const bool bootstrap=mode=="--bootstrap-turnover" || mode.rfind("--bootstrap-bad-",0)==0;
-    Chain f;active=&f;f.bootstrap_router(bootstrap);
+    const bool publication=mode.rfind("--publication-",0)==0;
+    Chain f;active=&f;f.bootstrap_router(bootstrap || publication);
+    if(publication) {
+        f.publish_worker();
+        std::thread worker([&]{f.run_enter();f.bootstrap_turnover(mode,true);});worker.join();return 0;
+    }
     if(bootstrap) {
         f.bootstrap_turnover(mode);
         if(mode!="--bootstrap-turnover")return 0;
         std::thread worker([&]{assert(run_chain(f,mode)==0);});worker.join();return 0;
     }
-    if(mode.rfind("--diagnostics-start-",0)==0 || mode=="--diagnostics-stop-unrelated" ||
-       mode=="--diagnostics-stop-waiting" || mode=="--diagnostics-run-lr") {
+    if(mode.rfind("--diagnostics-start-",0)==0 || mode.rfind("--diagnostics-stop-",0)==0 ||
+       mode=="--diagnostics-run-lr") {
         // Synthetic faults at the real router predicates, not a claimed replay
         // of trial 06. Keep Run on a real second thread and never enter a frame.
         if(mode=="--diagnostics-start-failed") {
@@ -395,14 +419,16 @@ int main(int argc,char **argv) {
         }
         if(mode=="--diagnostics-start-renderer")put(f.app,0x256a0,uint64_t(0));
         if(mode=="--diagnostics-start-unreadable")put(f.scheduler,8,uint64_t(1));
-        if(mode!="--diagnostics-stop-unrelated")f.publish_worker();
+        if(mode!="--diagnostics-stop-unrelated" && mode!="--diagnostics-stop-unknown")f.publish_worker();
         if(mode=="--diagnostics-run-lr") {
             std::thread worker([&] {
                 f.s={};f.s.x[0]=addr(f.worker);f.s.x[30]=Chain::base+FT_NATIVE_RUN_RETURN+4;
                 f.event(0x14e5a8);
             });worker.join();
-        } else if(mode=="--diagnostics-stop-waiting") {
-            f.s={};f.event(0x142620); // bootstrap early return must not lose this PC
+        } else if(mode=="--diagnostics-stop-waiting" || mode=="--diagnostics-stop-same" || mode=="--diagnostics-stop-unknown") {
+            f.s={};f.s.x[0]=mode=="--diagnostics-stop-same"?addr(f.context):addr(f.app);
+            f.s.x[30]=Chain::base+0x123456;f.event(0x142620);
+            f.s.x[0]=addr(f.context);f.s.x[30]=0;f.event(0x142620); // first record stays paired
         } else if(mode=="--diagnostics-stop-unrelated") {
             // Existing router stop is unconditional, Evidence revocation is not.
             f.s={};f.s.x[0]=addr(f.worker);f.event(0x29bd18);

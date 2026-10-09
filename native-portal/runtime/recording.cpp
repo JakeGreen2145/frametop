@@ -15,6 +15,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         uint64_t pool=0;
         if(!at(o.command+0x50,pool) || !pool || pool>UINT64_MAX-0xd0)return fail(pc);
         turnover_={s.sp-0xd0,o.command,command_wrapper_,o.vk_command,o.generation,pool,1};
+        turnover_.caller=s.x[30]-base_;
         return true;
     }
     if((pc==0x2a2230 || pc==0x2a2320) && turnover_.phase) {
@@ -59,20 +60,41 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         return fail(pc); // bounded exhaustion cannot become partial tracking
     }
     if(pc==0x2a23f4) {
-        if(!ready_ || s.x[19]!=identity_.renderer || command_wrapper_ || !s.x[0])return false;
-        if(turnover_.phase!=5 || s.sp!=turnover_.sp || (run_ && !transferred_))return fail(pc);
+        PublicationDiagnostic d{};d.phase=turnover_.phase;d.caller=turnover_.caller;
+        d.return_pc=s.x[30]>=base_ && s.x[30]-base_<0x600000?s.x[30]-base_:0;
+        d.recording=recording_;d.attempt=++publication_attempts_;
+        d.flags=uint64_t(run_) | uint64_t(transferred_)<<1 | uint64_t(dispatch_)<<2 |
+            uint64_t(bool(lifecycle_))<<3 | uint64_t(graph_owned_)<<4 |
+            uint64_t(s.sp==turnover_.sp)<<5;
+        for(const auto &c:recordings_)d.entries+=bool(c.command);
+        // Preserve evaluation order and native read count. Unchecked bits mean
+        // unknown, NOT false. Save before fail() erases the command ledger.
+        auto check=[&](bool ok,unsigned id) {
+            d.checked|=1ull<<id;if(ok)d.passed|=1ull<<id;
+            else {d.predicate=id;if(id>=5 && !publication_.predicate)publication_=d;}
+            return ok;
+        };
+        if(!check(ready_,1) || !check(s.x[19]==identity_.renderer,2) ||
+           !check(!command_wrapper_,3) || !check(s.x[0],4))return false;
+        if(!check(turnover_.phase==5,5) || !check(s.sp==turnover_.sp,6) ||
+           !check(!run_ || transferred_,7))return fail(pc);
         uint64_t C=0,D=0,vk=0;
-        if(!read_self(s.x[0]+8,&C,8) || !read_self(C+8,&D,8) || D!=identity_.renderer+0x50 ||
-           !read_self(C+0x738,&vk,8) || !vk)return fail(pc);
-        for(auto &c:recordings_)if(c.command==C && c.vk==vk && c.begun) {
-            if(lifecycle_ && spans_[6].begin==lifecycle_owner_.command && C!=spans_[6].begin)spans_[7]=spans_[6];
-            if(!add(2,s.x[0],0x10) || !add(6,C,0x7b0))return fail(pc);
-            command_wrapper_=s.x[0];
-            if(!c.generation)c.generation=generations_.issue();
-            if(!c.generation)return fail(pc);
-            recording_=c.generation;turnover_={};return true;
-        }
-        return fail(pc); // publication is not proof of a successful native begin
+        if(!check(read_self(s.x[0]+8,&C,8),8) || !check(read_self(C+8,&D,8),9) ||
+           !check(D==identity_.renderer+0x50,10) || !check(read_self(C+0x738,&vk,8),11) ||
+           !check(vk,12))return fail(pc);
+        Recording *candidate=nullptr;
+        for(auto &c:recordings_)if(c.command==C) {candidate=&c;break;}
+        if(!check(candidate,13))return fail(pc);
+        auto &c=*candidate;d.generation=c.generation;d.renewal=c.renewal;
+        d.flags|=uint64_t(c.begun)<<6 | uint64_t(c.vk==vk)<<7;
+        if(!check(c.vk==vk,14) || !check(c.begun,15))return fail(pc);
+        if(lifecycle_ && spans_[6].begin==lifecycle_owner_.command && C!=spans_[6].begin)spans_[7]=spans_[6];
+        if(!check(add(2,s.x[0],0x10),16) || !check(add(6,C,0x7b0),17))return fail(pc);
+        command_wrapper_=s.x[0];
+        if(!c.generation)c.generation=generations_.issue();
+        d.generation=c.generation;
+        if(!check(c.generation,18))return fail(pc);
+        recording_=c.generation;turnover_={};return true;
     }
     if(pc==0x305260 || pc==0x2953a0) {
         if(s.x[0]!=command_wrapper_) return false;
