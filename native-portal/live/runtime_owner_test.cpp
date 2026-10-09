@@ -26,7 +26,7 @@ static void classifier_scope() {
     assert(!bridge.ready());
 }
 static void owner_predicates() {
-    Fixture f;assert(f.bootstrap(true));
+    Fixture f;assert(f.bootstrap(true,nullptr,1));
     std::array<std::byte,0x200> context{},worker{},scheduler{};
     std::array<std::byte,0x25700> app{};
     put(worker,0,uint64_t(Fixture::base+0x5a1428));put(worker,0x48,addr(context));
@@ -51,6 +51,18 @@ static void owner_predicates() {
     put(scheduler,8,uint64_t(0));refused(0x140dbc,11);
     put(scheduler,8,uint64_t(1));refused(0x140dbc,12);put(scheduler,8,addr(app));
     put(app,0x256a0,uint64_t(0));refused(0x140dbc,13);put(app,0x256a0,addr(f.r));
+    // A pending bootstrap dispatch cannot be transferred to Run midway through
+    // relinquishing the current wrapper, even though initialization is intact.
+    arena::Saved turnover{};turnover.x[0]=addr(f.r);turnover.sp=0x900000;turnover.x[30]=Fixture::base+FT_BOOT_DISPATCH_LR;
+    put(f.executable,0x50,uint64_t(0xa000));assert(f.evidence.event(0x2a1e18,turnover));refused(0x140dbc,17);
+    turnover.sp-=0xd0;turnover.x[19]=addr(f.r);
+    assert(f.evidence.event(0x2a2230,turnover));assert(f.evidence.event(0x2a2320,turnover));
+    put(f.r,0x1380,uint64_t(0));turnover.x[0]=addr(f.command);turnover.x[30]=Fixture::base+FT_BOOT_RELEASE_LR;
+    assert(f.evidence.event(0x305260,turnover));refused(0x140dbc,17);
+    turnover.sp-=0x30;turnover.x[0]=0xa0d0;turnover.x[1]=addr(f.executable);turnover.x[19]=addr(f.command);
+    turnover.x[30]=Fixture::base+FT_BOOT_POOL_LR;assert(f.evidence.event(0x311648,turnover));
+    std::array<std::byte,0x10> next{};put(next,8,addr(f.other));turnover.sp+=0x30;
+    turnover.x[0]=addr(next);turnover.x[19]=addr(f.r);assert(f.evidence.event(0x2a23f4,turnover));put(f.r,0x1380,addr(next));
     assert(f.evidence.owner_event(0x140dbc,s,&predicate) && !predicate);
     std::thread thread([&] {
         s.x[30]=Fixture::base+FT_NATIVE_RUN_RETURN;

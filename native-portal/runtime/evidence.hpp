@@ -100,6 +100,10 @@ class Evidence {
     binding::Owner lifecycle_owner_{};
     uint64_t creation_=0,creation_sp_=0,begin_sp_=0,begin_vk_=0,recording_=0;
     bool begin_open_=false,begin_success_=false;
+    struct Turnover {
+        uint64_t sp=0,command=0,wrapper=0,vk=0,generation=0,pool=0;
+        unsigned phase=0;
+    } turnover_;
     bool recording_event(uint64_t,const arena::Saved &) noexcept;
     bool same_identity(const render::Identity &) const noexcept;
     bool pinned_=false,constructed_=false,ready_=false,failed_=false,allocation_open_=false;

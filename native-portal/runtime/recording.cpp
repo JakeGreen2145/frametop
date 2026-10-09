@@ -2,6 +2,28 @@
 #include "evidence.hpp"
 namespace native_portal::runtime {
 bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
+    if(pc==0x2a1e18) {
+        if(s.x[0]!=identity_.renderer || uint32_t(s.x[1]))return false;
+        // Real calls through this renderer's +250 slot, executed independently
+        // in bootstrap_native.py. No inference from the live first-failure PC.
+        bool caller=false;
+        for(uint64_t lr:{0x6caf0u,0x9e6e0u,0x15a9bcu,0x15ad64u,0x294d10u,0x294e58u,0x2955a8u})
+            caller=caller || s.x[30]==base_+lr;
+        binding::Owner o{};
+        if(!caller || turnover_.phase || s.sp<0xd0 || !command_owner(o) ||
+           (!run_ && (handoff_.load() || lifecycle_ || wrapper_ || marker_ || staging_ticket_ || call_)))return fail(pc);
+        uint64_t pool=0;
+        if(!at(o.command+0x50,pool) || !pool || pool>UINT64_MAX-0xd0)return fail(pc);
+        turnover_={s.sp-0xd0,o.command,command_wrapper_,o.vk_command,o.generation,pool,1};
+        return true;
+    }
+    if((pc==0x2a2230 || pc==0x2a2320) && turnover_.phase) {
+        if(s.x[19]!=identity_.renderer || s.sp!=turnover_.sp ||
+           turnover_.phase!=(pc==0x2a2230?1u:2u))return fail(pc);
+        ++turnover_.phase;
+        // Owned recordings still require the existing graph/Lifecycle proofs.
+        if(!run_)return true;
+    }
     // The new-command path allocates/constructs 0x7b0 bytes before this call.
     // Pooled commands can begin BEFORE wrapper acquisition, so keep a bounded
     // pending ledger. Never infer a begin from the later wrapper publication.
@@ -37,7 +59,8 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         return fail(pc); // bounded exhaustion cannot become partial tracking
     }
     if(pc==0x2a23f4) {
-        if(!run_ || !ready_ || !transferred_ || s.x[19]!=identity_.renderer || command_wrapper_ || !s.x[0])return false;
+        if(!ready_ || s.x[19]!=identity_.renderer || command_wrapper_ || !s.x[0])return false;
+        if(turnover_.phase!=5 || s.sp!=turnover_.sp || (run_ && !transferred_))return fail(pc);
         uint64_t C=0,D=0,vk=0;
         if(!read_self(s.x[0]+8,&C,8) || !read_self(C+8,&D,8) || D!=identity_.renderer+0x50 ||
            !read_self(C+0x738,&vk,8) || !vk)return fail(pc);
@@ -47,20 +70,38 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
             command_wrapper_=s.x[0];
             if(!c.generation)c.generation=generations_.issue();
             if(!c.generation)return fail(pc);
-            recording_=c.generation;return true;
+            recording_=c.generation;turnover_={};return true;
         }
         return fail(pc); // publication is not proof of a successful native begin
     }
     if(pc==0x305260 || pc==0x2953a0) {
         if(s.x[0]!=command_wrapper_) return false;
-        if(pc==0x305260 && run_ && s.x[30]==base_+0x2a2338 && transferred_ &&
-           ((!lifecycle_ && !graph_owned_) || (lifecycle_ && lifecycle_->state().current && !lifecycle_->state().unsupported))) {
-            // The wrapper relinquishes a pool-owned executable, not its native
-            // allocation. Keep the exact C role until observed reset/disposal or
-            // destructor; never read the relinquished wrapper again.
-            spans_[2]={};command_wrapper_=0;return true;
+        uint64_t C=0,vk=0,published=1,D=0;bool generation=false;
+        for(const auto &c:recordings_)if(c.command==turnover_.command && c.vk==turnover_.vk &&
+            c.generation==turnover_.generation && c.begun)generation=true;
+        if(pc==0x305260 && turnover_.phase==3 && s.sp==turnover_.sp &&
+           s.x[19]==identity_.renderer && s.x[30]==base_+0x2a23b4 && generation &&
+           recording_==turnover_.generation && command_wrapper_==turnover_.wrapper &&
+           at(identity_.renderer+0x1380,published) && !published &&
+           at(command_wrapper_+8,C) && C==turnover_.command && at(C+8,D) && D==identity_.renderer+0x50 &&
+           at(C+0x738,vk) && vk==turnover_.vk &&
+           (!run_ || transferred_) &&
+           ((!lifecycle_ && !graph_owned_) || (run_ && lifecycle_ && lifecycle_->state().current && !lifecycle_->state().unsupported))) {
+            // Native cleared R+1380 before calling the wrapper destructor. The
+            // nested pool return is a separate event, not executable destruction.
+            spans_[2]={};command_wrapper_=0;turnover_.phase=4;return true;
         }
         fail(pc);return true; // any other release remains unsupported
+    }
+    if(pc==0x311648 && turnover_.phase==4 && s.x[1]==turnover_.command) {
+        uint64_t pool=0,vk=0;
+        if(s.sp+0x30!=turnover_.sp || s.x[30]!=base_+0x3052f0 || s.x[19]!=turnover_.wrapper ||
+           !at(turnover_.command+0x50,pool) || pool!=turnover_.pool || s.x[0]!=pool+0xd0 ||
+           !at(turnover_.command+0x738,vk) || vk!=turnover_.vk)return fail(pc);
+        // No new publication may borrow this submitted generation without reset
+        // plus Begin. Owned settlement remains exclusively Lifecycle-issued.
+        for(auto &c:recordings_)if(c.command==turnover_.command)c.begun=false;
+        turnover_.phase=5;return true;
     }
     if(pc==0x311648 || pc==0x4b3d0 || pc==0x3003d0) {
         const auto command=pc==0x311648?s.x[1]:s.x[0];
@@ -96,10 +137,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         }
     }
     if(!run_ && (pc==0x300b20 || pc==0x300a08)) {
-        for(auto &c:recordings_)if(c.command==s.x[0]) {
-            if(c.generation==recording_)recording_=0;
-            c.generation=0;c.begun=false;break;
-        }
+        for(auto &c:recordings_)if(c.command==s.x[0])return fail(pc);
     }
     if(!lifecycle_)return false;
     const auto previous=lifecycle_->state();

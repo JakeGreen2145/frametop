@@ -202,11 +202,13 @@ static void initial_failures() {
     }
     Fixture reset;assert(reset.bootstrap(true));assert(reset.objects());
     reset.s.x[0]=addr(reset.executable);assert(!reset.evidence.event(0x300b20,reset.s));
-    assert(reset.evidence.snapshot(addr(reset.wrapper),addr(reset.marker),o));assert(!o.arena.recording_generation);
+    assert(!reset.evidence.snapshot(addr(reset.wrapper),addr(reset.marker),o));
+    assert(reset.evidence.first_failure_pc()==0x300b20);
     reset.s.x[0]=0;assert(!reset.evidence.event(0x300c54,reset.s));
     reset.s.x[0]=addr(reset.executable);assert(!reset.evidence.event(0x300a08,reset.s));
     reset.s.x[0]=0;assert(!reset.evidence.event(0x300a38,reset.s));
-    assert(reset.evidence.snapshot(addr(reset.wrapper),addr(reset.marker),o));assert(!o.arena.recording_generation);
+    assert(!reset.evidence.snapshot(addr(reset.wrapper),addr(reset.marker),o));
+    assert(reset.evidence.first_failure_pc()==0x300b20);
     Fixture reused;assert(reused.bootstrap(true));reused.s.x[0]=reused.s.x[20]=addr(reused.executable);
     assert(!reused.evidence.event(0x301808,reused.s));
 }
@@ -219,7 +221,9 @@ static void unpaired_begin_revokes() {
 }
 #include <sys/syscall.h>
 #include "staging_test.inc"
+#include "bootstrap_test.inc"
 int main() {
+    bootstrap_recording_turnover();
     for(unsigned fault=0;fault<=34;++fault)staging_self_process(fault);
     unpaired_begin_revokes();initial_failures();adapter_and_pass_refusal();
     // Real kernel self-read, including page boundary, EFAULT and integer overflow.
@@ -345,7 +349,8 @@ int main() {
         // completion; Evidence cannot restore its old generation after refusal.
         pooled.s.x[0]=owner.command;pooled.s.x[30]=Fixture::base+0x1234;
         assert(!pooled.evidence.event(0x300b20,pooled.s));
-        assert(pooled.evidence.snapshot(addr(pooled.wrapper),addr(pooled.marker),o));assert(!o.arena.recording_generation);
+        assert(!pooled.evidence.snapshot(addr(pooled.wrapper),addr(pooled.marker),o));
+        assert(pooled.evidence.first_failure_pc()==0x300b20);
     }
     Fixture wrong;assert(wrong.evidence.pin(Fixture::base,elf_sha256));assert(wrong.evidence.event(0x7fda0,wrong.s));wrong.s.x[0]=1;
     assert(!wrong.evidence.event(0x7fdbc,wrong.s)); // no allocation proof

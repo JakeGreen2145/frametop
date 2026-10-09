@@ -21,7 +21,8 @@ bool Evidence::owner_event(uint64_t pc,const arena::Saved &s,uint16_t *rejection
            !check(read_self(context_+0x1c0,&scheduler_,8),8) || !check(scheduler_,9) ||
            !check(read_self(scheduler_+8,&application_,8),10) || !check(application_,11) ||
            !check(read_self(application_+0x256a0,&R,8),12) || !check(R==identity_.renderer,13) ||
-           !check(!staging_ticket_,14) || !check(!call_,15) || !check(!lifecycle_,16))return false;
+           !check(!staging_ticket_,14) || !check(!call_,15) || !check(!lifecycle_,16) ||
+           !check(!turnover_.phase,17))return false;
         handoff_.store(1,std::memory_order_release);return true;
     }
     if(pc!=0x14e5a8)return false;

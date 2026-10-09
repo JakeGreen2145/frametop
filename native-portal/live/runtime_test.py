@@ -18,6 +18,11 @@ def main():
     native_lr=run_return()
     print('Pinned pthread thunk Run return:',hex(native_lr))
     flags+=['-DFT_NATIVE_RUN_RETURN='+hex(native_lr)]
+    from bootstrap_native import bootstrap_native
+    bootstrap=bootstrap_native();print('Pinned bootstrap continuations:',bootstrap)
+    flags+=['-DFT_BOOT_DISPATCH_LR='+hex(bootstrap['dispatch_lrs'][0]),
+            '-DFT_BOOT_RELEASE_LR='+hex(bootstrap['release_lr']),'-DFT_BOOT_POOL_LR='+hex(bootstrap['pool_lr']),
+            '-DFT_BOOT_QUEUE_LR='+hex(bootstrap['queue_lr'])]
     results=[]
     for test in ['runtime_test','runtime_owner_test','runtime_chain_test']:
         binary=build/(test+('-asan' if args.sanitize else ''))
@@ -27,7 +32,10 @@ def main():
             print(result.stdout+result.stderr,end='');results.append({'command':call,'code':result.returncode,'output':result.stdout+result.stderr})
             if result.returncode:
                 (build/'verification.json').write_text(json.dumps(results,indent=2));return result.returncode
-    modes=['--bootstrap-stock','--bootstrap-geometry','--worker-no-stock','--worker','--joined-cleanup',
+    modes=['--bootstrap-turnover','--bootstrap-bad-caller','--bootstrap-bad-renderer',
+           '--bootstrap-bad-generation','--bootstrap-bad-release','--bootstrap-bad-pool',
+           '--bootstrap-bad-reset','--bootstrap-bad-begin',
+           '--bootstrap-stock','--bootstrap-geometry','--worker-no-stock','--worker','--joined-cleanup',
            '--external','--foreign-external','--reject-graph','--stop-after-left',
            '--bad-stock-owner','--bad-stock-offset','--bad-stock-unreadable',
            '--bad-stock-resource','--bad-stock-capacity','--bad-geometry-offset',

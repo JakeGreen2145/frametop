@@ -77,7 +77,7 @@ bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
     const auto R=identity_.renderer;
     if(pc==0x301808 || pc==0x30180c || pc==0x300a08 || pc==0x300a38 ||
        pc==0x300b20 || pc==0x300c54 || pc==0x3003d0 || pc==0x311648 || pc==0x4b3d0 ||
-       pc==0x305260 || pc==0x2953a0 || pc==0x3018b0 || pc==0x2a2230 ||
+       pc==0x305260 || pc==0x2953a0 || pc==0x3018b0 || pc==0x2a1e18 || pc==0x2a2230 ||
        pc==0x2a2320 || pc==0x2987d8 || pc==0x298840 || pc==0x2a23f4) return recording_event(pc,s);
     if(pc==0x29bd18 || pc==0x29c238) {
         if(s.x[0]!=R) return false;

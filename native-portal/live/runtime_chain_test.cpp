@@ -48,6 +48,7 @@ struct Chain:Fixture {
         put(cache,0x30,uint64_t(0x1234));put(cache,0x38,uint32_t(0x101));put(attachment,0x14c,uint32_t(37));
         put(pipeline_object,0x60,uint64_t(0xa003));put(sync,0x58,uint64_t(0xa004));
         signal_pointer=addr(sync);put(executable,0x428,uint64_t(&signal_pointer));put(executable,0x430,uint64_t(&signal_pointer)+8);
+        put(executable,0x50,addr(bootstrap_pool));
         put(executable,0x4f0,uint64_t(&signal_value));
         system_table[14]=base+0x1010;system_interface=uint64_t(system_table.data());
         directory=std::string(std::getenv("TMPDIR"))+"/rt-XXXXXX";assert(mkdtemp(directory.data()));
@@ -55,14 +56,63 @@ struct Chain:Fixture {
     }
     ~Chain(){std::filesystem::remove_all(directory);}
     void event(uint64_t pc) {router.event(pc,s);}
-    void bootstrap_router() {
+    std::array<std::byte,0x7b0> bootstrap_command{};
+    std::array<std::byte,0x10> bootstrap_wrapper{};
+    std::array<std::byte,0x400> bootstrap_pool{};
+    void begin_command(uint64_t C) {
+        s.x[0]=s.x[20]=C;s.sp=addr(stack)+0x100;event(0x301808);
+        s.sp-=0x40;s.x[19]=C;s.x[30]=base+0x300ae0;event(0x300a08);
+        s.sp-=0x30;put(stack,0x98,uint64_t(base+0x300ae0));s.x[0]=0;event(0x300a38);
+        s.sp=addr(stack)+0x100;s.x[20]=C;s.x[0]=1;event(0x30180c);
+    }
+    void bootstrap_router(bool turnover=false) {
         event(0x7fda0);s.x[19]=addr(r);s.x[0]=addr(r)+0xec0;s.x[1]=0x80000;s.x[8]=s.sp+0x140;
         event(0x29a14c);assert(s.x[1]==0x80080);put(stack,0x140,addr(resource));event(0x29a150);put(stack,0x140,uint64_t(0));
-        s.x[0]=s.x[20]=addr(executable);s.sp=addr(stack)+0x100;event(0x301808);
-        s.sp-=0x40;s.x[19]=addr(executable);s.x[30]=base+0x300ae0;event(0x300a08);
-        s.sp-=0x30;put(stack,0x98,uint64_t(base+0x300ae0));s.x[0]=0;event(0x300a38);
-        s.sp=addr(stack)+0x100;s.x[20]=addr(executable);s.x[0]=1;event(0x30180c);
-        s.x[19]=addr(r);s.x[1]=addr(command);event(0x29a528);s.x[24]=addr(r);s.x[0]=1;event(0x7fdbc);
+        begin_command(addr(executable));
+        if(turnover) {
+            put(bootstrap_command,8,addr(r)+0x50);put(bootstrap_command,0x738,uint64_t(0xb001));
+            put(bootstrap_command,0x50,addr(bootstrap_pool));put(bootstrap_wrapper,8,addr(bootstrap_command));
+            begin_command(addr(bootstrap_command));put(r,0x1380,addr(bootstrap_wrapper));
+        }
+        s.x[19]=addr(r);s.x[1]=turnover?addr(bootstrap_wrapper):addr(command);event(0x29a528);
+        s.x[24]=addr(r);s.x[0]=1;event(0x7fdbc);
+    }
+    void bootstrap_turnover(const std::string &mode) {
+        // Native call/LR/SP coordinates come from bootstrap_native.py. The
+        // queue and pool memory transitions here are modeled, never GPU proof.
+        put(r,0x15a8,addr(passes));
+        s={};s.x[19]=addr(worker);s.x[21]=addr(context);event(0x14099c);
+        s={};s.x[0]=addr(r);s.sp=addr(outer_stack)+0x1000;s.x[30]=base+FT_BOOT_DISPATCH_LR;
+        if(mode=="--bootstrap-bad-caller")s.x[30]+=4;
+        if(mode=="--bootstrap-bad-renderer")s.x[0]+=8;
+        event(0x2a1e18);
+        const auto dispatch=s;
+        s.sp-=0xd0;s.x[0]=0xbeef;s.x[1]=addr(bootstrap_command);s.x[30]=base+FT_BOOT_QUEUE_LR;
+        const auto queue=s;event(0x3018b0);assert(!std::memcmp(&queue,&s,sizeof s));
+        s.x[19]=addr(bootstrap_command);s.x[0]=0xa005;event(0x3021d4);
+        s.x[0]=0;event(0x3021d8);assert(!router.diagnostics().queue_success);
+        s=dispatch;s.sp-=0xd0;s.x[19]=addr(r);event(0x2a2230);event(0x2a2320);
+        put(r,0x1380,uint64_t(0));s.x[0]=addr(bootstrap_wrapper);s.x[30]=base+FT_BOOT_RELEASE_LR;
+        if(mode=="--bootstrap-bad-generation")put(bootstrap_command,0x738,uint64_t(0xb002));
+        if(mode=="--bootstrap-bad-release")s.x[30]+=4;
+        event(0x305260);
+        if(mode=="--bootstrap-turnover")assert(router.diagnostics().initialized);
+        s.sp-=0x30;s.x[0]=addr(bootstrap_pool)+0xd0;s.x[1]=addr(bootstrap_command);
+        s.x[19]=addr(bootstrap_wrapper);s.x[30]=base+FT_BOOT_POOL_LR;
+        if(mode=="--bootstrap-bad-pool")s.x[30]+=4;
+        event(0x311648);
+        s.sp+=0x30;s.x[19]=addr(r);s.x[0]=addr(command);event(0x2a23f4);put(r,0x1380,addr(command));
+        if(mode=="--bootstrap-bad-reset" || mode=="--bootstrap-bad-begin") {
+            s.x[0]=addr(bootstrap_command);event(mode=="--bootstrap-bad-reset"?0x300b20:0x300a08);
+        }
+        if(mode!="--bootstrap-turnover") {
+            s={};s.x[0]=addr(worker);s.x[21]=addr(context);event(0x140dbc);
+            std::thread attempt([&]{run_enter();frame_start();frame_end();});attempt.join();
+            assert(!router.diagnostics().capable && !router.diagnostics().frames);return;
+        }
+        assert(router.diagnostics().initialized);
+        put(r,0x15a8,addr(passes)+passes.size());
+        s={};s.x[0]=addr(worker);s.x[21]=addr(context);event(0x140dbc);
     }
     void publish_worker() {
         s.x[19]=addr(worker);s.x[21]=addr(context);event(0x14099c);s.x[0]=addr(worker);event(0x140dbc);
@@ -250,7 +300,7 @@ int run_chain(Chain &f,const std::string &mode) {
     request.op=Operation::Release;++request.sequence;assert(client.exchange(request,reply));assert(reply.state==State::Draining);
     // Real Command/Lifecycle classes, with explicitly modeled native queue,
     // post-stamp, wait, vector transfer/disposal and reset memory transitions.
-    f.s={};f.s.sp=0x880000;f.s.x[0]=0xbeef;f.s.x[1]=addr(f.executable);f.s.x[30]=Chain::base+0x305500;f.event(0x3018b0);
+    f.s={};f.s.sp=0x880000;f.s.x[0]=0xbeef;f.s.x[1]=addr(f.executable);f.s.x[30]=Chain::base+FT_BOOT_QUEUE_LR;f.event(0x3018b0);
     uint64_t cb=0xc001,sem=0xa004,value=binding::Command::timeline_value({addr(f.sync),42,1});
     TimelineSubmit timeline{};timeline.type=1000207003;timeline.signal_count=1;timeline.signals=uint64_t(&value);
     SubmitInfo submit{};submit.type=4;submit.next=uint64_t(&timeline);submit.command_count=1;submit.commands=uint64_t(&cb);
@@ -271,20 +321,24 @@ int run_chain(Chain &f,const std::string &mode) {
     f.s.sp=0x860000;f.s.x[0]=addr(f.sync);f.s.x[1]=uint64_t(&f.signal_value);f.s.x[30]=Chain::base+0x311104;f.event(0x3160b8);
     f.s.sp-=0x40;f.s.x[0]=0;f.event(0x316110);f.s.sp+=0x40;f.s.x[0]=1;f.event(0x316120);
     ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
-    f.s.sp=0x85ff30;f.s.x[19]=addr(f.r);f.event(0x2a2230);
+    f.s.sp=0x8fff30;f.s.x[19]=addr(f.r);f.event(0x2a2230);
     put(f.r,0x15a8,addr(f.passes));put(f.r,0x15b8,addr(f.passes));put(f.r,0x15c0,addr(f.passes)+f.passes.size());f.event(0x2a2320);
     // The real dispatcher relinquishes its current command wrapper after the
     // transfer. That does not destroy the pooled executable retained by lifecycle.
-    f.s.x[0]=addr(f.command);f.s.x[30]=Chain::base+0x2a2338;f.event(0x305260);put(f.r,0x1380,uint64_t(0));
+    put(f.r,0x1380,uint64_t(0));f.s.x[0]=addr(f.command);f.s.x[30]=Chain::base+FT_BOOT_RELEASE_LR;f.event(0x305260);
+    put(f.executable,0x50,addr(f.bootstrap_pool));
+    f.s.sp-=0x30;f.s.x[0]=addr(f.bootstrap_pool)+0xd0;f.s.x[1]=addr(f.executable);
+    f.s.x[19]=addr(f.command);f.s.x[30]=Chain::base+FT_BOOT_POOL_LR;f.event(0x311648);
     std::array<std::byte,0x7b0> next_command{};std::array<std::byte,0x10> next_wrapper{};
     put(next_command,8,addr(f.r)+0x50);put(next_command,0x738,uint64_t(0xc002));put(next_wrapper,8,addr(next_command));
     put(next_command,0x428,uint64_t(&f.signal_pointer));put(next_command,0x430,uint64_t(&f.signal_pointer)+8);
+    put(next_command,0x50,addr(f.bootstrap_pool));
     put(next_command,0x4f0,uint64_t(&f.signal_value));
     f.s.x[0]=f.s.x[20]=addr(next_command);f.s.sp=addr(f.stack)+0x100;f.event(0x301808);
     f.s.sp-=0x40;f.s.x[19]=addr(next_command);f.s.x[30]=Chain::base+0x300ae0;f.event(0x300a08);
     f.s.sp-=0x30;put(f.stack,0x98,uint64_t(Chain::base+0x300ae0));f.s.x[0]=0;f.event(0x300a38);
     f.s.sp=addr(f.stack)+0x100;f.s.x[20]=addr(next_command);f.s.x[0]=1;f.event(0x30180c);
-    f.s.x[19]=addr(f.r);f.s.x[0]=addr(next_wrapper);f.event(0x2a23f4);put(f.r,0x1380,addr(next_wrapper));
+    f.s.sp=0x8fff30;f.s.x[19]=addr(f.r);f.s.x[0]=addr(next_wrapper);f.event(0x2a23f4);put(f.r,0x1380,addr(next_wrapper));
     f.s.x[22]=addr(f.r);f.event(0x2987d8);put(f.r,0x15c0,addr(f.passes));f.event(0x298840);
     ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
     f.s.sp=0x840000;f.s.x[0]=addr(f.executable);f.s.x[30]=Chain::base+0x301000;f.event(0x300b20);
@@ -316,7 +370,7 @@ int run_chain(Chain &f,const std::string &mode) {
         f.event(0x29f1e8);f.event(0x29f200);assert(f.s.pad==arena::SkipOwned && f.s.x[0]==addr(f.pipeline_object));
         f.s.x[30]=Chain::base+0x2a1c58;f.event(0x29f518);
     }
-    f.s={};f.s.sp=0x880000;f.s.x[0]=0xbeef;f.s.x[1]=addr(next_command);f.s.x[30]=Chain::base+0x305500;f.event(0x3018b0);
+    f.s={};f.s.sp=0x880000;f.s.x[0]=0xbeef;f.s.x[1]=addr(next_command);f.s.x[30]=Chain::base+FT_BOOT_QUEUE_LR;f.event(0x3018b0);
     cb=0xc002;f.s.x[19]=addr(next_command);f.s.x[0]=0xa005;f.s.x[1]=1;f.s.x[2]=uint64_t(&submit);f.s.x[3]=0;f.event(0x3021d4);
     f.s.x[0]=0;f.event(0x3021d8);d=f.router.diagnostics();
     assert(d.refusal==Refusal::None && d.uploads[0]==2 && d.uploads[1]==2 && d.encoded[0]==2 && d.encoded[1]==2 && d.queue_success==2 && d.pending);
@@ -325,7 +379,13 @@ int run_chain(Chain &f,const std::string &mode) {
 }
 int main(int argc,char **argv) {
     const std::string mode=argc>1?argv[1]:"";
-    Chain f;active=&f;f.bootstrap_router();
+    const bool bootstrap=mode=="--bootstrap-turnover" || mode.rfind("--bootstrap-bad-",0)==0;
+    Chain f;active=&f;f.bootstrap_router(bootstrap);
+    if(bootstrap) {
+        f.bootstrap_turnover(mode);
+        if(mode!="--bootstrap-turnover")return 0;
+        std::thread worker([&]{assert(run_chain(f,mode)==0);});worker.join();return 0;
+    }
     if(mode.rfind("--diagnostics-start-",0)==0 || mode=="--diagnostics-stop-unrelated" ||
        mode=="--diagnostics-stop-waiting" || mode=="--diagnostics-run-lr") {
         // Synthetic faults at the real router predicates, not a claimed replay
