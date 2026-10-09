@@ -38,6 +38,8 @@ def compile_tests(manifest=None):
     for i in range(4):
         obj=B/f'emit-{i}.o';objects.append(obj)
         run(['cc',*flags,'-DFT_EMITTER='+str(i),'-c',ROOT/'live/loader_emit.c','-o',obj])
+    obj=B/'runtime-emit.o';objects.append(obj)
+    run(['cc',*flags,'-c',ROOT/'live/runtime-emit.c','-o',obj])
     run(['cc',*flags,'-I',B,ROOT/'live/loader_test.c',*objects,'-lcrypto','-ldl','-o',B/'loader-test'])
     run([B/'loader-test',prepare.ELF])
     run(['cc',*flags,'-I',B,'-shared',ROOT/'live/loader_test.c',*objects,'-lcrypto','-ldl','-o',B/'loader-test.so'])
@@ -67,6 +69,39 @@ class LoaderTests(unittest.TestCase):
         bad=B/'bad.elf';bad.write_bytes(b'not the pin')
         with self.assertRaises(ValueError):prepare.image(bad)
         with self.assertRaises(FileNotFoundError):prepare.image(B/'missing.elf')
+
+    def test_runtime_manifest_contract(self):
+        manifest=ROOT/'live/runtime-sites.json'
+        runtime=json.loads(manifest.read_text())
+        result=prepare.prepare(prepare.ELF,B,manifest)
+        rows={s['pc']:s for s in result['sites']}
+        for s in runtime['sites']:
+            self.assertEqual(rows[s['relative_pc']]['emitter'],s['emitter'])
+        self.assertEqual(rows[0x161ed8]['emitter'],'replace-call')
+        bad=B/'bad-runtime.json'
+        for mutation in ['missing','duplicate','emitter','continuation','abi','guard']:
+            changed=json.loads(manifest.read_text())
+            if mutation=='missing':changed['sites'].pop()
+            elif mutation=='duplicate':changed['sites'].append(changed['sites'][0])
+            elif mutation=='abi':changed['runtime_emitter']['callback_abi']='saved,id'
+            else:changed['sites'][0][mutation]='invalid'
+            bad.write_text(json.dumps(changed))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                prepare.prepare(prepare.ELF,B,bad)
+        with self.assertRaises(ValueError):
+            prepare.merge(prepare.image(prepare.ELF),[dict(pc=0x147a48,emitter='return-function')])
+
+    def test_build_inputs(self):
+        import build
+        sources=build.inventory()
+        self.assertIn('live/runtime-call.S',sources)
+        hashes=build.source_hashes(sources,ROOT/'live/runtime-sites.json')
+        for name in ['live/runtime-call.S','live/runtime-emit.c','runtime/graph.inc']:
+            self.assertEqual(hashes[name],build.hash_file(ROOT/name))
+
+    def test_runtime_selector_continuations(self):
+        run([sys.executable,'-B',ROOT/'live/runtime_machine.py','--elf',prepare.ELF,
+             '--loader',B/'loader-test.so'],env={**os.environ,'PYTHONPATH':os.pathsep.join(sys.path)})
 
     def test_actual_merged_emitters(self):
         dll=ctypes.CDLL(str(B/'loader-test.so'))
@@ -138,6 +173,6 @@ class LoaderTests(unittest.TestCase):
         print('PASS actual merged loader emitter instruction replays:',count)
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--manifest',type=Path);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--manifest',type=Path,default=ROOT/'live/runtime-sites.json');a=p.parse_args()
     compile_tests(a.manifest)
     unittest.main(argv=[sys.argv[0]],verbosity=2)

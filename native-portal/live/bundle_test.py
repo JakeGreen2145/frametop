@@ -29,12 +29,12 @@ class Bundles(unittest.TestCase):
                 run(['cc','-shared','-fPIC',source,'-Wl,-soname,libft_portal_pipeline.so.1','-o',layer])
                 (pipeline/'VkLayer_FT_scoped_portal.json').write_bytes((ROOT/'pipeline/VkLayer_FT_scoped_portal.json').read_bytes())
                 (pipeline/'portal-shaders.json').write_text('{"test_only_synthetic":true}\n')
-                prepare.prepare(prepare.ELF,out)
+                prepare.prepare(prepare.ELF,out,ROOT/'live/runtime-sites.json')
                 (out/'loader-build.h').write_text('#define FT_BUILD_ID "'+('a'*64)+'"\n#define FT_PIPELINE_SHA "'+sha(layer)+'"\n')
                 source=out/'synthetic-router.c';source.write_text('#include <stdint.h>\n#include <unistd.h>\n_Bool ft_native_portal_start(uint64_t b,const char*s,const char*d){(void)b;(void)s;(void)d;_exit(89);}\nvoid ft_native_portal_event(uint64_t pc,void*p){(void)pc;(void)p;_exit(89);}\n')
                 owner=out/'libft_native_portal_live.so'
                 run(['cc','-std=c11','-O1','-shared','-fPIC','-DFT_LOADER_TEST','-Wl,-z,defs','-Wl,-rpath,$ORIGIN','-I',out,
-                     ROOT/'live/loader.c',source,*[B/f'emit-{i}.o' for i in range(4)],'-Wl,--no-as-needed',layer,'-lcrypto','-ldl','-o',owner])
+                     ROOT/'live/loader.c',source,*[B/f'emit-{i}.o' for i in range(4)],B/'runtime-emit.o','-Wl,--no-as-needed',layer,'-lcrypto','-ldl','-o',owner])
                 report={'build_id':'a'*64,'owner_sha256':sha(owner),'pipeline_sha256':sha(layer),'sites_sha256':sha(out/'sites.private.json'),'test_only_synthetic':True}
                 (out/'build-report.json').write_text(json.dumps(report))
                 sealed=bundle.create(out,pipeline);self.assertEqual(bundle.create(out,pipeline),sealed)

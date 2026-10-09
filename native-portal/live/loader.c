@@ -58,9 +58,27 @@ typedef size_t (*emitter)(uint32_t*,uintptr_t,uintptr_t,uint64_t,uint32_t,unsign
 #define DECL(N) extern size_t ft_loader_emit_##N(uint32_t*,uintptr_t,uintptr_t,uint64_t,uint32_t,unsigned,unsigned,uintptr_t)
 DECL(0);DECL(1);DECL(2);DECL(3);
 static const emitter emitters[]={ft_loader_emit_0,ft_loader_emit_1,ft_loader_emit_2,ft_loader_emit_3};
+extern size_t ft_emit_runtime_island(uint32_t*,uint64_t,uint64_t,uint64_t,uint64_t);
+#define RUNTIME_CAPACITY 1024
+_Static_assert(RUNTIME_CAPACITY+40<=STRIDE,"runtime island plus callback thunk must fit");
 EXPORT size_t ft_loader_emit_site(uint32_t *out,uintptr_t at,uintptr_t base,unsigned id,uintptr_t callback) {
-    if(id>=SITE_COUNT)return 0;
-    const struct site *s=&sites[id];unsigned group=s->emitter==4?1:s->emitter;
+    if(!out || !callback || id>=SITE_COUNT || ((at|base)&3) || at>UINTPTR_MAX-STRIDE)return 0;
+    const struct site *s=&sites[id];
+    if(s->emitter>=5 && s->emitter<=7) {
+        // Keep the runtime emitter's (relative_pc,Saved*) ABI untouched. A
+        // bounded per-island tail thunk enters the SAME errno/fork/TTL dispatcher
+        // as every donor emitter, using its immutable deduplicated site ID.
+        size_t bytes=ft_emit_runtime_island(out,at,base,s->offset,at+RUNTIME_CAPACITY);
+        if(!bytes || bytes>RUNTIME_CAPACITY || (bytes&3))return 0;
+        memset((char*)out+bytes,0,RUNTIME_CAPACITY-bytes);
+        size_t n=RUNTIME_CAPACITY/4;
+        out[n++]=0xaa0103e0; // mov x0,x1 (Saved*)
+        imm64(out,&n,1,id);
+        imm64(out,&n,16,callback);
+        out[n++]=0xd61f0200; // br x16; preserve the emitter's callback return LR
+        return n*4;
+    }
+    unsigned group=s->emitter==4?1:s->emitter;
     if(group>=4)return 0;
     unsigned local=group?s->index:0;
     size_t n=emitters[group](out,at,base,s->offset,s->word,s->kind,local,callback);

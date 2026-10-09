@@ -16,7 +16,10 @@ PASS = [0x2a1e18,0x2a1c18]
 LIFECYCLE = [0x2a2230,0x2a2320,0x2987d8,0x298840,0x300b20,0x300c54,0x300a08,0x300a38,0x3018b0]
 EVIDENCE = [0x7fda0,0x301808,0x30180c,0x3003d0,0x311648,0x4b3d0,0x305260,0x2953a0,
             0x29bd18,0x29c238,0x2966a0,0x294678,0x2fe090,0x29a528,0x161f00]
-EMITTERS = {'observer':0, 'arena':1, 'pass':2, 'lifecycle':3, 'enqueue':4}
+EMITTERS = {'observer':0, 'arena':1, 'pass':2, 'lifecycle':3, 'enqueue':4,
+            'replace-call':5, 'return-function':6, 'observer-relocated':7}
+RUNTIME = {'replace-call':[0x9eeb0,0xa050c,0x161ed8,0x29f200],
+           'return-function':[0x15f9e0,0x15fba8], 'observer-relocated':[0x4b3d0,0x142708]}
 
 def number(v):
     if isinstance(v, bool): raise ValueError('boolean address')
@@ -78,7 +81,7 @@ def merge(at, specs):
         emitter=raw.get('emitter','observer')
         if emitter not in EMITTERS: raise ValueError('unknown emitter '+str(emitter))
         index=number(raw.get('index',0))
-        allowed={'arena':ARENA,'pass':PASS,'lifecycle':LIFECYCLE,'enqueue':[0x161ed8]}
+        allowed={'arena':ARENA,'pass':PASS,'lifecycle':LIFECYCLE,'enqueue':[0x161ed8],**RUNTIME}
         if emitter in allowed:
             if pc not in allowed[emitter]: raise ValueError('unsupported specialized PC')
             expected=allowed[emitter].index(pc)
@@ -93,6 +96,10 @@ def merge(at, specs):
             if old['emitter'] != emitter:
                 if old['emitter']=='observer': pass
                 elif emitter=='observer': row['emitter']=old['emitter'];row['index']=old['index']
+                elif pc==0x161ed8 and {old['emitter'],emitter}=={'enqueue','replace-call'}:
+                    # The router synchronously replaces this call and supplies LR.
+                    # Its exact runtime emitter supersedes the older arena skip.
+                    if emitter=='enqueue':row['emitter']=old['emitter'];row['index']=old['index']
                 else: raise ValueError('conflicting emitters '+hex(pc))
             if 'continuation' in old and continuation is not None and old['continuation'] != continuation:
                 raise ValueError('conflicting continuations '+hex(pc))
@@ -109,6 +116,15 @@ def prepare(elf, output, manifest=None):
     if manifest:
         runtime=json.loads(Path(manifest).read_text())
         if runtime.get('elf_sha256') != PIN: raise ValueError('runtime manifest pin mismatch')
+        # The router requires the complete checked-in contract, not a subset that
+        # happens to relocate. Compare metadata too; bytes alone do not pin routes.
+        canonical=json.loads((ROOT/'live/runtime-sites.json').read_text())
+        for key,value in canonical.items():
+            if key=='sites':
+                actual=runtime.get(key,[])
+                if sorted(actual,key=lambda s:number(s['pc'])) != sorted(value,key=lambda s:number(s['pc'])):
+                    raise ValueError('runtime manifest site contract mismatch')
+            elif runtime.get(key)!=value:raise ValueError('runtime manifest ABI mismatch: '+key)
         specs += runtime['sites']
     rows=merge(at,specs)
     output.mkdir(parents=True,exist_ok=True)

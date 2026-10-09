@@ -33,6 +33,13 @@ def inventory():
     if 'live/runtime.cpp' not in sources:raise ValueError('missing real live/runtime.cpp; test stubs are forbidden in production')
     return sources
 
+def source_hashes(sources,manifest):
+    tracked=[ROOT/s for s in sources]+[ROOT/'live/loader.c',ROOT/'live/loader_emit.c',ROOT/'live/runtime-emit.c',
+             ROOT/'arena/emit.c',ROOT/'binding/pass_emit.c',ROOT/'binding/lifecycle_emit.c',ROOT/'runtime/graph.inc',manifest]
+    tracked += [p for p in ROOT.rglob('*') if p.suffix in ('.h','.hpp') and 'build' not in p.relative_to(ROOT).parts]
+    tracked += [ROOT/'live'/n for n in ('prepare.py','build.py','bundle.py')]
+    return {str(p.relative_to(ROOT)) if ROOT in p.parents else str(p):hash_file(p) for p in tracked}
+
 def pipeline_check(directory):
     p=Path(directory).resolve();lib=p/'libft_portal_pipeline.so.1'
     manifest=json.loads((p/'portal-shaders.json').read_text())
@@ -61,10 +68,7 @@ def build(a):
         if name not in sources:sources.append(name)
     pipeline=pipeline_check(a.pipeline)
     prepared=prepare.prepare(a.elf,output,a.manifest)
-    tracked=[ROOT/s for s in sources]+[ROOT/'live/loader.c',ROOT/'live/loader_emit.c',ROOT/'arena/emit.c',ROOT/'binding/pass_emit.c',ROOT/'binding/lifecycle_emit.c',a.manifest]
-    tracked += [p for p in ROOT.rglob('*') if p.suffix in ('.h','.hpp') and 'build' not in p.relative_to(ROOT).parts]
-    tracked += [ROOT/'live'/n for n in ('prepare.py','build.py','bundle.py')]
-    hashes={str(p.relative_to(ROOT)) if ROOT in p.parents else str(p):hash_file(p) for p in tracked}
+    hashes=source_hashes(sources,a.manifest)
     identity={'schema':1,'sources':hashes,'sites_sha256':hash_file(output/'sites.private.json'),'pipeline_sha256':hash_file(pipeline)}
     build_id=hashlib.sha256(json.dumps(identity,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     (output/'loader-build.h').write_text('#define FT_BUILD_ID "'+build_id+'"\n#define FT_PIPELINE_SHA "'+hash_file(pipeline)+'"\n')
@@ -72,6 +76,8 @@ def build(a):
     for i in range(4):
         obj=output/f'emit-{i}.o';objects.append(obj)
         run(['cc','-std=c11',*FLAGS,'-DFT_EMITTER='+str(i),'-c',ROOT/'live/loader_emit.c','-o',obj])
+    obj=output/'runtime-emit.o';objects.append(obj)
+    run(['cc','-std=c11',*FLAGS,'-c',ROOT/'live/runtime-emit.c','-o',obj])
     # Explicitly separate acceptance executable, never included in owner objects.
     run(['cc','-std=c11',*FLAGS,'-I',output,ROOT/'live/loader_test.c',*objects,'-lcrypto','-ldl','-o',output/'loader-test'])
     run([output/'loader-test',a.elf])
@@ -87,7 +93,7 @@ def build(a):
     syms=subprocess.check_output(['nm','-D','--defined-only',owner],text=True)
     if ' ft_native_portal_event\n' not in syms:raise ValueError('real router event ABI is not exported')
     run(['readelf','-d',owner])
-    report={**identity,'build_id':build_id,'owner_sha256':hash_file(owner),'compiled_sources':sources,'site_count':len(prepared['sites'])}
+    report={**identity,'build_id':build_id,'owner_sha256':hash_file(owner),'compiled_sources':['live/loader.c','live/loader_emit.c','live/runtime-emit.c',*sources],'site_count':len(prepared['sites'])}
     (output/'build-report.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
     import bundle
     target=bundle.create(output,a.pipeline)

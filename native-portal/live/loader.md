@@ -8,7 +8,8 @@ installs a service, changes `/opt`, restarts SteamVR, or opens a camera.
 ## Build on the parent's isolated Frame mirror
 
 Merge the loader and router commits first. The router must supply
-`live/runtime.cpp`, `live/runtime-call.S`, and `live/runtime-sites.json`.
+`live/runtime.cpp`, `live/runtime-call.S`, `live/runtime-emit.c`, and
+`live/runtime-sites.json`.
 The production build refuses a missing router or unresolved export. Test stubs
 are compiled only into separately named loader acceptance artifacts.
 
@@ -109,24 +110,24 @@ The loader also exports `uint64_t ft_native_portal_image_base(void)`.
 No callback reaches router state in a fork child. There is no event log, worker
 queue or allocation in the loader callback.
 
-Manifest example:
+Use the complete checked-in `runtime-sites.json`. Preparation refuses missing,
+duplicate or changed rows and changed ABI metadata. Every guard, word and kind
+must also match the pinned ELF. Row order may differ. Optional `sources` is an
+additive list of production `.cpp` or `.S` paths relative to `native-portal`,
+never tests, fixtures or stubs.
 
-```json
-{
-  "elf_sha256": "9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265",
-  "sites": [
-    {"name": "renderer-created", "pc": "0x7fda0", "emitter": "observer"},
-    {"name": "upload", "pc": "0x161d64", "emitter": "arena"},
-    {"name": "enqueue", "pc": "0x161ed8", "emitter": "enqueue"}
-  ]
-}
-```
+Supported emitters are `observer`, `arena`, `pass`, `lifecycle`, `enqueue`,
+`replace-call`, `return-function`, and `observer-relocated`. The last three call
+the actual `runtime-emit.c` generator at its eight audited PCs. A 40-byte tail
+thunk at island offset 1024 converts `(relative_pc,Saved*)` to `(Saved*,globalID)`
+and enters the existing errno-preserving fork/TTL dispatcher. It preserves the
+callback return LR and leaves all saved state and specialized continuations to
+the original emitters. All code fits the loader's 2048-byte island stride.
 
-Supported emitters are `observer`, `arena`, `pass`, `lifecycle`, and `enqueue`.
-The specialized emitters only accept their audited PCs and infer local indices.
-Optional numeric `kind`, `word`, `guard` hex and `guard_sha256` values must match
-the pinned ELF. Optional `sources` is an additive list of production `.cpp` or
-`.S` paths relative to `native-portal`, never tests, fixtures or stubs.
+At `0x161ed8`, runtime `replace-call` deliberately overrides the legacy `enqueue`
+arena skip. Its selector 2 resumes PC+4 with the native LR supplied by the router.
+Other specialized conflicts remain errors. The build compiles `runtime-emit.c`
+and `runtime-call.S`, and hashes both plus the included `runtime/graph.inc`.
 
 Preparation unions the existing observer/core Evidence sites, arena sites,
 pass sites and lifecycle sites with the runtime manifest. It sorts and
@@ -149,8 +150,9 @@ systemd-run --user --scope -p MemoryMax=650M -p MemorySwapMax=0 \
   python3 -B native-portal/live/bundle_test.py
 ```
 
-Pass `--manifest path/to/runtime-sites.json` to the first command to include the
-router's additional sites. Host loader tests use explicitly separate callback
+The first command includes the complete router manifest by default, including
+all eight runtime islands' original/replacement/invalid-selector replays through
+the actual loader-generated callback thunk. Host loader tests use explicitly separate callback
 stubs. Bundle tests use disposable, labelled synthetic host DSOs. Neither can
 serve as a production build. The test runner refuses an uncapped cgroup.
 
@@ -164,8 +166,10 @@ export CPATH="$PWD/native-portal/build/live-loader-test/deps/usr/include:$PWD/na
 export LIBRARY_PATH="$PWD/native-portal/build/live-loader-test/deps/usr/lib/x86_64-linux-gnu"
 ```
 
-Verified baseline results: 89 merged sites, 32 text pages, 720 actual generated
-instruction replays across three load biases and both conditional outcomes.
+Verified combined results: 106 merged sites, 38 text pages, 804 actual generated
+instruction replays across three load biases and both conditional outcomes, plus
+24 runtime selector replays through the actual loader. All 91 runtime manifest
+guards match the exact ELF.
 All supported arena/pass selector routes preserve full machine state. Tests
 exercise exact ELF hash/map identity, missing/mismatched pins, default-off and
 wrong-executable real preload, fork and TTL, every precommit protection failure,
