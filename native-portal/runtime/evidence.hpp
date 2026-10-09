@@ -42,6 +42,12 @@ class Evidence {
     uint64_t stage(render::Adapter &,uint64_t pc,arena::Saved &,const render::EyeInput &,
                    uint64_t invocation=0) noexcept;
     bool initialized() const noexcept;
+    bool owner_event(uint64_t,const arena::Saved &) noexcept;
+    bool graph_event(uint64_t,const arena::Saved &) noexcept;
+    bool graph_capable() const noexcept;
+    bool settled(const render::Binding &,const render::Provenance &,const render::Provenance &,const render::Completion &) const noexcept;
+    bool command_owner(binding::Owner &) const noexcept;
+    bool release_lifecycle() noexcept;
     // Command must outlive Evidence. No caller generation or reader is accepted.
     // Owner's queue/signal identities still belong to the separate Command binding.
     bool bind_lifecycle(binding::Command &,const binding::Owner &) noexcept;
@@ -53,7 +59,16 @@ class Evidence {
     static bool observe(void *, const render::Binding &,uint64_t,uint64_t,render::Observation &) noexcept;
  private:
     struct Span { uint64_t begin=0,size=0,epoch=0; };
-    const pid_t pid_,tid_;
+    const pid_t pid_;pid_t tid_;
+    uint64_t worker_=0,context_=0,scheduler_=0,application_=0;
+    std::atomic<unsigned> handoff_{0};
+    bool run_=false,dispatch_=false,graph_scope_=false,graph_owned_=false,transferred_=false;
+    uint64_t dispatch_sp_=0;
+    struct GraphSpan {uint64_t begin=0,size=0;};
+    std::array<GraphSpan,196> graph_spans_{};
+    size_t graph_count_=0;
+    bool graph_capture(bool attachments) noexcept;
+    bool graph_read(uint64_t,void *,size_t) const noexcept;
     uint64_t base_=0,epoch_=0,allocation_sp_=0,allocation_slot_=0,borrowed_slot_=0;
     arena::Bridge *bridge_=nullptr;
     // Native call-local borrow; never exported as a general read/write registry.
@@ -69,8 +84,9 @@ class Evidence {
     uint64_t call_=0,backing_=0,map_=0,buffer_=0,allocation_bytes_=0;
     uint32_t requested_size_=0,type_index_=0,type_flags_=0,type_count_=0;
     render::Identity identity_{};
-    std::array<Span,7> spans_{};
-    struct Recording { uint64_t command=0,vk=0,generation=0;bool begun=false; };
+    std::array<Span,8> spans_{};
+    struct Recording { uint64_t command=0,vk=0,generation=0;bool begun=false;
+        uint64_t reset_sp=0,reset_lr=0;unsigned renewal=0; };
     std::array<Recording,64> recordings_{};
     binding::Generations generations_;
     std::optional<binding::Lifecycle> lifecycle_;

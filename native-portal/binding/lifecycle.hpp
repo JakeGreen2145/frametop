@@ -24,9 +24,10 @@ class Generations {
     Generations &operator=(const Generations &)=delete;
     uint64_t issue() noexcept;
  private:
+    friend class native_portal::runtime::Evidence;
     friend class Lifecycle;
     const pid_t pid_=getpid();
-    const std::thread::id thread_=std::this_thread::get_id();
+    std::thread::id thread_=std::this_thread::get_id();
     uint64_t last_=0,claimed_=0;
 };
 struct LifecycleState {

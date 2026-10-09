@@ -34,6 +34,9 @@ public:
     bool owned_debt() const { return debt_; } // owning callback thread only
     bool layer(bool stock,bool owned,Call acquire,Call release,void* context);
     bool external(bool acquiring,Call original,void* context);
+    // Owner-thread notice: another native thread already forwarded an external
+    // call. No success is inferred, no native call is replayed or suppressed here.
+    void external_observed();
 private:
     bool enter(); void leave();
     Backend* bridge_; const std::thread::id owner_; std::atomic_flag busy_=ATOMIC_FLAG_INIT;

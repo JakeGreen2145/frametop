@@ -45,6 +45,7 @@ bool Evidence::read(uint64_t p,void *out,size_t n) const noexcept {
     if(!owner() || failed_ || !constructed_ || !bounded(p,n)) return false;
     if(borrowed_slot_ && p==borrowed_slot_ && n==8) return read_self(p,out,n);
     if(staging_read(p,out,n)) return true;
+    if(graph_read(p,out,n)) return true;
     for(const auto &s:spans_) {
         if(s.epoch==epoch_ && p>=s.begin && p-s.begin<=s.size && n<=s.size-(p-s.begin))
             return read_self(p,out,n);
@@ -76,7 +77,7 @@ bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
     if(pc==0x301808 || pc==0x30180c || pc==0x300a08 || pc==0x300a38 ||
        pc==0x300b20 || pc==0x300c54 || pc==0x3003d0 || pc==0x311648 || pc==0x4b3d0 ||
        pc==0x305260 || pc==0x2953a0 || pc==0x3018b0 || pc==0x2a2230 ||
-       pc==0x2a2320 || pc==0x2987d8 || pc==0x298840) return recording_event(pc,s);
+       pc==0x2a2320 || pc==0x2987d8 || pc==0x298840 || pc==0x2a23f4) return recording_event(pc,s);
     if(pc==0x29bd18 || pc==0x29c238) {
         if(s.x[0]!=R) return false;
         fail();return true; // revoke before native teardown, never retire native objects
@@ -239,10 +240,14 @@ bool Evidence::call_return(const render::Registers &r) noexcept {
 }
 bool Evidence::snapshot(uint64_t wrapper,uint64_t marker,render::Observation &out) const noexcept {
     out={};if(!initialized() || !wrapper_ || !marker_ || wrapper!=wrapper_ || marker!=marker_) return false;
+    // During authenticated Run an old wrapper offset can outlive an arena cursor
+    // reset. Reading that bounded metadata is not descriptor authorization:
+    // Adapter/Bridge demand a fresh charged copy and exact post-upload offset.
     render::Observation o{};uint32_t size=0,offset=0;uint64_t D=0;
     if(!arena(o.arena) || !at(wrapper+8,o.wrapper_resource) || o.wrapper_resource!=wrapper_resource_ ||
        !at(wrapper_resource_+8,D) || D!=identity_.renderer+0x50 || !at(wrapper_resource_+0xb8,size) || size!=592 ||
-       !at(wrapper+0x18,offset) || (offset!=UINT32_MAX && (offset>o.arena.cursor || size>o.arena.cursor-offset)) ||
+       !at(wrapper+0x18,offset) || (offset!=UINT32_MAX && (offset>o.arena.capacity || size>o.arena.capacity-offset ||
+            (!run_ && (offset>o.arena.cursor || size>o.arena.cursor-offset)))) ||
        !read(marker+8,o.attachment.data(),sizeof o.attachment) || o.attachment!=source_over) return false;
     o.wrapper_size=size;o.wrapper_offset=offset;out=o;return true;
 }
@@ -258,10 +263,11 @@ bool Evidence::write_callback(void *p,uint64_t destination,const void *source,si
     return ok;
 }
 bool Evidence::coherent_callback(void *p,uint64_t a) noexcept {return p && static_cast<Evidence*>(p)->coherent(a);}
-bool Evidence::live_callback(void *,const render::Context &) noexcept {
-    // Initial command recording is attached, but dynamic pass/cache/attachment
-    // retention through BOTH eyes is unresolved. Mappings are not ownership.
-    return false;
+bool Evidence::live_callback(void *u,const render::Context &c) noexcept {
+    if(!u)return false;
+    const auto &e=*static_cast<Evidence*>(u);
+    return e.graph_capable() && e.dispatch_ && e.graph_scope_ &&
+        e.same_identity(c.identity) && c.recording_generation && c.recording_generation==e.recording_;
 }
 bool Evidence::same_identity(const render::Identity &i) const noexcept {
     return i.process_instance==identity_.process_instance && i.renderer==identity_.renderer &&
@@ -277,4 +283,5 @@ bool Evidence::observe(void *p,const render::Binding &b,uint64_t w,uint64_t m,re
 }
 arena::Memory Evidence::bridge_memory() noexcept {return {this,read_callback,write_callback,coherent_callback};}
 binding::PassReader Evidence::pass_reader() noexcept {return {this,read_callback,live_callback};}
+#include "graph.inc"
 } // namespace native_portal::runtime

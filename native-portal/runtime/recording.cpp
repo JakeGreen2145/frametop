@@ -36,16 +36,38 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         }
         return fail(); // bounded exhaustion cannot become partial tracking
     }
+    if(pc==0x2a23f4) {
+        if(!run_ || !ready_ || !transferred_ || s.x[19]!=identity_.renderer || command_wrapper_ || !s.x[0])return false;
+        uint64_t C=0,D=0,vk=0;
+        if(!read_self(s.x[0]+8,&C,8) || !read_self(C+8,&D,8) || D!=identity_.renderer+0x50 ||
+           !read_self(C+0x738,&vk,8) || !vk)return fail();
+        for(auto &c:recordings_)if(c.command==C && c.vk==vk && c.begun) {
+            if(lifecycle_ && spans_[6].begin==lifecycle_owner_.command && C!=spans_[6].begin)spans_[7]=spans_[6];
+            if(!add(2,s.x[0],0x10) || !add(6,C,0x7b0))return fail();
+            command_wrapper_=s.x[0];
+            if(!c.generation)c.generation=generations_.issue();
+            if(!c.generation)return fail();
+            recording_=c.generation;return true;
+        }
+        return fail(); // publication is not proof of a successful native begin
+    }
     if(pc==0x305260 || pc==0x2953a0) {
         if(s.x[0]!=command_wrapper_) return false;
-        fail();return true; // wrapper relinquishes its native reference before reuse
+        if(pc==0x305260 && run_ && s.x[30]==base_+0x2a2338 && transferred_ &&
+           ((!lifecycle_ && !graph_owned_) || (lifecycle_ && lifecycle_->state().current && !lifecycle_->state().unsupported))) {
+            // The wrapper relinquishes a pool-owned executable, not its native
+            // allocation. Keep the exact C role until observed reset/disposal or
+            // destructor; never read the relinquished wrapper again.
+            spans_[2]={};command_wrapper_=0;return true;
+        }
+        fail();return true; // any other release remains unsupported
     }
     if(pc==0x311648 || pc==0x4b3d0 || pc==0x3003d0) {
         const auto command=pc==0x311648?s.x[1]:s.x[0];
         if(!command) return false;
         if(command==creation_) return fail();
         for(auto &c:recordings_) if(c.command==command) {
-            if(spans_[6].begin==command) {fail();return true;}
+            if(spans_[6].begin==command || spans_[7].begin==command) {fail();return true;}
             c={};return true;
         }
         return false;
@@ -53,13 +75,37 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
     // Reset invalidates authorization at ENTRY, even on raw failure. Only the
     // bound Lifecycle may issue its successor from reset+begin success. No local
     // counter, arena cursor or changed address substitutes for that proof.
-    if(pc==0x300b20 || pc==0x300a08) {
-        for(auto &c:recordings_) if(c.command==s.x[0]) {
-            if(c.generation==recording_) recording_=0;
+    if(run_ && (pc==0x300b20 || pc==0x300a08 || pc==0x300c54 || pc==0x300a38)) {
+        const auto object=(pc==0x300b20 || pc==0x300a08)?s.x[0]:s.x[19];
+        for(auto &c:recordings_)if(c.command==object) {
+            uint64_t vk=0;if(!read_self(c.command+0x738,&vk,8) || vk!=c.vk)return fail();
+            if(pc==0x300b20) {
+                if(c.generation==recording_)recording_=0;
+                c.generation=0;c.begun=false;c.reset_sp=s.sp;c.reset_lr=s.x[30];c.renewal=1;
+            } else if(pc==0x300c54) {
+                if(c.renewal!=1 || s.sp+0x20!=c.reset_sp || uint32_t(s.x[0]))return fail();
+                c.renewal=2;
+            } else if(pc==0x300a08) {
+                if(c.renewal!=2 || s.sp!=c.reset_sp || s.x[30]!=c.reset_lr)return fail();
+                c.renewal=3;
+            } else {
+                if(c.renewal!=3 || s.sp+0x30!=c.reset_sp || uint32_t(s.x[0]))return fail();
+                c.renewal=0;c.begun=true;
+            }
+            break;
+        }
+    }
+    if(!run_ && (pc==0x300b20 || pc==0x300a08)) {
+        for(auto &c:recordings_)if(c.command==s.x[0]) {
+            if(c.generation==recording_)recording_=0;
             c.generation=0;c.begun=false;break;
         }
     }
-    if(!lifecycle_) return false;
+    if(!lifecycle_)return false;
+    const auto previous=lifecycle_->state();
+    if((pc==0x2a2230 || pc==0x2a2320) && previous.current)return true;
+    if((pc==0x2987d8 || pc==0x298840) && previous.retained)return true;
+    if((pc==0x300c54 || pc==0x300a38) && s.x[19]!=lifecycle_owner_.command)return false;
     binding::Site site;
     switch(pc) {
     case 0x300b20:site=binding::Site::ResetEnter;break;
@@ -81,19 +127,23 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
     if(site==binding::Site::BeginResult && state.next_generation && state.current && state.retained &&
        state.invalidated && !state.unsupported) {
         for(auto &c:recordings_) if(c.command==lifecycle_owner_.command) {
-            c.generation=state.next_generation;recording_=c.generation;return true;
+            c.generation=state.next_generation;c.begun=true;
+            if(spans_[6].begin==c.command)recording_=c.generation;
+            return true;
         }
         return fail();
     }
     return true;
 }
 bool Evidence::command_read_callback(void *u,uint64_t p,void *out,size_t n) noexcept {
-    if(!u || n!=8) return false;
+    if(!u) return false;
     const auto &e=*static_cast<Evidence*>(u);
     if(!e.owner()) return false;
+    if(e.graph_read(p,out,n))return true;
+    if(n!=8)return false;
     // Byte bounds on R/C are not authority to reinterpret those allocations as
     // graph nodes. No pass/packet/name bytes are borrowed by this binding yet.
-    const auto R=e.identity_.renderer,C=e.spans_[6].begin;
+    const auto R=e.identity_.renderer,C=e.lifecycle_owner_.command;
     if(p!=R+0x15a0 && p!=R+0x15a8 && p!=R+0x15b8 && p!=R+0x15c0 &&
        (!C || p!=C+0x738)) return false;
     return e.read(p,out,n);
@@ -113,5 +163,12 @@ bool Evidence::bind_lifecycle(binding::Command &command,const binding::Owner &o)
     lifecycle_.emplace(command,binding::Memory{this,command_read_callback},generations_);
     if(!lifecycle_->bind(o,static_cast<uint64_t>(tid_))) {lifecycle_.reset();return false;}
     lifecycle_owner_=o;return true;
+}
+bool Evidence::release_lifecycle() noexcept {
+    if(!owner())return false;
+    if(!lifecycle_)return true;
+    const auto state=lifecycle_->state();
+    if(!state.current || !state.retained || !state.invalidated || state.unsupported || !state.next_generation)return false;
+    lifecycle_.reset();lifecycle_owner_={};spans_[7]={};return true;
 }
 } // namespace native_portal::runtime

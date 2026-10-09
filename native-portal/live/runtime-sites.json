@@ -1,0 +1,1331 @@
+{
+  "schema": 1,
+  "elf_sha256": "9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265",
+  "callback": "ft_native_portal_event(uint64_t relative_pc, native_portal::arena::Saved *saved) noexcept",
+  "saved_size": 800,
+  "unknown_pc": "no mutation; original continuation",
+  "loader_must_install_all": true,
+  "requires_explicit_shutdown_fail_stop": true,
+  "sites": [
+    {
+      "relative_pc": 308176,
+      "pc": "0x4b3d0",
+      "guard": "302b0090119640f910a2049120021fd6",
+      "guard_sha256": "baaa84031fdeccacc85ea383cdeec1214280c3ce4fd2ce206fb63a9c735ca2f1",
+      "word": "0x90002b30",
+      "kind": 6,
+      "emitter": "observer-relocated",
+      "site_id": null,
+      "continuation": "0x4b3d4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 407840,
+      "pc": "0x63920",
+      "guard": "fd7ba7a9fd030091e827066d0840601e",
+      "guard_sha256": "441893aa333b3d3a8048d2d4ba789801f245cccbc6829edde4f01af5aea839da",
+      "word": "0xa9a77bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x63924",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 523680,
+      "pc": "0x7fda0",
+      "guard": "000f084e6296409142001891e10317aa",
+      "guard_sha256": "9542ecc38635db4bbbb06804a491d36aa1608f824a343ea4d0eb1ddeed7fe6e1",
+      "word": "0x4e080f00",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x7fda4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 523708,
+      "pc": "0x7fdbc",
+      "guard": "171c0012a24e6bf9e1031baa80c24039",
+      "guard_sha256": "7b1d359daa7df632ee3931caabff248f1d320d74c671ac6506a6ebc669f4b070",
+      "word": "0x12001c17",
+      "kind": 0,
+      "emitter": "arena",
+      "site_id": 2,
+      "continuation": "0x7fdc0",
+      "selectors": {
+        "0": "original",
+        "1": "existing-Replacement",
+        "2": "existing-SkipOwned",
+        "3": "existing-Exhausted"
+      }
+    },
+    {
+      "relative_pc": 650844,
+      "pc": "0x9ee5c",
+      "guard": "1b1c0072600000549b7775397bb50034",
+      "guard_sha256": "5ce0effc2ec198496f0a1aec021e1b75c7d55e839e2e83b4d142eb8905d85c83",
+      "word": "0x72001c1b",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x9ee60",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 650904,
+      "pc": "0x9ee98",
+      "guard": "00305a391f001b6be0000054410080d2",
+      "guard_sha256": "3995124ed02f0a8e2e8d9095dc9971e8c5206fa3d3410d03e31fcf9b33fe290e",
+      "word": "0x395a3000",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x9ee9c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 650928,
+      "pc": "0x9eeb0",
+      "guard": "3e030394e07740f91b301a39404b50f9",
+      "guard_sha256": "2cb12945bf1dac21a9c82a4f9355bcfec1e8be961121bc2b2ae15e2d0ebfc267",
+      "word": "0x9403033e",
+      "kind": 1,
+      "emitter": "replace-call",
+      "site_id": null,
+      "continuation": "0x9eeb4",
+      "selectors": {
+        "0": "relocated-original-call",
+        "2": "pc+4 (callback must supply native LR)"
+      }
+    },
+    {
+      "relative_pc": 652292,
+      "pc": "0x9f404",
+      "guard": "7735003460a2039103ca88d204d688d2",
+      "guard_sha256": "fb89e6bc568834f881aac14eb1499cf5cefefd3f57e4d534e0d4e329465eee8f",
+      "word": "0x34003577",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x9f408",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 656652,
+      "pc": "0xa050c",
+      "guard": "35fd029469faff177bb25839bb4aff35",
+      "guard_sha256": "2755298065bedcf4709b32e004129a4716a00c2396c5e4479859757a3fb26dbb",
+      "word": "0x9402fd35",
+      "kind": 1,
+      "emitter": "replace-call",
+      "site_id": null,
+      "continuation": "0xa0510",
+      "selectors": {
+        "0": "relocated-original-call",
+        "2": "pc+4 (callback must supply native LR)"
+      }
+    },
+    {
+      "relative_pc": 1125044,
+      "pc": "0x112ab4",
+      "guard": "633206b9041478a9441400a920406d39",
+      "guard_sha256": "c971aa9d63c990461f5a3f4bbe826623f18a245345d122b3fb7149ce9c1ecbce",
+      "word": "0xb9063263",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112ab8",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125060,
+      "pc": "0x112ac4",
+      "guard": "40000035809655bde00317aa604606bd",
+      "guard_sha256": "d5e83b6dca02a7a13484efddda69e1d4aea92dae97c93d5ce0efa1f1e3184c51",
+      "word": "0x35000040",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112ac8",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125100,
+      "pc": "0x112aec",
+      "guard": "820000b5007c42bd1820201ec80b0054",
+      "guard_sha256": "728e4072a33f9a34f537fd6d2ffad5ffa188d6ba024ebad0eb85d80c11aa1260",
+      "word": "0xb5000082",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112af0",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125108,
+      "pc": "0x112af4",
+      "guard": "1820201ec80b005441080035e03340f9",
+      "guard_sha256": "ebd3379f6549af76e11b12bd52da30fba63ddf9bd3b79faffbc833fe0358b587",
+      "word": "0x1e202018",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112af8",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125116,
+      "pc": "0x112afc",
+      "guard": "41080035e03340f97fb2183900004191",
+      "guard_sha256": "3519780aaa4e7f7f3c3c4585be56e5966c83bf60d57b1c2a44e777dd8aed56d6",
+      "word": "0x35000841",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112b00",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125136,
+      "pc": "0x112b10",
+      "guard": "400000357f021639603246b917008052",
+      "guard_sha256": "7bef8c43b7f8f96b91764f3e90e59e5e74fb7c5b714e37576611fa76b95b86d8",
+      "word": "0x35000040",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112b14",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125208,
+      "pc": "0x112b58",
+      "guard": "17102d3961b2583901142d392100184a",
+      "guard_sha256": "1ed263fca6d234a0a224d097cad5f58dc814de19a9442b496864839a7a687d7b",
+      "word": "0x392d1017",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112b5c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125392,
+      "pc": "0x112c10",
+      "guard": "61b21839a1f7ff34614246bd604a46bd",
+      "guard_sha256": "c090f1fa7c48e990395c88611c3c60e1e4d5ef9e10e663033a879fcfd9597ba4",
+      "word": "0x3918b261",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112c14",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125456,
+      "pc": "0x112c50",
+      "guard": "6106003400102e1e604a06bdd7040034",
+      "guard_sha256": "60fa4a5afac75b56adabaef6613ff3e032b0628be3c808b5cc69295b2afc461d",
+      "word": "0x34000661",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112c54",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125488,
+      "pc": "0x112c70",
+      "guard": "610600348062643940f4ff3420008052",
+      "guard_sha256": "17f3a7e39ae522949818b67ee69be129d8aaed3d3ed74f2d6fc5390196739dd5",
+      "word": "0x34000661",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112c74",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125496,
+      "pc": "0x112c78",
+      "guard": "40f4ff342000805260b21839e5ffff17",
+      "guard_sha256": "763fc55cab1b80078dd663b84def0bcbc665096f516362938adb0419d31c0341",
+      "word": "0x34fff440",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112c7c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125628,
+      "pc": "0x112cfc",
+      "guard": "1f1c007217008052e03340f900004191",
+      "guard_sha256": "d687cbfb81e0cfb9e0ead3bc8cf3d6ce39e6d99dfa8fb72b6eb842a79b9023c8",
+      "word": "0x72001c1f",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112d00",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125652,
+      "pc": "0x112d14",
+      "guard": "f902194a90ffff17613246b957010035",
+      "guard_sha256": "85140ec43a38a07d2ab7bfc52163058c94bfa577661abd53f7d26a070a4689c8",
+      "word": "0x4a1902f9",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112d18",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125676,
+      "pc": "0x112d2c",
+      "guard": "c8010054c1020035604a06bdefffff17",
+      "guard_sha256": "048f66456c9a46f5fe7512ed39413ecba64f98936435815872c32ed630bcce73",
+      "word": "0x540001c8",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112d30",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125776,
+      "pc": "0x112d90",
+      "guard": "604a06bdd8ffff17f30300aae00316aa",
+      "guard_sha256": "c276f652b017d8347d18dfe4a0c3fb54693286d965fa5b271271c2fcb1f1322d",
+      "word": "0xbd064a60",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112d94",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1125968,
+      "pc": "0x112e50",
+      "guard": "fd7bb6a9fd030091f55b02a916600091",
+      "guard_sha256": "08b7107d9c9c5a51aa79a2334c62583564bd8b35766641cebfcad27564663347",
+      "word": "0xa9b67bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112e54",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1278392,
+      "pc": "0x1381b8",
+      "guard": "fd7bbda981180090fd030091f35301a9",
+      "guard_sha256": "074ce997453e61bb5611a45c2217d0811d8543abe8dc1d3b884867b006761b33",
+      "word": "0xa9bd7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x1381bc",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1313180,
+      "pc": "0x14099c",
+      "guard": "b34e00f90004004f60164091e14dc2d2",
+      "guard_sha256": "d9e73981b23f62342654467d18d85e09891a0ab824be231859551fd03bd50db2",
+      "word": "0xf9004eb3",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x1409a0",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1314236,
+      "pc": "0x140dbc",
+      "guard": "9f0b01941f1c0072e0750054401800b0",
+      "guard_sha256": "452d6f0a136e55084061b27c4e31c36c9908eb380e07f2b3d121242d36ff98c6",
+      "word": "0x94010b9f",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x140dc0",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1320480,
+      "pc": "0x142620",
+      "guard": "fd7bb9a9211800f021602c91fd030091",
+      "guard_sha256": "b443f7252822f41cb8137dc882f090b155a882d5b597f8592275a08797470746",
+      "word": "0xa9b97bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x142624",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1320708,
+      "pc": "0x142704",
+      "guard": "f9050194211800f08000805221c02d91",
+      "guard_sha256": "b85009300dee1cbadbbee767275815733832acbb44c6165f839c7bc52714a04e",
+      "word": "0x940105f9",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x142708",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1320712,
+      "pc": "0x142708",
+      "guard": "211800f08000805221c02d9167c70094",
+      "guard_sha256": "44d72a1c97f38889a86537eb152d510dfaaa93dd6710f4c84ec1bb305ac8a902",
+      "word": "0xf0001821",
+      "kind": 6,
+      "emitter": "observer-relocated",
+      "site_id": null,
+      "continuation": "0x14270c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1342024,
+      "pc": "0x147a48",
+      "guard": "0c5883d2ff632ccb100a82d2fd7b01a9",
+      "guard_sha256": "a5d16f10ad25e456181175ee81e46a597ca9d30fe416331bbc2bc199d72890cb",
+      "word": "0xd283580c",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x147a4c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1343672,
+      "pc": "0x1480b8",
+      "guard": "612640f920e040f90280069100a041b9",
+      "guard_sha256": "8e5afb2133f3ca6c4f02ebb695140faf835186b6cc50e3fe83daa8702bd0c661",
+      "word": "0xf9402661",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x1480bc",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1344068,
+      "pc": "0x148244",
+      "guard": "7759fd971a1c0012e03746f9806100b5",
+      "guard_sha256": "f1b3c51a51da76e869af28c2e0f1cc1fb8d246fa3f36fa7b7d38fd1e1cc9db49",
+      "word": "0x97fd5977",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x148248",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1344168,
+      "pc": "0x1482a8",
+      "guard": "5e59fd97612640f9fb430c9120e040f9",
+      "guard_sha256": "5f4350fbf06d5ca39e740c59290a076074cc4d862c74e93c48013110f3e252ef",
+      "word": "0x97fd595e",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x1482ac",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1344332,
+      "pc": "0x14834c",
+      "guard": "3559fd97612640f91a1c0012e23746f9",
+      "guard_sha256": "0b1a0de3b3b58693455ea658ab331a3af90a58fe018be3f4aa5239428e5a97a2",
+      "word": "0x97fd5935",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x148350",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1344524,
+      "pc": "0x14840c",
+      "guard": "0559fd97612640f920d440f9a05900b4",
+      "guard_sha256": "91682ffacc9d5057ab71eff782fa34d7224991c3648e64523957ea2789ac9176",
+      "word": "0x97fd5905",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x148410",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1347040,
+      "pc": "0x148de0",
+      "guard": "c0035fd620d440f9802900b4010080d2",
+      "guard_sha256": "02ee1660b7845a1d0c8e7d518966cc65d8d62ac9465a941dc920e1d034008b61",
+      "word": "0xd65f03c0",
+      "kind": 5,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x148de4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1369512,
+      "pc": "0x14e5a8",
+      "guard": "fd7bb8a9010a8052fd030091f35301a9",
+      "guard_sha256": "d86d08614a4039318c1b8fa258eb7ac1ff61931e3089801c986af109b26b6d49",
+      "word": "0xa9b87bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x14e5ac",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440224,
+      "pc": "0x15f9e0",
+      "guard": "fd7bbea9fd030091f35301a9f30300aa",
+      "guard_sha256": "c78839b12416f74faed6950681b61beed966588b2195c3c5c15953e89c270bde",
+      "word": "0xa9be7bfd",
+      "kind": 0,
+      "emitter": "return-function",
+      "site_id": null,
+      "continuation": "0x15f9e4",
+      "selectors": {
+        "0": "original-prologue",
+        "2": "return-to-saved-x30 (original was called synchronously through guarded native call)"
+      }
+    },
+    {
+      "relative_pc": 1440680,
+      "pc": "0x15fba8",
+      "guard": "fd7bbea9fd030091f30b00f9f30300aa",
+      "guard_sha256": "4432b33610cd02037de8ec297a5c7869dd481e525be969df8785448e0b1530a9",
+      "word": "0xa9be7bfd",
+      "kind": 0,
+      "emitter": "return-function",
+      "site_id": null,
+      "continuation": "0x15fbac",
+      "selectors": {
+        "0": "original-prologue",
+        "2": "return-to-saved-x30 (original was called synchronously through guarded native call)"
+      }
+    },
+    {
+      "relative_pc": 1449316,
+      "pc": "0x161d64",
+      "guard": "e0003fd6e05740f90000403940100034",
+      "guard_sha256": "11f370b75987b3f5ba29f6e5bd7733929944f05426024b2e16e428abdb20e8a8",
+      "word": "0xd63f00e0",
+      "kind": 2,
+      "emitter": "arena",
+      "site_id": 7,
+      "continuation": "0x161d68",
+      "selectors": {
+        "0": "original",
+        "1": "existing-Replacement",
+        "2": "existing-SkipOwned",
+        "3": "existing-Exhausted"
+      }
+    },
+    {
+      "relative_pc": 1449320,
+      "pc": "0x161d68",
+      "guard": "e05740f90000403940100034f5324239",
+      "guard_sha256": "da98bf88a0c6fd91a4a4deaa42c2a2c9f1748a45c5fbd9755b6c077b8d7802cc",
+      "word": "0xf94057e0",
+      "kind": 0,
+      "emitter": "arena",
+      "site_id": 8,
+      "continuation": "0x161d6c",
+      "selectors": {
+        "0": "original",
+        "1": "existing-Replacement",
+        "2": "existing-SkipOwned",
+        "3": "existing-Exhausted"
+      }
+    },
+    {
+      "relative_pc": 1449688,
+      "pc": "0x161ed8",
+      "guard": "80003fd6610340f983071c8b21804091",
+      "guard_sha256": "11a7b382805f68004d09161b040bf63c1f9f1d7929cc9195f43b1535805208b3",
+      "word": "0xd63f0080",
+      "kind": 2,
+      "emitter": "replace-call",
+      "site_id": null,
+      "continuation": "0x161edc",
+      "selectors": {
+        "0": "relocated-original-call",
+        "2": "pc+4 (callback must supply native LR)"
+      }
+    },
+    {
+      "relative_pc": 1449728,
+      "pc": "0x161f00",
+      "guard": "e003142afd7b40a9f35341a9f55b42a9",
+      "guard_sha256": "9722fe50ab0abeeaae84fdcc2f98f997518775add9c0cee1f3a1f63c67661528",
+      "word": "0x2a1403e0",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x161f04",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1589112,
+      "pc": "0x183f78",
+      "guard": "0221fb979f0600f99f1200b91f000071",
+      "guard_sha256": "436b075714233416bba5f78df2587c00f57d95442e120a8bc64a5353b848d3a1",
+      "word": "0x97fb2102",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x183f7c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1589116,
+      "pc": "0x183f7c",
+      "guard": "9f0600f99f1200b91f000071e0179f1a",
+      "guard_sha256": "6bc03a24060d0b3d02410e78b979ad02767037be14c5695c8ee72646cc6d3ef0",
+      "word": "0xf900069f",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x183f80",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2705016,
+      "pc": "0x294678",
+      "guard": "a10100b4fd7bbea9fd030091f30b00f9",
+      "guard_sha256": "050e62187cb12bc0362212747aa2cc5cdd9767aa9faa2aed2c39c501e0542d9a",
+      "word": "0xb40001a1",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x29467c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2708384,
+      "pc": "0x2953a0",
+      "guard": "fd7bbea9fd030091f30b00f9f30300aa",
+      "guard_sha256": "4432b33610cd02037de8ec297a5c7869dd481e525be969df8785448e0b1530a9",
+      "word": "0xa9be7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2953a4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2713248,
+      "pc": "0x2966a0",
+      "guard": "610400b4fd7bbda9fd030091f35301a9",
+      "guard_sha256": "1c5219fdf4a76d8a8e7e7c567a352e72b841983df4e392f69d93212b3c82fb95",
+      "word": "0xb4000461",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2966a4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2721748,
+      "pc": "0x2987d4",
+      "guard": "df1a14b9d8de4af9d7e24af91f0317eb",
+      "guard_sha256": "ee174fe2be2438f9f5eddee4a1e31eb963e5e24b1c6f38f6abe63421f6cc53b9",
+      "word": "0xb9141adf",
+      "kind": 0,
+      "emitter": "arena",
+      "site_id": 6,
+      "continuation": "0x2987d8",
+      "selectors": {
+        "0": "original",
+        "1": "existing-Replacement",
+        "2": "existing-SkipOwned",
+        "3": "existing-Exhausted"
+      }
+    },
+    {
+      "relative_pc": 2721752,
+      "pc": "0x2987d8",
+      "guard": "d8de4af9d7e24af91f0317ebe0020054",
+      "guard_sha256": "86a5b8ee9d962d53c70ab2a2107b5672e7b6214888c97fb1fb61dae965341455",
+      "word": "0xf94aded8",
+      "kind": 0,
+      "emitter": "lifecycle",
+      "site_id": 7,
+      "continuation": "0x2987dc",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2721856,
+      "pc": "0x298840",
+      "guard": "005682d2c002008bf4e30194c0223891",
+      "guard_sha256": "b13bda467c705a3857c2540a8869f0b011d796d36a6874274ff28b599a405206",
+      "word": "0xd2825600",
+      "kind": 0,
+      "emitter": "lifecycle",
+      "site_id": 8,
+      "continuation": "0x298844",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2721968,
+      "pc": "0x2988b0",
+      "guard": "03ffbf129f00036b09010054400440f9",
+      "guard_sha256": "f5b6c04fce6ed79ce9c1125a981329eeeed1531b3ebaa6b08c8ad0c51320bdfb",
+      "word": "0x12bfff03",
+      "kind": 0,
+      "emitter": "arena",
+      "site_id": 4,
+      "continuation": "0x2988b4",
+      "selectors": {
+        "0": "original",
+        "1": "existing-Replacement",
+        "2": "existing-SkipOwned",
+        "3": "existing-Exhausted"
+      }
+    },
+    {
+      "relative_pc": 2724112,
+      "pc": "0x299110",
+      "guard": "3f004271c8030054a00200b9e10319aa",
+      "guard_sha256": "51d17d5c0dd41c1e788a08588c2465c383cd47befe9f23b6a8bdba663d210dd2",
+      "word": "0x7142003f",
+      "kind": 0,
+      "emitter": "arena",
+      "site_id": 3,
+      "continuation": "0x299114",
+      "selectors": {
+        "0": "original",
+        "1": "existing-Replacement",
+        "2": "existing-SkipOwned",
+        "3": "existing-Exhausted"
+      }
+    },
+    {
+      "relative_pc": 2728268,
+      "pc": "0x29a14c",
+      "guard": "f19501947aca49f9f5a340f9ffa300f9",
+      "guard_sha256": "16547b2e5cc46c2655b8b64e66abf6dd2843c4ba3d497ff951ced51e4519cb4a",
+      "word": "0x940195f1",
+      "kind": 1,
+      "emitter": "arena",
+      "site_id": 0,
+      "continuation": "0x29a150",
+      "selectors": {
+        "0": "original",
+        "1": "existing-Replacement",
+        "2": "existing-SkipOwned",
+        "3": "existing-Exhausted"
+      }
+    },
+    {
+      "relative_pc": 2728272,
+      "pc": "0x29a150",
+      "guard": "7aca49f9f5a340f9ffa300f975ca09f9",
+      "guard_sha256": "ef16ef56e7f166bfa0afd45e1f28cebf21ae301caeabe6de9255629c33869f73",
+      "word": "0xf949ca7a",
+      "kind": 0,
+      "emitter": "arena",
+      "site_id": 1,
+      "continuation": "0x29a154",
+      "selectors": {
+        "0": "original",
+        "1": "existing-Replacement",
+        "2": "existing-SkipOwned",
+        "3": "existing-Exhausted"
+      }
+    },
+    {
+      "relative_pc": 2729256,
+      "pc": "0x29a528",
+      "guard": "61c209f9a00000b49cebff97e04f40f9",
+      "guard_sha256": "1cb120bba608cb677c9533dbb58307ba948862bd731513da5de1a69ca8f23433",
+      "word": "0xf909c261",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x29a52c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2735384,
+      "pc": "0x29bd18",
+      "guard": "fd7bb8a9fd030091f35301a9f30300aa",
+      "guard_sha256": "b3410af49e7a792926331ad00bd9577f27768a33b151f5ca8b4ed900fdf9b69e",
+      "word": "0xa9b87bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x29bd1c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2736696,
+      "pc": "0x29c238",
+      "guard": "fd7bbca9e11700b021e03091fd030091",
+      "guard_sha256": "16ad9dcb0d1f69c221e3decb9fa68314950b9823654473b23d51ac3746214a32",
+      "word": "0xa9bc7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x29c23c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2748904,
+      "pc": "0x29f1e8",
+      "guard": "fd7bb7a9fd030091f55b02a9f50300aa",
+      "guard_sha256": "9dc9660ca58907cc5a4857ece7d900fb0682860ffedbba18c67d9836fc356a9a",
+      "word": "0xa9b77bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x29f1ec",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2748928,
+      "pc": "0x29f200",
+      "guard": "30faff97401800b4f35301a9e8430191",
+      "guard_sha256": "114ae0b18248845359494ade12c2838d39adeb50304ba3b99a3aaad3739e79bc",
+      "word": "0x97fffa30",
+      "kind": 1,
+      "emitter": "replace-call",
+      "site_id": null,
+      "continuation": "0x29f204",
+      "selectors": {
+        "0": "relocated-original-call",
+        "2": "pc+4 (callback must supply native LR)"
+      }
+    },
+    {
+      "relative_pc": 2749272,
+      "pc": "0x29f358",
+      "guard": "00ffbf127f00006b88040054009340f9",
+      "guard_sha256": "3cb2ba84aa4b1ee73ce60bb5bbcd56d0572b8e286374da3124a492b47109076c",
+      "word": "0x12bfff00",
+      "kind": 0,
+      "emitter": "arena",
+      "site_id": 5,
+      "continuation": "0x29f35c",
+      "selectors": {
+        "0": "original",
+        "1": "existing-Replacement",
+        "2": "existing-SkipOwned",
+        "3": "existing-Exhausted"
+      }
+    },
+    {
+      "relative_pc": 2749720,
+      "pc": "0x29f518",
+      "guard": "c0035fd6a2da49f97dffff17600240f9",
+      "guard_sha256": "1c3571f075ea914e123dead4d159732af30c7fab349f50dde10d32922f4be953",
+      "word": "0xd65f03c0",
+      "kind": 5,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x29f51c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2749776,
+      "pc": "0x29f550",
+      "guard": "c0035fd64f27fb97c50e00b0c10e0090",
+      "guard_sha256": "bbd620c1400eb5435b09666df502424f58ae3dd260a8761f37cb7272394c902c",
+      "word": "0xd65f03c0",
+      "kind": 5,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x29f554",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2759704,
+      "pc": "0x2a1c18",
+      "guard": "60a24a39a0fcff3462a2069161620691",
+      "guard_sha256": "1d52f57be80761482f96c1fcc4f08d5fa1c509e88dcce6f4a13441675cdb651c",
+      "word": "0x394aa260",
+      "kind": 0,
+      "emitter": "pass",
+      "site_id": 1,
+      "continuation": "0x2a1c1c",
+      "selectors": {
+        "0": "original",
+        "1": "packet-only-skip-to-0x2a1c5c"
+      }
+    },
+    {
+      "relative_pc": 2760216,
+      "pc": "0x2a1e18",
+      "guard": "613a0035ff4303d1fd7b02a9fd830091",
+      "guard_sha256": "826190b0319a28c4c13b83e44efd998f768b1966f4fc0564003218cd99d68f9b",
+      "word": "0x35003a61",
+      "kind": 3,
+      "emitter": "pass",
+      "site_id": 0,
+      "continuation": "0x2a1e1c",
+      "selectors": {
+        "0": "original",
+        "1": "unsupported-at-entry"
+      }
+    },
+    {
+      "relative_pc": 2761264,
+      "pc": "0x2a2230",
+      "guard": "76de4af978e24af962d24af9df0218eb",
+      "guard_sha256": "c41d95bc50568e5530b57f893896cada2ce23d729eafe76f1a297a08089461ea",
+      "word": "0xf94ade76",
+      "kind": 0,
+      "emitter": "lifecycle",
+      "site_id": 5,
+      "continuation": "0x2a2234",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2761504,
+      "pc": "0x2a2320",
+      "guard": "da1800d040c324911b5c43a97f0317eb",
+      "guard_sha256": "2d49d4dc5640b04184bcbcd7214c8dbd72f1503151d22202569ecba7f3de4a9a",
+      "word": "0xd00018da",
+      "kind": 6,
+      "emitter": "lifecycle",
+      "site_id": 6,
+      "continuation": "0x2a2324",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2761716,
+      "pc": "0x2a23f4",
+      "guard": "60c209f9b40100b4e00314aa988b0194",
+      "guard_sha256": "3e1c55461da1e061082e09ef2fa6ddd399949489c1a2f40a998035b95bf9dbfe",
+      "word": "0xf909c260",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2a23f8",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3137680,
+      "pc": "0x2fe090",
+      "guard": "fd7bbda9fd030091f35301a994150090",
+      "guard_sha256": "b559476229cfb088af2ddeaa22f2746e9a31dec9b393f1a2d79e37d5bb09f8a2",
+      "word": "0xa9bd7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2fe094",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3146704,
+      "pc": "0x3003d0",
+      "guard": "e10300aa200080523f9c03f9c0035fd6",
+      "guard_sha256": "5bebbac921b3246782313e24190199dd1c4c2f50fe48cf3a034b33179dd07620",
+      "word": "0xaa0003e1",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x3003d4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3148296,
+      "pc": "0x300a08",
+      "guard": "fd7bbda9621500d043058052fd030091",
+      "guard_sha256": "52c6d4f8066e75835d3caa8c67cad68a6315bc509dcd0b1b8e771cd7b8bf4bec",
+      "word": "0xa9bd7bfd",
+      "kind": 0,
+      "emitter": "lifecycle",
+      "site_id": 2,
+      "continuation": "0x300a0c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3148344,
+      "pc": "0x300a38",
+      "guard": "8000003520008052fd7bc3a8c0035fd6",
+      "guard_sha256": "67c498d512a2336ea0076eb9b82fc44435c25d91d85d39b61c981cb1dd54a3ee",
+      "word": "0x35000080",
+      "kind": 3,
+      "emitter": "lifecycle",
+      "site_id": 3,
+      "continuation": "0x300a3c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3148576,
+      "pc": "0x300b20",
+      "guard": "fd7bbea9fd030091f30b00f9f30300aa",
+      "guard_sha256": "4432b33610cd02037de8ec297a5c7869dd481e525be969df8785448e0b1530a9",
+      "word": "0xa9be7bfd",
+      "kind": 0,
+      "emitter": "lifecycle",
+      "site_id": 0,
+      "continuation": "0x300b24",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3148884,
+      "pc": "0x300c54",
+      "guard": "a0000035e00313aaf30b40f9fd7bc2a8",
+      "guard_sha256": "eb922fefca0eedbf8dbb343123f4b955b4c73420f6cdf078b7d06b5f3a2a6f4f",
+      "word": "0x350000a0",
+      "kind": 3,
+      "emitter": "lifecycle",
+      "site_id": 1,
+      "continuation": "0x300c58",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3151880,
+      "pc": "0x301808",
+      "guard": "9afcff971f1c007201020054bf0200f9",
+      "guard_sha256": "2e61ce2b51c6f24c7b3a946ccbc46fea8a22810afdfda9ada4488ac78384f966",
+      "word": "0x97fffc9a",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x30180c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3151884,
+      "pc": "0x30180c",
+      "guard": "1f1c007201020054bf0200f9e00314aa",
+      "guard_sha256": "49e4b67321ee99934807c7d81ed3ca684cddb7213f478d147e805ead5ac80c3e",
+      "word": "0x72001c1f",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x301810",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3152048,
+      "pc": "0x3018b0",
+      "guard": "ff4315d1fd7b00a9fd030091f35301a9",
+      "guard_sha256": "c5c1fdba991bdb6b890d35c3bf7f0931635a568fd70bd1a7fe377fca9de562df",
+      "word": "0xd11543ff",
+      "kind": 0,
+      "emitter": "lifecycle",
+      "site_id": 4,
+      "continuation": "0x3018b4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3154388,
+      "pc": "0x3021d4",
+      "guard": "80003fd6f403002ae00318aa56e2f997",
+      "guard_sha256": "4d05b92100556bc8c6b533462b2d1f6e96dac8d40c60c66eee105a47377b8fbe",
+      "word": "0xd63f0080",
+      "kind": 2,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x3021d8",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3154392,
+      "pc": "0x3021d8",
+      "guard": "f403002ae00318aa56e2f997f77a41f9",
+      "guard_sha256": "9ca0772787184e47cc297d9a7528949dbd3d62cb551ebd939fc5492670f202f3",
+      "word": "0x2a0003f4",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x3021dc",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3154440,
+      "pc": "0x302208",
+      "guard": "d6faff9760c643f97fca03f91f000039",
+      "guard_sha256": "3d845d52063ab41e6fd32f19e6f6bc5cec1c1ac3599798c46b79af3aede9d404",
+      "word": "0x97fffad6",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x30220c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3154444,
+      "pc": "0x30220c",
+      "guard": "60c643f97fca03f91f000039e19341f9",
+      "guard_sha256": "a7dc6857806f54fe627e295e5e0198417304cf59fd00422a36ac08d0a9574293",
+      "word": "0xf943c660",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x302210",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3166816,
+      "pc": "0x305260",
+      "guard": "fd7bbda9fd030091f35301a9541500b0",
+      "guard_sha256": "94bcb6b93fa22b01d8cf97ad3a66f8e938ef316c4895199c7f12357c9197edfb",
+      "word": "0xa9bd7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x305264",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3215008,
+      "pc": "0x310ea0",
+      "guard": "fd7bbda9fd030091f35301a9f30300aa",
+      "guard_sha256": "f235ae5e1f0a51ef4a6e1bece7a44872a0afa3ed14d7d69368b59eb965455b22",
+      "word": "0xa9bd7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x310ea4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3215136,
+      "pc": "0x310f20",
+      "guard": "810e40f93500805282828039412001aa",
+      "guard_sha256": "ef083acbfda341485ebc1f23dcd6cf84dc0ea8f4966bad86b3fc650ed1ac56a4",
+      "word": "0xf9400e81",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x310f24",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3216968,
+      "pc": "0x311648",
+      "guard": "fd7bbaa9fd030091f35301a9e11f00f9",
+      "guard_sha256": "395e0cbd915f815daf5ed85f266a4abe34d85e2ca88d6c303e70216826128278",
+      "word": "0xa9ba7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x31164c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3236024,
+      "pc": "0x3160b8",
+      "guard": "fd7bbca9c514009006600191fd030091",
+      "guard_sha256": "e38ee18d2290a937fbcbd0c3a127f6a25d897b3f6ec84a154cecf9d223bf57eb",
+      "word": "0xa9bc7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x3160bc",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3236112,
+      "pc": "0x316110",
+      "guard": "1f0000718b000054e0179f1afd7bc4a8",
+      "guard_sha256": "f4016f4b408befdd1285449a397c916912d1fc66649fea41a010e5a513cc8ac6",
+      "word": "0x7100001f",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x316114",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3236128,
+      "pc": "0x316120",
+      "guard": "c0035fd65b4cf9972400805203008052",
+      "guard_sha256": "6e04dc74b4c1273b48bfd3c6f67d640addce085cd3a911742cb424603f32343f",
+      "word": "0xd65f03c0",
+      "kind": 5,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x316124",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3236176,
+      "pc": "0x316150",
+      "guard": "c0035fd61f2003d5e20300aafd7bbda9",
+      "guard_sha256": "93c97a5d40ee989db1606d7c9ffbce4c82f849a03893ae9e7c552ab183152118",
+      "word": "0xd65f03c0",
+      "kind": 5,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x316154",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    }
+  ],
+  "runtime_emitter": {
+    "source": "runtime-emit.c",
+    "api": "ft_emit_runtime_island(uint32_t *out, uint64_t island_address, uint64_t elf_base, uint64_t relative_pc, uint64_t ft_native_portal_event_address)",
+    "capacity": 1024,
+    "callback_abi": "relative_pc,saved",
+    "kinds": [
+      "replace-call",
+      "return-function",
+      "observer-relocated"
+    ]
+  }
+}

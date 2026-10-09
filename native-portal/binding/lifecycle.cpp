@@ -9,7 +9,10 @@ Lifecycle::Lifecycle(Command &c,Memory m,Generations &g) noexcept : command_(c),
 bool Lifecycle::bind(const Owner &o,uint64_t tid) noexcept {
     if(!command_.thread() || getpid()!=ids_.pid_ || std::this_thread::get_id()!=ids_.thread_) return false;
     if(state_.bound || !memory_.read || !tid || !o.generation ||
-       o.generation!=ids_.last_ || o.generation<=ids_.claimed_) return false;
+       o.generation>ids_.last_ || o.generation<=ids_.claimed_) return false;
+    // A successor may be published before a DIFFERENT pool command completes
+    // reset+begin and issues a later ID. Require issued, unclaimed, monotonically
+    // claimed authority, not "last globally issued"; Evidence verifies current C.
     // Reuse Command's full owner comparison without weakening it to pointer equality.
     Scope s{o,1,tid,1,1,o.command};
     if(!command_.scope(s)) return false;

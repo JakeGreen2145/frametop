@@ -3,6 +3,7 @@
 #include "policy.hpp"
 #include <array>
 #include <cstddef>
+namespace native_portal::runtime { class Evidence; }
 namespace native_portal::arena {
 // Exact observer bridge ABI. pad is an arena-specific continuation selector.
 struct Saved { uint64_t x[31],sp; unsigned char q[32][16]; uint64_t nzcv,fpcr,fpsr,pad; };
@@ -28,6 +29,7 @@ struct Descriptor { uint64_t buffer=0,offset=0,range=0,ticket=0; };
 // One owner thread serializes arm/offer/dispatch. The caller authenticates the
 // frame/ticket before offer and retains its immutable ownership through enqueue.
 class Bridge {
+    friend class native_portal::runtime::Evidence;
     Memory mem_; Scope scope_{}; Policy policy_; Owned owned_{}; Descriptor descriptor_{};
     bool armed_=false,requested_=false,used_=false,charged_=false,failed_=false;
     uint64_t resource_=0,map_=0,buffer_=0,offset_=0,allocation_slot_=0,allocated_=0,owned_wrapper_=0;

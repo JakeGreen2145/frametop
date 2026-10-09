@@ -74,6 +74,14 @@ bool DemandAdapter::layer(bool stock,bool owned,Call acquire,Call release,void* 
     }
     stock_=stock; leave(); return ok;
 }
+void DemandAdapter::external_observed() {
+    if(bridge_) {bridge_->invalidate(Reason::External);bridge_->new_lease_ready(false);}
+    revoked_=true;
+    if(!enter())return;
+    if(debt_)handed_=true;
+    failed_=true; // unknown external result requires genuine idle readback later
+    leave();
+}
 bool DemandAdapter::external(bool acquiring,Call original,void* ctx) {
     if(bridge_) { bridge_->invalidate(Reason::External); bridge_->new_lease_ready(false); }
     revoked_=true; // happens before forwarding even when callback ordering fails
