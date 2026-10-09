@@ -41,7 +41,7 @@ def main():
                 (build/'verification.json').write_text(json.dumps(results,indent=2));return result.returncode
     pool_faults=['lr','pool','device','handle','delete','clear','no-reset','no-begin',
                  'reset-failed','begin-failed','reset-lr']
-    modes=['--policy-native-disabled','--policy-native-special','--application-direct','--application-fallback','--main-pump','--main-pump-owner','--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
+    modes=['--construct','--construct-setter','--construct-recover']+['--construct-fault-'+str(i) for i in range(1,20)]+['--policy-native-disabled','--policy-native-special','--application-direct','--application-fallback','--main-pump','--main-pump-owner','--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
            '--repeated-owned-reset-failed','--repeated-owned-begin-failed',
            '--repeated-owned-no-wait','--repeated-owned-no-disposal',
            '--publication-pool-live','--pool-owned-current','--pool-owned-retained']+['--publication-pool-'+s for s in pool_faults]+[
@@ -227,6 +227,14 @@ def main():
             results.append({'mode':'diagnostics-journal-saturated' if saturated else 'diagnostics-journal','code':0})
         finally:
             reader.close();writer.close()
+    for mode in ['--external','--foreign-external','--reject-graph','--stop-after-left',
+                 '--repeated-cycles','--repeated-owned-no-wait','--repeated-owned-no-disposal',
+                 '--repeated-owned-reset-failed','--repeated-owned-begin-failed']:
+        result=subprocess.run([str(binary),mode],capture_output=True,text=True,
+                              env={**os.environ,'FT_TEST_CONSTRUCT':'1'})
+        assert result.returncode==0,(mode,result.stderr)
+        results.append({'construct_mode':mode,'code':result.returncode,'output':result.stdout+result.stderr})
+        print('construct mode',mode,'PASS')
     # Link every production owner/router component into one DSO, with no fixture.
     cmd=flags+['-fPIC','-shared']+[str(ROOT/s) for s in SOURCES]+[str(ROOT/'live/runtime-call.S'),'-o',str(build/'libft-native-router.so')]
     subprocess.run(cmd,check=True)

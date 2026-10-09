@@ -16,7 +16,9 @@ struct Chain:Fixture {
     Runtime router;
     alignas(4096) std::array<std::byte,0xe40> context_padding{};
     std::array<std::byte,4096> context{};
-    alignas(4096) std::array<std::byte,4096> worker{},scheduler{};
+    alignas(4096) std::array<std::byte,8192> worker{},scheduler{};
+    std::array<std::byte,0x40c00> shared_policy{};
+    bool construct_mode=false;unsigned construct_fault=0;
     alignas(4096) std::array<std::byte,0xa00> app_padding{};
     std::array<std::byte,0x25700> app{};
     alignas(4096) std::array<std::byte,0x2000> outer_stack{};
@@ -222,17 +224,39 @@ struct Chain:Fixture {
         s.x[0]=p[1]?addr(context):p[2]?addr(worker):0;
         s.x[1]=p[3];s.x[20]=p[4]?addr(context):0;s.x[30]=base+p[5];event(p[0]);
     }
+    void construct_publish() {
+        put(context,0x1b0,addr(app));
+        put(shared_policy,0x4027c,float(1));put(shared_policy,0x40280,float(1));
+        put(outer_stack,0x160,addr(shared_policy)); // policy native SP+60
+        s={};s.sp=addr(camera_stack);s.x[0]=addr(shared_policy);s.x[23]=addr(app);
+        s.x[3]=addr(worker)+0xf88;s.x[2]=construct_fault==2?1:construct_fault==3?255:0;
+        const float one=1;std::memcpy(s.q[3],&one,4);std::memcpy(s.q[2],&one,4);
+        if(construct_fault==4)++s.x[23];
+        if(construct_fault==5)++s.x[3];
+        if(construct_fault==6)put(shared_policy,0x4027c,std::numeric_limits<float>::quiet_NaN());
+        if(construct_fault==7)put(shared_policy,0x4027c,float(0));
+        if(construct_fault==8)put(shared_policy,0x4027c,float(2));
+        if(construct_fault==9)put(shared_policy,0x40280,std::numeric_limits<float>::infinity());
+        if(construct_fault!=1)event(0x11a3a4);
+        if(construct_fault==10)put(shared_policy,0x4027c,float(.5));
+        if(construct_fault>=11 && construct_fault<=16)put(shared_policy,0x402b8+8*(construct_fault-11),uint64_t(99));
+        if(construct_fault==17)put(shared_policy,0x402b4,uint32_t(99));
+        if(construct_fault==18)put(outer_stack,0x160,uint64_t(1));
+    }
     void frame_start(uint64_t owner=0) {
+        if(construct_mode)construct_publish();
         s={};s.sp=addr(outer_stack);s.x[0]=owner?owner:addr(worker);s.x[30]=base+FT_OUTER_LR;event(0x147a48);
         s.sp=addr(outer_stack)+0x100;s.x[19]=addr(outer_stack)+0x610;
+        if(construct_mode)s.x[20]=addr(app);
         s.x[3]=0;if(policy_fault!=8)event(0x112ab4);
         const auto forced=uint32_t(policy_fault==11);
         s.x[0]=forced;if(policy_fault!=7)event(0x112ac4);
-        s.x[1]=1;s.x[2]=1;event(0x112aec);
+        s.x[1]=1;s.x[2]=construct_mode?0:1;event(0x112aec);
+        if(construct_mode){const float one=1;std::memcpy(s.q[0],&one,4);event(0x112af4);std::memset(s.q[0],0,16);}
         if(policy_fault==6){s.x[1]=0;event(0x112aec);}
-        event(policy_fault==9?0x112c70:0x112afc);
-        if(policy_fault==9){s.x[0]=0;event(0x112c78);}
-        s.x[1]=policy_fault==10;event(0x112c10);
+        event(construct_mode || policy_fault==9?0x112c70:0x112afc);
+        if(construct_mode || policy_fault==9){s.x[0]=construct_fault==19;event(0x112c78);}
+        if(!construct_mode){s.x[1]=policy_fault==10;event(0x112c10);}
         s.x[0]=forced;if(policy_fault!=7)event(0x112b10);
         s.x[1]=forced;if(policy_fault!=7)event(0x112c50);
         event(0x112d2c);event(0x112d90);
@@ -242,6 +266,10 @@ struct Chain:Fixture {
         put(outer_stack,0x610+0x62c,uint8_t(policy_fault==14));
         put(outer_stack,0x610+0x630,uint32_t(policy_fault==16?2:1));
         put(outer_stack,0x610+0x648,float(policy_fault==17?1:0));s.x[23]=policy_fault==15;
+        if(construct_mode && construct_fault==19) {
+            put(outer_stack,0x610+0x62c,uint8_t(1));put(outer_stack,0x610+0x630,uint32_t(2));
+            put(outer_stack,0x610+0x648,float(1));s.x[23]=1;
+        }
         void *policy_memory=MAP_FAILED;
         if(policy_fault>=1 && policy_fault<=5) {
             constexpr unsigned offsets[]={0,0x1e0,0x1e1,0x62c,0x630,0x648};
@@ -262,6 +290,14 @@ struct Chain:Fixture {
         if(s.x[3]==addr(outer_stack)+0x610)std::fprintf(stderr,"unclaimed eye %u refusal=%u pending=%u capable=%u\n",eye,unsigned(router.diagnostics().refusal),router.diagnostics().pending,router.diagnostics().capable);
         assert(s.x[3]!=addr(outer_stack)+0x610);
         s.x[0]=1;event(0x9ee5c);s.x[27]=1;event(0x9ee98);
+        s.x[23]=0;event(0x9f404);assert(s.x[23]==1);
+        // The counterfactual modifies only the owned copy, never native output,
+        // local enableConstructRoomView, shared mailboxes, or fade publication.
+        assert(outer_stack[0x610+0x62c]==std::byte{0} && app[0x918]==std::byte{0});
+        if(construct_mode) {
+            float scalar=0;std::memcpy(&scalar,shared_policy.data()+0x4027c,4);assert(scalar==1);
+            assert(shared_policy[0x40b45]==std::byte{0} && shared_policy[0x40b49]==std::byte{0});
+        }
         // Native layer cache post-store, modeled only after actual transition callback.
         put(app,0x2568c,uint8_t(1));
         for(unsigned i=0;i<16;++i) {put(camera,0x100+i*4,float(i%5==0));put(camera,0x140+i*4,float(0));}
@@ -310,6 +346,7 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t x8) n
     return true;
 }
 int run_chain(Chain &f,const std::string &mode,bool entered=false) {
+    if(std::getenv("FT_TEST_CONSTRUCT"))f.construct_mode=true;
     if(mode=="--worker") {
         // Each invalid Run must leave the waiting bootstrap scope untouched.
         // Restore one modeled native field at a time, then admit the real worker.
@@ -400,6 +437,18 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         assert(!f.router.diagnostics().pending && !f.native_acquires && !f.native_releases);
         return 0;
     }
+    if(mode.rfind("--construct",0)==0) {
+        f.construct_mode=true;
+        if(mode=="--construct-recover") {
+            f.construct_fault=2;f.frame_start();f.frame_end();assert(!f.router.diagnostics().capable);
+            f.construct_fault=0;
+        }
+        if(mode.rfind("--construct-fault-",0)==0) {
+            f.construct_fault=unsigned(std::stoul(mode.substr(18)));
+            f.frame_start();f.frame_end();assert(!f.router.diagnostics().capable);
+            assert(!f.router.diagnostics().pending && !f.native_acquires);return 0;
+        }
+    }
     if(mode=="--application-fallback")put(f.context,0x1a8,uint64_t(0));
     if(mode=="--application-direct")put(f.context,0x1c0,uint64_t(1)); // native direct branch never reads scheduler
     if(mode=="--diagnostics-bad")put(f.app,0x25320,uint64_t(0));
@@ -437,6 +486,15 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     request.sequence=1;request.sent_ns=boottime();assert(client.exchange(request,reply));assert(reply.capability && reply.epoch);
     request.op=Operation::Update;request.epoch=reply.epoch;request.origin=reply.origin;request.generation=1;++request.sequence;
     request.sent_ns=boottime();assert(client.exchange(request,reply));
+    if(mode=="--construct-setter") {
+        f.frame_start();
+        f.s.x[0]=addr(f.app);f.s.x[1]=1;const auto original=f.s;f.event(0x1130a8);
+        assert(!std::memcmp(&original,&f.s,sizeof original));
+        f.s.x[0]=addr(f.app);f.s.x[1]=0;f.s.x[2]=addr(f.outer_stack)+0xc70;
+        f.s.x[3]=addr(f.outer_stack)+0x610;f.event(0x148244);
+        assert(f.s.x[3]==addr(f.outer_stack)+0x610 && !f.native_acquires);
+        f.frame_end();return 0;
+    }
     const bool repeated=mode.rfind("--repeated-",0)==0;
     const unsigned cycles=repeated?8:1;
     std::array<std::byte,0x7b0> next_command{};std::array<std::byte,0x10> next_wrapper{};

@@ -22,7 +22,7 @@ bool background_permission(bool original,bool owned,bool stock_active,float stoc
 }
 FramePolicy frame_policy(const PolicyInput& p,bool lease,bool tracking,bool safety,bool stock_active) {
     FramePolicy f; f.stock=pure_policy(p,false); f.effective=f.stock;
-    bool external=p.request||p.construct||p.forced||p.special||stock_active||f.stock.demand;
+    bool external=p.request||p.construct||p.forced||(p.special&&!p.normal_construct)||stock_active||f.stock.demand;
     f.portal=lease&&tracking&&safety&&p.enabled&&!external&&std::isfinite(p.base)&&std::isfinite(p.gain);
     if(f.portal)f.effective=pure_policy(p,true);
     return f;

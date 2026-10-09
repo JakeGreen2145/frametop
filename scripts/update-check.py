@@ -52,7 +52,8 @@ PACKAGES = {
                            "portal controls hide/show on Steam menu open/close: recheck "
                            "valve.steam.gamepadui.frame.menu.55880005 after updates; "
                            "native portal trial: re-pin compositor ELF, all runtime-sites.json guards, "
-                           "Run/worker/join-cleanup ABI, OpenVR origin return ABI, and pipeline device generation",
+                           "Run/worker/join-cleanup ABI, construct publisher/zero-override and six-handle admission, "
+                           "OpenVR origin return ABI, and pipeline device generation",
     "kwin": "clicks near the far edge of a screen whose scale isn't 1; every screen comes back "
             "after a desktop restart; floating a window; no blur behind the taskbar's menus",
     "plasma-workspace": "the taskbar and panels after a desktop restart; no DiscoverNotifier or "

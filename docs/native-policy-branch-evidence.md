@@ -1,6 +1,12 @@
 # Native policy branch sampling
 
-## Result and remaining blocker
+## Branch-sampling repair and subsequent admission
+
+The exclusion described below is the baseline after the sampling-only repair.
+[Owned construct policy](native-construct-policy.md) adds a separate authenticated
+zero-override/no-alternate publication. Special mode without that evidence still
+fails predicate 9, including the original bare-special fixture.
+
 
 The pinned ELF is `9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265`.
 The live trial's `policy_failed=8` rejected a legitimate missing request tap.
@@ -15,10 +21,10 @@ across every tested input combination, not just one matching example.
 `PolicySample` now requires the inputs consumed by that actual branch. With
 mask `0x3bdf`, the production-router fixture advances from missing-input
 predicate 8 to the unchanged special-policy exclusion, predicate 9.
-`frame_policy` also still treats special policy as external and refuses owned
-output. This repair alone does **not** make the observed live policy eligible
-for owned stereo. No special-policy, external-demand, enable, tracking, safety,
-camera-idle, background, or native-resource guard was removed.
+At that sampling-only baseline, `frame_policy` also treated special policy as
+external and refused owned output. The sampling repair alone did **not** make
+the observed live policy eligible for owned stereo. It removed no special-policy,
+external-demand, enable, tracking, safety, camera-idle, background, or native-resource guard.
 
 ## Pinned control flow
 

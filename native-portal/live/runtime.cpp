@@ -94,6 +94,34 @@ struct Runtime::Impl {
     PolicyInput policy{};PolicyDiagnostic policy_diagnostic{};bool tracking=false,outer=false,owned=false,pinned=false;
     std::array<unsigned char,0x660> effective{};
     PolicySample policy_sample{};
+    struct ConstructPublication {uint64_t frame=0,owner=0,shared=0;std::array<float,2> fade{};} construct_publication;
+    void construct_publish(const arena::Saved &s) noexcept {
+        construct_publication={};
+        // 11a3a4 follows the native publisher's override branch, while its
+        // shared lock is held. x2 is the actual consumed override flag.
+        // Both native callers pass this worker's input object, not a Scene.
+        uint64_t owner=0;std::array<float,2> fade{};float first=0,second=0;
+        std::memcpy(&first,s.q[3],4);std::memcpy(&second,s.q[2],4);
+        if(outer || !evidence.graph_capable() || stopped || !worker || !context || frame_number==UINT64_MAX ||
+           !get(context+0x1b0,owner) || !owner || s.x[23]!=owner || s.x[3]!=worker+0xf88 || uint32_t(s.x[2]) ||
+           !s.x[0] || !get(s.x[0]+0x4027c,fade) || fade[0]!=first || fade[1]!=second ||
+           !std::isfinite(first) || first<=0 || first>1 || !std::isfinite(second) || second<0 || second>1)return;
+        construct_publication={frame_number+1,owner,s.x[0],fade};
+    }
+    bool construct_admissible(const arena::Saved &s) noexcept {
+        const auto publication=construct_publication;construct_publication={};
+        uint64_t shared=0;uint32_t pid=0;std::array<uint64_t,6> handles{};std::array<float,2> fade{};
+        uint32_t selector=0;std::memcpy(&selector,&publication.fade[0],4);
+        // SP+60 is 112a40's acquired native shared object. Recheck under that
+        // invocation's lock, never retain a raw read permission beyond callback.
+        if(!publication.frame || publication.frame!=frame_number || publication.owner!=s.x[20] || outer_owner!=worker ||
+           policy_sample.values[2] || policy_sample.values[3]!=selector ||
+           !get(s.sp+0x60,shared) || shared!=publication.shared ||
+           !get(shared+0x4027c,fade) || fade!=publication.fade ||
+           !get(shared+0x402b4,pid) || pid || !get(shared+0x402b8,handles))return false;
+        for(auto handle:handles)if(handle)return false;
+        return true;
+    }
     std::atomic<bool> stopped{false};Diagnostics diag{};Mailbox<Diagnostics> published;
     LiveDiagnostics live{};Mailbox<LiveDiagnostics> live_published;
     CommandTrace command_trace;
@@ -429,7 +457,7 @@ struct Runtime::Impl {
             if((pc==0x15f9e0 || pc==0x15fba8) && s.x[0] && s.x[0]==external_camera.load()) {
                 backend.invalidate(Reason::External);external_pending=true;
             }
-            if(pc==0x112e50 && uint8_t(s.x[1]))backend.invalidate(Reason::External);
+            if((pc==0x112e50 || pc==0x1130a8) && uint8_t(s.x[1]))backend.invalidate(Reason::External);
             return;
         }
         if(external_pending.exchange(false) && demand) {demand->external_observed();owned=false;}
@@ -464,7 +492,7 @@ struct Runtime::Impl {
         if(shutdown_store || pc==0x29bd18 || pc==0x29c238) {
             stop_at(pc,s);backend.invalidate(Reason::Off);if(adapter)adapter->off();refuse(Refusal::Stopped);
         }
-        if(pc==0x112e50 && uint8_t(s.x[1])) {
+        if((pc==0x112e50 || pc==0x1130a8) && uint8_t(s.x[1])) {
             backend.invalidate(Reason::External);owned=false;
         }
         if((pc==0x15f9e0 || pc==0x15fba8) && demand && s.x[0]==camera && !in_native_demand) {
@@ -504,6 +532,7 @@ struct Runtime::Impl {
             else if(background_permission(bool(s.x[23]),true,stock_active,frame.policy.stock.alpha,
                                           frame.policy.effective.alpha,native_portal_policy,layer_effective))s.x[23]=1;
         }
+        if(pc==0x11a3a4)construct_publish(s);
         if(pc==0x147a48) {
             if(outer || frame_number==UINT64_MAX) {refuse(Refusal::Policy);return;}
             outer=true;outer_sp=s.sp;outer_owner=s.x[0];owned=false;tracking=false;policy_sample={};policy_ready=false;policy_diagnostic={};
@@ -523,10 +552,12 @@ struct Runtime::Impl {
             const bool read=check(1,get(s.x[19]+0x1e0,p0)) && check(2,get(s.x[19]+0x1e1,p1)) &&
                 check(3,get(s.x[19]+0x62c,construct)) && check(4,get(s.x[19]+0x630,style)) && check(5,get(s.x[19]+0x648,alpha));
             policy=policy_sample.finish(s,p0!=0,p1!=0);const auto expected=pure_policy(policy,false);
+            policy.normal_construct=policy.special && construct_admissible(s);
+            construct_publication={};
             // Unsupported branches remain entirely stock. These fields are real
             // load results and the original function's unmodified outputs.
             policy_ready=read && check(6,!policy_sample.conflict) && check(7,policy_sample.forced_seen) && check(8,policy_sample.complete(policy)) &&
-                check(9,!policy.special) && check(10,!policy.request) && check(11,!policy.forced) && check(12,p0<=1) && check(13,p1<=1) &&
+                check(9,(!policy.special || policy.normal_construct) && !policy.construct) && check(10,!policy.request) && check(11,!policy.forced) && check(12,p0<=1) && check(13,p1<=1) &&
                 check(14,expected.construct==bool(construct)) && check(15,expected.demand==bool(s.x[23])) &&
                 check(16,expected.style==style) && check(17,expected.alpha==alpha);
             // Existing locals only. checked/passed say which native output reads
@@ -595,7 +626,7 @@ struct Runtime::Impl {
             status.capable=status.serialized && pipeline_abi && origin_ok && origin_epoch && demand && (demand->can_acquire() || demand->owned_debt());
             if(!pipeline_abi)refuse(Refusal::PipelineAbi);
             else if(!associated)refuse(Refusal::NativeRead);
-            status.external_clear=policy_ready && !policy.request && !policy.forced && !policy.special;
+            status.external_clear=policy_ready && !policy.request && !policy.construct && !policy.forced && (!policy.special || policy.normal_construct);
             if(stopped)status.capable=false;
             backend.publish(status);
             if(!adapter && status.capable)attach();

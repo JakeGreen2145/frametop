@@ -7,6 +7,9 @@ class Backend;
 struct PolicyInput {
     bool enabled=false, request=false, construct=false, special=false, forced=false, p0=false, p1=false, suppression=false;
     uint32_t style=0; float gain=0,base=0;
+    // A same-frame, zero-override native ramp publication with no alternate
+    // background handles. Mode selection alone never grants this authority.
+    bool normal_construct=false;
 };
 struct PolicyOutput { bool demand=false,construct=false; uint32_t style=0; float alpha=0; };
 PolicyOutput pure_policy(const PolicyInput&,bool owned);

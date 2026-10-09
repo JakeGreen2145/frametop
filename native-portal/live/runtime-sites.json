@@ -8,6 +8,34 @@
   "requires_explicit_shutdown_fail_stop": true,
   "sites": [
     {
+      "relative_pc": 1126568,
+      "pc": "0x1130a8",
+      "guard": "fd7bbea93f1c0072fd030091f30b00f9",
+      "guard_sha256": "6563f52c2a7eab185a7fb82baf4cd1f86f31971081bd2827dd656062845533aa",
+      "word": "0xa9be7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x1130ac",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1156004,
+      "pc": "0x11a3a4",
+      "guard": "02004191e1e2159142100a91e00317aa",
+      "guard_sha256": "d88469e7d5c1d5f1e283382cfac16123f14b627ccff185f3f9d55c84dc50ac69",
+      "word": "0x91410002",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x11a3a8",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
       "relative_pc": 308176,
       "pc": "0x4b3d0",
       "guard": "302b0090119640f910a2049120021fd6",
