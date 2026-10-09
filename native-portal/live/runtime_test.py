@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 """CPU-only full-router build. No loader, VR runtime, camera or device activation."""
-import argparse, json, os, pathlib, resource, signal, subprocess, sys
+import argparse, fcntl, json, os, pathlib, resource, signal, socket, subprocess, sys
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'runtime'))
 from evidence_test import limits
@@ -38,6 +38,49 @@ def main():
         print(mode,result.stdout+result.stderr,end='\n');assert result.returncode==expected,(mode,result.returncode,result.stderr)
         if expected==-signal.SIGABRT:assert 'cleanup-entry' in result.stderr and 'terminate called' not in result.stderr
         results.append({'mode':mode,'expected_exit':expected,'code':result.returncode,'output':result.stdout+result.stderr})
+    for mode in ['--diagnostics-good','--diagnostics-bad']:
+        result=subprocess.run([str(binary),mode],capture_output=True,text=True)
+        print(mode,result.stdout+result.stderr)
+        assert result.returncode==0,(mode,result.stderr)
+        lines=[line for line in result.stderr.splitlines() if line.startswith('ft-native-live ')]
+        sealed=[line for line in lines if 'seal=1 ' in line]
+        assert sealed,(mode,'missing production seal diagnostics',result.stderr)
+        assert len(sealed)==1,(mode,'unchanged frames must not produce log spam',sealed)
+        fields=dict(word.split('=',1) for word in sealed[0].split()[1:])
+        assert fields['seal_pc']=='0x1480b8' and fields['graph']=='1' and fields['initialized']=='1'
+        assert fields['handoff']=='1' and fields['origin_ok']=='1' and fields['pipeline']=='1'
+        assert fields['tracking']=='1' and fields['policy']=='1'
+        assert fields['first_refusal']=='graph-ownership' and fields['first_pc']=='0x7fdbc'
+        good=mode.endswith('good')
+        for key in ['associated','idle','can_acquire','adapter','capable']:
+            assert fields[key]==str(int(good)),(mode,key,fields)
+        assert fields['seal_block']==('none' if good else 'association')
+        assert 'renderer=' not in sealed[0] and 'device=' not in sealed[0]
+        results.append({'mode':mode,'code':result.returncode,'output':result.stdout+result.stderr})
+    # Real journal-style socket output, plus saturated sink: neither changes
+    # stderr flags nor blocks owner callbacks or collector teardown.
+    for saturated in [False,True]:
+        reader,writer=socket.socketpair()
+        try:
+            writer.setsockopt(socket.SOL_SOCKET,socket.SO_SNDBUF,4096)
+            before=fcntl.fcntl(writer.fileno(),fcntl.F_GETFL)
+            if saturated:
+                while True:
+                    try:writer.send(b'x'*4096,socket.MSG_DONTWAIT)
+                    except BlockingIOError:break
+            result=subprocess.run([str(binary),'--diagnostics-good'],stdout=subprocess.PIPE,stderr=writer.fileno(),timeout=5)
+            assert result.returncode==0
+            assert fcntl.fcntl(writer.fileno(),fcntl.F_GETFL)==before
+            writer.close();reader.settimeout(1);chunks=[]
+            while True:
+                part=reader.recv(4096)
+                if not part:break
+                chunks.append(part)
+            output=b''.join(chunks)
+            if not saturated:assert b'seal_block=none graph=1 initialized=1' in output,output
+            results.append({'mode':'diagnostics-journal-saturated' if saturated else 'diagnostics-journal','code':0})
+        finally:
+            reader.close();writer.close()
     # Link every production owner/router component into one DSO, with no fixture.
     cmd=flags+['-fPIC','-shared']+[str(ROOT/s) for s in SOURCES]+[str(ROOT/'live/runtime-call.S'),'-o',str(build/'libft-native-router.so')]
     subprocess.run(cmd,check=True)

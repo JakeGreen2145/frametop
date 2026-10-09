@@ -72,6 +72,26 @@ systemd-run --user --wait --pipe -p MemoryMax=650M -p MemorySwapMax=0 \
 
 The first runner links every production component into one DSO and tests real private lease transport, origin transport, two staged uploads, pass preflight, both cached backends, queue/stamp/wait, CPU transfer/disposal/reset, pool turnover and a second stereo queue. It also checks graph refusal without stock suppression, owner and foreign external calls, stop between committed eyes, successful join, timeout/no-join abort, and join-error abort. Native functions, native graph writes, pthread and Vulkan outcomes in the CPU chain are **explicit modeled boundaries**, not live GPU evidence. The island runner executes emitted AArch64 and checks exact pinned guards, all saved GPR/SIMD/status registers, stock and selected continuations, and invalid selectors.
 
-`ft_native_portal_diagnostics(out, sizeof(*out))` returns a fixed-size mailbox snapshot: both upload/encoding counts, successful owned native queue count, submitted frame, pending debt, origin, initialization/capability/stop state, and refusal code. It copies no camera pixels and performs no callback logging.
+`ft_native_portal_diagnostics(out, sizeof(*out))` returns a fixed-size mailbox snapshot: both upload/encoding counts, successful owned native queue count, submitted frame, pending debt, origin, initialization/capability/stop state, and refusal code. Its ABI is unchanged. It copies no camera pixels and performs no callback logging.
+
+### Bounded live diagnostics
+
+After the production control server starts, a separate collector samples a private atomic-word mailbox every 250 ms. Stderr lines begin `ft-native-live`. No extra opt-in is required inside the already opted-in bounded loader trial. The collector attempts at most 64 lines per Runtime, only when sampled predicates, refusal, phase coverage or owner-event coverage change. Increasing event/frame/upload counters alone does not produce output. `remaining=0` marks the last permitted attempt. Output is nonblocking and best-effort: a full or failed journal/pipe can lose a line; logging never grants capability or retries native work. No formatting, file I/O or logging occurs on native callbacks.
+
+Each line includes the latest owner callback's relative `pc`, sticky `first_refusal` and its `first_pc`, latest refusal, phase coverage, native owner-handoff coverage, and the most recently sampled seal ingredients. `seal=1 seal_pc=0x1480b8` distinguishes a genuine seal sample from startup defaults. The ingredients are `graph`, `initialized`, `origin_ok`, `associated`, `idle`, `demand`, `can_acquire`, `owned_debt`, `pipeline`, `adapter`, `tracking`, and `policy`. `capable`, `pending`, `stopped`, per-eye uploads/encoding, queue-success count and submitted frame accompany them. No renderer/device addresses, camera pixels, tokens or credentials are logged.
+
+`seal_block` labels the first absent ingredient in diagnostic order when capability is false. It is not a new gate. Tracking and policy can prevent frame admission independently of capability, so inspect their flags too. The first startup refusal can remain `graph-ownership` at `0x7fdbc` even after a successful handoff; use the current seal facts, not that historical refusal alone. Fast intermediate transitions can be coalesced by polling. `phases` retains observed owner-phase coverage even if a callback was between polls.
+
+Bit positions in `phases`, low bit first, map to these relative PCs:
+
+```
+0x7fda0 0x7fdbc 0x147a48 0x112b58 0x63920 0x1480b8
+0x161d64 0x161d68 0x161ed8 0x2a1e18 0x29f1e8 0x3021d4
+0x3021d8 0x316120 0x300a38
+```
+
+`owner_events` has attempted/accepted bit pairs for `0x14099c`, `0x140dbc`, and `0x14e5a8`, respectively. `handoff=1` means the Run event was accepted. These facts use independent atomics rather than touching the owner's snapshot from a foreign thread.
+
+The CPU runner verifies actual production collector output for capable and broken-association seals, 100 unchanged subsequent frames without repeated lines, preservation of the first refusal, the 64-line cap, journal-style socket output, and saturated-socket nonblocking teardown with unchanged stderr flags. These are modeled native boundaries, not an explanation of any particular live refusal.
 
 ARM link, full loader reconciliation, actual headset rendering and live GPU completion are separate parent-side checks. This work does not install or activate anything on the device.

@@ -183,7 +183,16 @@ int run_chain(Chain &f,const std::string &mode) {
         // proves scope handoff separately from the ordinary descriptor borrow.
         f.stock_classifier();f.geometry_classifier();
     }
+    if(mode=="--diagnostics-bad")put(f.app,0x25320,uint64_t(0));
     f.frame_start();f.frame_end();
+    if(mode=="--diagnostics-good" || mode=="--diagnostics-bad") {
+        // Exercise the actual production collector, without logging from callbacks.
+        std::this_thread::sleep_for(std::chrono::milliseconds(600));
+        for(unsigned i=0;i<100;++i) {f.frame_start();f.frame_end();}
+        std::this_thread::sleep_for(std::chrono::milliseconds(600));
+        assert(f.native_acquires==0 && f.native_releases==0);
+        return 0;
+    }
     if(mode=="--unsafe-cleanup") {std::fprintf(stderr,"cleanup-entry: active owned borrow, no join\n");f.event(0x1381b8);assert(false);}
     if(mode=="--joined-cleanup" || mode=="--join-error-cleanup") {
         put(f.worker,8,uint64_t(0x123456));f.s={};f.s.sp=0x990000;f.s.x[0]=addr(f.worker);f.s.x[20]=addr(f.context);f.event(0x142704);

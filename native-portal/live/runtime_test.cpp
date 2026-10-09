@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Local CPU tests. Native event delivery and Vulkan payloads are modeled.
 #include "runtime.hpp"
+#include "diagnostics.hpp"
 #include <cassert>
 #include <cstring>
 #include <cstdio>
@@ -9,6 +10,19 @@
 using namespace native_portal;
 using namespace native_portal::live;
 int main() {
+    DiagnosticLog log;LiveDiagnostics live{};char line[1536];
+    assert(!log.format(live,0,line,1)); // truncated output does not spend the budget
+    assert(log.format(live,0,line,sizeof line));
+    live.pc=0x1480b8;live.events=10000;live.frames=1000;
+    assert(!log.format(live,0,line,sizeof line));
+    for(unsigned i=1;i<DiagnosticLog::limit;++i) {
+        live.capable=!live.capable;assert(log.format(live,0,line,sizeof line));
+    }
+    assert(std::strstr(line,"remaining=0\n"));
+    for(unsigned i=0;i<1000;++i) {
+        live.capable=!live.capable;assert(!log.format(live,63,line,sizeof line));
+    }
+    static_assert(sizeof(Diagnostics)==96); // exported mailbox ABI stays unchanged
     static_assert(sizeof(arena::Saved)==800);
     Runtime runtime;
     arena::Saved saved{}; saved.x[0]=42;saved.pad=19;

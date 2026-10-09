@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MIT
 #include "runtime.hpp"
+#include "diagnostics.hpp"
+#include <chrono>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <signal.h>
 #include "../pipeline/ft_pipeline.h"
 #include <atomic>
 #include <cstdlib>
@@ -88,12 +93,49 @@ struct Runtime::Impl {
     std::array<unsigned char,0x660> effective{};
     std::array<uint64_t,14> policy_values{};uint64_t policy_seen=0;bool policy_conflict=false;
     std::atomic<bool> stopped{false};Diagnostics diag{};Mailbox<Diagnostics> published;
-    Impl(){published.publish(diag);}
-    void refuse(Refusal why) noexcept {diag.refusal=why;diag.capable=false;}
+    LiveDiagnostics live{};Mailbox<LiveDiagnostics> live_published;
+    // Owner callbacks only write live. Foreign/handoff observations use atomics,
+    // never a second writer to the owner's non-atomic snapshot.
+    std::atomic<uint64_t> owner_events{0};
+    std::atomic<bool> collector_stop{false};std::thread collector;
+    Impl(){published.publish(diag);live_published.publish(live);}
+    ~Impl(){collector_stop=true;if(collector.joinable())collector.join();}
+    void collect() {
+        collector=std::thread([this] {
+            DiagnosticLog log;char line[1536];
+            // Reopen pipes/files with an independent nonblocking file description.
+            // Journal stderr is a socket: send(MSG_DONTWAIT) leaves its flags alone.
+            sigset_t blocked;sigemptyset(&blocked);sigaddset(&blocked,SIGPIPE);
+            if(pthread_sigmask(SIG_BLOCK,&blocked,nullptr))return;
+            const int fd=open("/proc/self/fd/2",O_WRONLY|O_APPEND|O_NONBLOCK|O_CLOEXEC);
+            while(!collector_stop.load()) {
+                LiveDiagnostics snapshot{};
+                if(live_published.read(snapshot)) {
+                    const size_t n=log.format(snapshot,owner_events.load(),line,sizeof line);
+                    if(n) {
+                        if(fd>=0)(void)write(fd,line,n);
+                        else (void)send(STDERR_FILENO,line,n,MSG_DONTWAIT|MSG_NOSIGNAL);
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            }
+            if(fd>=0)close(fd);
+        });
+    }
+    void refuse(Refusal why) noexcept {
+        if(live.first_refusal==Refusal::None){live.first_refusal=why;live.first_pc=live.pc;}
+        diag.refusal=why;diag.capable=false;
+    }
     void publish() noexcept {
         if(adapter)diag.pending=adapter->state().pending;
         BackendStatus status{};if(backend.status(status))diag.submitted_frame=status.submitted_frame;
         diag.origin=origin_epoch;diag.stopped=stopped.load();published.publish(diag);
+        live.events=diag.events;live.frames=diag.frames;live.refusal=diag.refusal;
+        live.capable=diag.capable;live.pending=diag.pending;live.stopped=diag.stopped;
+        live.initialized=evidence.initialized();
+        for(unsigned i=0;i<2;++i){live.uploads[i]=diag.uploads[i];live.encoded[i]=diag.encoded[i];}
+        live.queue_success=diag.queue_success;live.submitted_frame=diag.submitted_frame;
+        live_published.publish(live);
     }
     bool call(Registers &r,uint64_t indirect=0) noexcept {
         if(!pinned || getpid()!=pid || tid()!=owner_tid || !r.target)return false;
@@ -323,8 +365,11 @@ struct Runtime::Impl {
             if(pc==0x1381b8 && runtime_owned.load() && !joined.load())std::abort();
         }
         if(pc==0x14099c || pc==0x140dbc || pc==0x14e5a8) {
+            const unsigned owner_bit=pc==0x14099c?0:pc==0x140dbc?2:4;
+            owner_events.fetch_or(1ull<<owner_bit);
             if(pc!=0x14e5a8 && (handoff_wait || owner_tid!=bootstrap_tid))return;
             if(evidence.owner_event(pc,s)) {
+                owner_events.fetch_or(1ull<<(owner_bit+1));
                 if(pc==0x14099c){worker=s.x[19];context=s.x[21];}
                 if(pc==0x140dbc)handoff_wait=true;
                 if(pc==0x14e5a8){owner_tid=tid();handoff_wait=false;}
@@ -343,7 +388,10 @@ struct Runtime::Impl {
             return;
         }
         if(external_pending.exchange(false) && demand) {demand->external_observed();owned=false;}
-        ++diag.events;
+        ++diag.events;live.pc=pc;
+        constexpr uint64_t phase_pcs[]={0x7fda0,0x7fdbc,0x147a48,0x112b58,0x63920,0x1480b8,
+            0x161d64,0x161d68,0x161ed8,0x2a1e18,0x29f1e8,0x3021d4,0x3021d8,0x316120,0x300a38};
+        for(unsigned i=0;i<sizeof(phase_pcs)/sizeof(*phase_pcs);++i)if(pc==phase_pcs[i])live.phases|=1ull<<i;
         // Native queue instructions always run, including mixed stock submissions.
         queue_event(pc,s);
         if(pc==0x7fda0 || pc==0x29a14c || pc==0x29a150 || pc==0x7fdbc) {
@@ -470,6 +518,13 @@ struct Runtime::Impl {
             if(!adapter && status.capable)attach();
             if(!adapter || !adapter->state().initialized) {status.capable=false;backend.publish(status);}
             diag.capable=status.capable;
+            // Capture exactly the existing seal predicates, after adapter attachment.
+            // This is evidence only: no new admission, native read or gate changes.
+            live.seal=true;++live.seals;live.graph=status.serialized;live.origin_ok=origin_ok && origin_epoch;
+            live.associated=associated;live.idle=idle;live.demand=bool(demand);
+            live.can_acquire=demand && demand->can_acquire();live.owned_debt=demand && demand->owned_debt();
+            live.pipeline=pipeline_abi;live.adapter=adapter && adapter->state().initialized;
+            live.tracking=tracking;live.policy=policy_ready;
             if(adapter && adapter->state().initialized && policy_ready && associated && tracking && !stopped &&
                runtime::read_self(s.sp+0x610,effective.data(),effective.size())) {
                 if(!gate)gate.emplace(backend);
@@ -582,7 +637,10 @@ bool Runtime::pin(uint64_t b,const char *sha) noexcept {
 bool Runtime::start_server(const char *path) {
     if(!p_->pinned || p_->server || !path || path[0]!='/')return false;
     p_->server=std::make_unique<Server>(path,p_->backend);
-    if(!p_->server->start()){p_->server.reset();return false;}return true;
+    if(!p_->server->start()){p_->server.reset();return false;}
+    // Optional evidence must not become another runtime-start gate.
+    try {p_->collect();} catch(...) {}
+    return true;
 }
 void Runtime::event(uint64_t pc,arena::Saved &r) noexcept {p_->event(pc,r);}
 Diagnostics Runtime::diagnostics() const noexcept {Diagnostics d{};p_->published.read(d);return d;}
