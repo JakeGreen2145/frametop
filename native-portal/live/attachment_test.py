@@ -22,7 +22,7 @@ def main():
         '-I'+str(build),'-DFT_NATIVE_PORTAL_TEST_CALL','-DFT_NATIVE_RUN_RETURN='+hex(run_return())]
     for key,name in [('dispatch_lrs','FT_BOOT_DISPATCH_LR'),('release_lr','FT_BOOT_RELEASE_LR'),
         ('pool_lr','FT_BOOT_POOL_LR'),('queue_lr','FT_BOOT_QUEUE_LR'),('recycle_lr','FT_RECYCLE_LR'),
-        ('stock_pool_lr','FT_STOCK_POOL_LR'),('outer_lr','FT_OUTER_LR')]:
+        ('stock_pool_lr','FT_STOCK_POOL_LR'),('initial_pool_lr','FT_INITIAL_POOL_LR'),('outer_lr','FT_OUTER_LR')]:
         flags+=['-D'+name+'='+hex(b[key][0] if isinstance(b[key],list) else b[key])]
     if args.sanitize:flags+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
     binary=build/('attachment_test-asan' if args.sanitize else 'attachment_test')
