@@ -11,6 +11,7 @@
 #pragma GCC diagnostic pop
 #include <filesystem>
 #include "pump.private.hpp"
+#include "camera.private.hpp"
 using namespace native_portal::live;
 struct Chain:Fixture {
     Runtime router;
@@ -36,6 +37,16 @@ struct Chain:Fixture {
     struct {uint64_t serial=42;int8_t subserial=1;uint8_t padding[7]{};} signal_value;
     std::array<float,12> origin_matrix{1,0,0,0,0,1,0,1.6f,0,0,1,0};
     unsigned enqueues=0,lookups=0,native_acquires=0,native_releases=0,policy_fault=0;
+    bool pinned_camera=false;size_t camera_step=0;
+    std::array<uint64_t,5> camera_state() const {
+        std::array<uint64_t,5> out{};
+        for(unsigned i=0;i<3;++i)out[i]=uint8_t(camera[i==0?0x349:i==1?0x34a:0x360]);
+        std::memcpy(&out[3],camera.data()+0x350,16);return out;
+    }
+    void camera_state(const uint64_t *state) {
+        put(camera,0x349,uint8_t(state[0]));put(camera,0x34a,uint8_t(state[1]));
+        put(camera,0x360,uint8_t(state[2]));put(camera,0x350,state[3]);put(camera,0x358,state[4]);
+    }
     std::string directory;
     Chain() {
         put(worker,0,uint64_t(base+0x5a1428));put(worker,0x48,addr(context));
@@ -326,6 +337,15 @@ extern "C" int ft_pipeline_approved(void *,uint64_t generation,void *pipeline,ui
 }
 extern "C" bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t x8) noexcept {
     assert(active);auto &f=*active;
+    if(f.pinned_camera && (target==Chain::base+0x15f9e0 || target==Chain::base+0x15fba8)) {
+        assert(f.camera_step<std::size(camera_transitions));
+        const auto &t=camera_transitions[f.camera_step++];
+        assert(target==Chain::base+t.pc && x[0]==addr(f.camera) && x[1]==2);
+        const auto before=f.camera_state();assert(std::equal(before.begin(),before.end(),t.before));
+        f.camera_state(t.after);x[0]=t.result;
+        if(t.pc==0x15f9e0)++f.native_acquires;else ++f.native_releases;
+        return true;
+    }
     switch(target-Chain::base) {
     case 0x4b1a0:x[0]=1;break;
     case 0x4c450:*reinterpret_cast<int32_t*>(x[1])=0;x[0]=uint64_t(&f.system_interface);break;
@@ -448,6 +468,45 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
             f.frame_start();f.frame_end();assert(!f.router.diagnostics().capable);
             assert(!f.router.diagnostics().pending && !f.native_acquires);return 0;
         }
+    }
+    if(mode.rfind("--camera-native-",0)==0) {
+        f.pinned_camera=true;
+        const bool release_only=mode=="--camera-native-release-alone";
+        if(release_only) {f.camera_step=3;f.camera_state(camera_transitions[3].before);}
+        f.frame_start();f.frame_end();
+        const size_t end=release_only?4:std::size(camera_transitions);
+        while(f.camera_step<end) {
+            const size_t index=f.camera_step;const auto &t=camera_transitions[index];
+            f.s={};f.s.x[0]=addr(f.camera);f.s.x[1]=2;f.s.x[30]=Chain::base+0x6d6ec;
+            if(mode=="--camera-native-foreign") {
+                std::thread foreign([&] {
+                    const auto original=f.s;f.event(t.pc);
+                    assert(!std::memcmp(&original,&f.s,sizeof f.s));
+                    // The original native continuation, never replayed by router.
+                    assert(ft_native_portal_call(Chain::base+t.pc,f.s.x,0));
+                });foreign.join();
+                assert(f.s.pad==0);
+            } else {f.event(t.pc);assert(f.s.pad==arena::SkipOwned);}
+            assert(f.camera_step==index+1 && f.s.x[0]==t.result);
+            const auto actual=f.camera_state();assert(std::equal(actual.begin(),actual.end(),t.after));
+            if(mode=="--camera-native-retired" && index==2) {
+                // Pinned destructor preserves these scalars. Existing delete
+                // observation tracks command membership, not the camera epoch.
+                f.s={};f.s.x[0]=addr(f.camera);f.s.x[1]=0x8d0;f.event(0x4b3d0);
+                assert(f.router.diagnostics().initialized);
+            }
+            f.frame_start();f.frame_end();
+            if(index==2 && std::getenv("FT_TEST_REQUIRE_WARM")) {
+                std::fprintf(stderr,"warm-recovery-required: connected acquire and disconnect observed; camera lifetime unproved\n");
+                assert(f.router.diagnostics().capable);
+            }
+            // Required recovery remains blocked; unknown/retired states must
+            // not gain authority from native bool success or retained IDs.
+            assert(!f.router.diagnostics().capable && !f.router.diagnostics().pending);
+            if(mode=="--camera-native-retired" && index==2)break;
+        }
+        std::puts("pinned camera transition replay: original results preserved, warm/partial/unknown lifetime stays fail-closed PASS");
+        return 0;
     }
     if(mode=="--camera-unknown-warm") {
         // Released handles and failed partial connection can alias these bytes.

@@ -8,7 +8,7 @@ The retained journal has six sampled `ft-native-live` records. At frame 3, idle 
 
 ## Pinned native lifecycle
 
-`live/camera_idle_native.py` executes the actual `15f9e0` acquire, `15f938` shared demand setter, `15fba8` release and `15faf8` shared demand clear instructions. Shared-lock access and queue-service calls are explicitly synthetic CPU boundaries. The cold object starts as zeroed fixture storage. No camera, runtime or GPU is opened.
+`live/camera_idle_native.py` executes the actual `15ddc8` constructor, `15f9e0` acquire, `15f938` shared demand setter, `15fba8` release, `15faf8` shared demand clear and `15df70` destructor instructions. Shared-lock access, queue-service calls, libc memset and empty bookkeeping-container disposal are explicitly synthetic CPU boundaries. No camera, runtime or GPU is opened.
 
 | Camera offset | Pinned meaning |
 | --- | --- |
@@ -31,6 +31,36 @@ The native sequence produces these byte/identifier tuples `[349,34a,360,350,358]
 The current all-zero-handle guard rejects the successful released state. A production-router test reproduced that refusal. A provisional removal passed the full modeled stereo/settlement chain, but **was not retained**: the native acquire error branch supplies a counterexample. With shared demand unavailable, first queue connection failure and second queue connection success, the method leaves connected flag zero, returns failure and preserves the same nonzero identifiers. A later release returns success without disconnecting anything because connected is zero. This state aliases the released-warm tuple. Removing the handle guard based only on the three bytes would erase unknown partial/foreign ownership.
 
 No full RoomView, safety override, external-call continuation, acquisition or release policy is changed. A safe future warm-state admission needs authenticated successful transition provenance or a separately proved queue-service ownership contract, not merely readable identifiers. The live refusal cannot yet be attributed to retained handles.
+
+## Warm-transition admission remains blocked on camera lifetime
+
+A successful connected Acquire followed by a successful disconnect is necessary, but the existing owner proof cannot bind that pair to a camera-object generation. This task did **not** enable warm recovery. The production cold-only predicate, pending-render guard, demand settlement, forwarding and diagnostic code are unchanged.
+
+The precise missing facts are:
+
+- `Evidence::identity()` issues renderer and device generations. `application_owner()` authenticates worker, context, scheduler and application at Run. Neither issues or revokes a camera-object epoch.
+- The manifest does not observe camera constructor `15ddc8`, publication `8dc18`, destructor `15df70`, or resource cleanup `15e1c8`. The pinned publication stores the constructor's object at application `+25320`. The inspected destructor callers at `8df10` and `8e4e8` subsequently pass that object and size `8d0` to sized delete `4b3d0`.
+- The existing `4b3d0` observer only updates known command membership in `runtime/recording.cpp`. Passing the camera to this event does not invalidate Evidence. The new router test verifies that fact; a generic delete hook's presence is not camera lifetime coverage.
+- The actual pinned destructor preserves the warm tuple `[0,0,0,0xa001,0xa002]` and performs no queue-service calls in the fixture. Running the actual constructor again at that same address resets the tuple to cold. These are mapped synthetic-storage observations, not permission to inspect a destroyed native object and not a claim that concurrent destruction occurred in trial 19.
+
+Consequently, matching camera address, renderer/device generations, Run owner, identifiers and successful return values cannot alone invalidate a certificate on camera destruction or reconstruction. A counter invented at seal or Acquire would count observations, not native object generations. The next implementation needs authenticated publication/construction and pre-destruction/reconstruction revocation, including foreign threads, or a separately proved invariant excluding those events throughout the tracked interval. That proof must precede warm admission. No camera fields should be cleared to manufacture it.
+
+## Lifecycle replay and unmet acceptance probe
+
+The witness exports all eleven observed method calls with exact before/after tuples, native return values and service-call lists. The runner generates ignored `camera.private.hpp` from those observations. The real router replays them through its existing native-call fake. The ARM64 methods execute in the witness, not in the C++ router process; application storage, native method invocation and Vulkan remain modeled there.
+
+Four router modes cover the full call sequence, untouched foreign continuations, camera deletion after successful disconnect, and Release without any observed Acquire. The full sequence includes repeated Acquire/Release, failed disconnect, retry, shared-demand failure with a partial-connect alias, Release-success without disconnect, and a later genuine connected pair. Each forwarded result is preserved and each native-call fake runs exactly once. All warm states remain unsupported under the current lifetime contract.
+
+The positive recovery requirement is an explicit reproducible failing probe, not a claimed passing feature:
+
+```
+TMPDIR=/home/jakeg/.hermes/cache/scratch FT_TEST_REQUIRE_WARM=1 \
+  native-portal/live/build/runtime/runtime_chain_test --camera-native-lifecycle
+```
+
+Run that probe inside the same 650M/zero-swap scope as the suite, with core dumps disabled. It reaches `warm-recovery-required` immediately after the first proved connected Acquire and disconnect, then fails the `capable` assertion at the next ordinary seal. This distinguishes a missing recovery feature from partial-connect refusal. It is intentionally not enabled by the normal test runner.
+
+Normal and ASan/UBSan full runners each passed 269 records with MemoryMax=650M and MemorySwapMax=0. Their recorded peaks were 270413824 and 517373952 bytes. Evidence is in ignored `live/build/runtime/warm-blocker-normal.json`, `verification.json`, `warm-blocker-normal.log`, `warm-blocker-asan.log` and `warm-required-red.log`. The positive feature requirement remains unmet; these results verify the fail-closed behavior and existing contracts only.
 
 ## Bounded diagnostics delivered
 

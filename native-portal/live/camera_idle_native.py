@@ -27,11 +27,15 @@ def witness():
         return m.reg_read(r)
     put(service,vtable);put(vtable+8,acquire);put(vtable+16,release)
     m.mem_write(shared+0x18,b'\1')
-    calls=[];fail_release=False;fail_acquire=0
+    calls=[];transitions=[];fail_release=False;fail_acquire=0
     def hook(uc,pc,size,user):
         if pc in (0x186a38,0x186a40,0x174510):x(0,0)
         elif pc==0x186ab0:x(0,shared)
         elif pc==0x26a548:x(0,service)
+        elif pc==0x4b8c0: # constructor's libc memset, not a camera operation
+            m.mem_write(x(0),bytes([x(1)&255])*x(2))
+        elif pc==0x186858: # empty native bookkeeping container disposal
+            assert x(0)==camera+0x4e0
         elif pc==acquire:
             assert x(1) in (camera+0x350,camera+0x358)
             handle=0xa001+(x(1)-camera-0x350)//8
@@ -43,13 +47,18 @@ def witness():
         m.reg_write(A.UC_ARM64_REG_PC,x(30))
     m.hook_add(UC_HOOK_CODE,hook)
     def run(pc):
+        before=state();start=len(calls)
         x(0,camera);x(1,2);x(30,done);m.reg_write(A.UC_ARM64_REG_SP,stack)
         m.emu_start(pc,done,count=10000)
         assert m.reg_read(A.UC_ARM64_REG_PC)==done
+        if pc in (0x15f9e0,0x15fba8):
+            transitions.append({'pc':pc,'before':before,'after':state(),
+                                'result':x(0),'service_calls':calls[start:]})
         return x(0)
     def state():
         b=bytes(m.mem_read(camera+0x340,40))
         return [b[9],b[10],b[32],*struct.unpack('<QQ',b[16:32])]
+    run(0x15ddc8) # actual constructor, not an assumed zeroed object
     rows=[['cold',state()]]
     assert state()==[0,0,0,0,0]
     assert run(0x15f9e0)==1;rows.append(['acquired',state()])
@@ -70,5 +79,17 @@ def witness():
     assert state()==[0,0,0,0xa001,0xa002]
     before=len(calls);assert run(0x15fba8)==1 and len(calls)==before
     rows.append(['release-after-partial-no-disconnect',state()])
-    return {'states':rows,'service_calls':calls,'boundary':'CPU service/lock fakes; native method bytes executed; no live camera proof'}
+    # Finish with a genuine connected acquire/release, then execute destruction.
+    # Inspection after destruction is ONLY a mapped CPU fixture observation.
+    m.mem_write(shared+0x18,b'\1');fail_acquire=0
+    assert run(0x15f9e0)==1 and run(0x15fba8)==1
+    warm=state();before=len(calls)
+    run(0x15df70)
+    assert state()==warm and len(calls)==before
+    rows.append(['destroyed-retains-warm-scalars',state()])
+    run(0x15ddc8)
+    assert state()==[0,0,0,0,0]
+    rows.append(['same-address-reconstructed',state()])
+    return {'states':rows,'transitions':transitions,'service_calls':calls,
+            'boundary':'CPU service/lock/libc/empty-container fakes; native method bytes executed; no live camera or allocator lifetime proof'}
 if __name__=='__main__':print(json.dumps(witness(),indent=2))

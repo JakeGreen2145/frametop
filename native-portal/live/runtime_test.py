@@ -30,7 +30,18 @@ def main():
         'static constexpr uint64_t pump_events[][6] = {'+
         ','.join('{'+','.join(hex(v) for v in row)+'}' for row in bootstrap['pump'])+'};\n')
     flags+=['-I'+str(build),'-DFT_OUTER_LR='+hex(bootstrap['outer_lr'])]
+    from camera_idle_native import witness
+    camera_native=witness()
+    # Replay exact pinned method observations at the existing native-call fake.
+    # This does not turn modeled router storage into a native lifetime proof.
+    (build/'camera.private.hpp').write_text(
+        'struct CameraTransition {uint64_t pc,before[5],after[5],result;};\n'
+        'static constexpr CameraTransition camera_transitions[] = {'+
+        ','.join('{'+hex(t['pc'])+',{'+','.join(map(str,t['before']))+'},{'+
+                 ','.join(map(str,t['after']))+'},'+str(t['result'])+'}'
+                 for t in camera_native['transitions'])+'};\n')
     results=[]
+    results.append({'camera_native':camera_native})
     for test in ['runtime_test','runtime_owner_test','command_trace_test','runtime_chain_test']:
         binary=build/(test+('-asan' if args.sanitize else ''))
         cmd=flags+(['-DFT_NATIVE_PORTAL_TEST_CALL'] if test=='runtime_chain_test' else [])+[str(ROOT/s) for s in SOURCES]+[str(ROOT/'live'/f'{test}.cpp'),'-o',str(binary)]
@@ -41,9 +52,7 @@ def main():
                 (build/'verification.json').write_text(json.dumps(results,indent=2));return result.returncode
     pool_faults=['lr','pool','device','handle','delete','clear','no-reset','no-begin',
                  'reset-failed','begin-failed','reset-lr']
-    from camera_idle_native import witness
-    results.append({'camera_native':witness()})
-    modes=['--camera-unknown-warm','--camera-busy-841','--camera-busy-842','--camera-busy-864','--construct','--construct-setter','--construct-recover']+['--construct-fault-'+str(i) for i in range(1,20)]+['--policy-native-disabled','--policy-native-special','--application-direct','--application-fallback','--main-pump','--main-pump-owner','--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
+    modes=['--camera-native-lifecycle','--camera-native-foreign','--camera-native-retired','--camera-native-release-alone','--camera-unknown-warm','--camera-busy-841','--camera-busy-842','--camera-busy-864','--construct','--construct-setter','--construct-recover']+['--construct-fault-'+str(i) for i in range(1,20)]+['--policy-native-disabled','--policy-native-special','--application-direct','--application-fallback','--main-pump','--main-pump-owner','--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
            '--repeated-owned-reset-failed','--repeated-owned-begin-failed',
            '--repeated-owned-no-wait','--repeated-owned-no-disposal',
            '--publication-pool-live','--pool-owned-current','--pool-owned-retained']+['--publication-pool-'+s for s in pool_faults]+[
