@@ -362,8 +362,7 @@ struct Runtime::Impl {
         if(pc==0x29f358)arena_site=arena::GeometryClassify;
         if(pc==0x2987d4)arena_site=arena::Reset;
         if(arena_site<arena::SiteCount) {
-            const auto id=evidence.identity();
-            if(id.renderer_generation)bridge.dispatch(s,arena_site,id.renderer_generation,owner_tid);
+            evidence.arena_event(bridge,arena_site,s);
         }
         if(pc==0x142620 || pc==0x29bd18 || pc==0x29c238) {
             stopped=true;backend.invalidate(Reason::Off);if(adapter)adapter->off();refuse(Refusal::Stopped);

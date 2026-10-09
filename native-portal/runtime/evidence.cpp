@@ -281,7 +281,45 @@ bool Evidence::observe(void *p,const render::Binding &b,uint64_t w,uint64_t m,re
        !e.snapshot(w,m,o) || !o.arena.recording_generation) return false;
     out=o;return true;
 }
-arena::Memory Evidence::bridge_memory() noexcept {return {this,read_callback,write_callback,coherent_callback};}
+bool Evidence::arena_event(arena::Bridge &bridge,unsigned site,arena::Saved &s) noexcept {
+    if(!initialized() || bridge_!=&bridge ||
+       (site!=arena::UboClassify && site!=arena::GeometryClassify && site!=arena::Admission && site!=arena::Reset))return false;
+    const auto R=identity_.renderer;
+    const auto actual=site==arena::UboClassify?s.x[0]:site==arena::GeometryClassify?s.x[21]:
+        site==arena::Reset?s.x[22]:s.x[19];
+    if(actual!=R)return false;
+    auto refuse=[&] {bridge.failed_=true;bridge.descriptor_={};s.pad=arena::Unsupported;return false;};
+    // A pinned suspended instruction grants these scalar reads, not a general
+    // readable-memory registry. Neither a lease nor an owned upload is required
+    // for stock descriptors, including bootstrap calls before worker publication.
+    if(!bridge.bound(R,epoch_) || bridge.scope_.thread!=static_cast<uint64_t>(tid_) || classifier_[0].size)return refuse();
+    if(site==arena::UboClassify && s.x[4]!=UINT32_MAX) {
+        uint64_t resource=0,device_context=0;uint32_t offset=0,size=0;
+        if(!bounded(s.x[2],0x20) || !read_self(s.x[2]+0x18,&offset,4) || offset!=s.x[4] ||
+           !read_self(s.x[2]+8,&resource,8) || !bounded(resource,0x128) ||
+           !read_self(resource+8,&device_context,8) || device_context!=R+0x50 ||
+           !read_self(resource+0xb8,&size,4))return refuse();
+        classifier_[0]={s.x[2]+8,resource,8};classifier_[1]={resource+0xb8,size,4};
+    } else if(site==arena::GeometryClassify && s.x[3]!=UINT32_MAX) {
+        uint32_t offset=0,size=0;
+        if(!bounded(s.x[24],0x2b0) || !read_self(s.x[24]+0x1bc,&offset,4) || offset!=s.x[3] ||
+           !read_self(s.x[24]+0x1c0,&size,4))return refuse();
+        classifier_[0]={s.x[24]+0x1c0,size,4};
+    }
+    bridge.dispatch(s,site,epoch_,static_cast<uint64_t>(tid_));
+    classifier_={}; // no callback return, thread handoff or graph read inherits it
+    return s.pad!=arena::Unsupported;
+}
+bool Evidence::bridge_read_callback(void *p,uint64_t a,void *out,size_t n) noexcept {
+    if(!p || !out)return false;
+    auto &e=*static_cast<Evidence*>(p);
+    if(!e.owner() || e.failed_)return false;
+    for(const auto &field:e.classifier_)if(field.size && a==field.address && n==field.size) {
+        std::memcpy(out,&field.value,n);return true;
+    }
+    return e.read(a,out,n);
+}
+arena::Memory Evidence::bridge_memory() noexcept {return {this,bridge_read_callback,write_callback,coherent_callback};}
 binding::PassReader Evidence::pass_reader() noexcept {return {this,read_callback,live_callback};}
 #include "graph.inc"
 } // namespace native_portal::runtime

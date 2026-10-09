@@ -27,8 +27,12 @@ def main():
             print(result.stdout+result.stderr,end='');results.append({'command':call,'code':result.returncode,'output':result.stdout+result.stderr})
             if result.returncode:
                 (build/'verification.json').write_text(json.dumps(results,indent=2));return result.returncode
-    for mode,expected in [('--unsafe-cleanup',-signal.SIGABRT),('--join-error-cleanup',-signal.SIGABRT),
-                          ('--joined-cleanup',0),('--external',0),('--foreign-external',0),('--reject-graph',0),('--stop-after-left',0)]:
+    modes=['--bootstrap-stock','--bootstrap-geometry','--worker-no-stock','--worker','--joined-cleanup',
+           '--external','--foreign-external','--reject-graph','--stop-after-left',
+           '--bad-stock-owner','--bad-stock-offset','--bad-stock-unreadable',
+           '--bad-stock-resource','--bad-stock-capacity','--bad-geometry-offset',
+           '--bad-geometry-unreadable','--bad-geometry-cursor']
+    for mode,expected in [('--unsafe-cleanup',-signal.SIGABRT),('--join-error-cleanup',-signal.SIGABRT)]+[(m,0) for m in modes]:
         binary=build/('runtime_chain_test'+('-asan' if args.sanitize else ''))
         result=subprocess.run([str(binary),mode],capture_output=True,text=True)
         print(mode,result.stdout+result.stderr,end='\n');assert result.returncode==expected,(mode,result.returncode,result.stderr)

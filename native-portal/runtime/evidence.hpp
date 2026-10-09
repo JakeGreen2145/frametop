@@ -29,6 +29,8 @@ class Evidence {
     // Compose only bootstrap Bridge sites; borrow allocation output for the
     // duration of this call, then revoke before native resumes/clears the slot.
     bool route(arena::Bridge &,uint64_t relative_pc,arena::Saved &) noexcept;
+    // Synchronous classifier fields only, never a graph or persistent allocation borrow.
+    bool arena_event(arena::Bridge &,unsigned site,arena::Saved &) noexcept;
     // Paired direct Adapter-owned native calls; no user-authored wrapper pointer.
     bool call_enter(const render::Registers &) noexcept;
     bool call_return(const render::Registers &) noexcept;
@@ -71,6 +73,9 @@ class Evidence {
     bool graph_read(uint64_t,void *,size_t) const noexcept;
     uint64_t base_=0,epoch_=0,allocation_sp_=0,allocation_slot_=0,borrowed_slot_=0;
     arena::Bridge *bridge_=nullptr;
+    struct ClassifierField {uint64_t address=0,value=0;size_t size=0;};
+    std::array<ClassifierField,2> classifier_{};
+    static bool bridge_read_callback(void *,uint64_t,void *,size_t) noexcept;
     // Native call-local borrow; never exported as a general read/write registry.
     render::Adapter *staging_writer_=nullptr;
     const render::Adapter *staging_owner_=nullptr; // compared only, never dereferenced

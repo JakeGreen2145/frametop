@@ -6,7 +6,27 @@
 #include "../runtime/evidence_test.cpp"
 #undef main
 #pragma GCC diagnostic pop
+static void classifier_scope() {
+    Fixture f;arena::Bridge bridge(f.evidence.bridge_memory());assert(f.bootstrap(true,&bridge));
+    std::array<std::byte,0x20> wrapper{};std::array<std::byte,0x128> resource{};
+    put(wrapper,8,addr(resource));put(resource,8,addr(f.r)+0x50);put(resource,0xb8,uint32_t(528));
+    arena::Saved s{};s.x[0]=addr(f.r);s.x[2]=addr(wrapper);
+    const auto id=f.evidence.identity();uint64_t value=0;
+    const auto memory=f.evidence.bridge_memory();const auto reader=f.evidence.pass_reader();
+    assert(!memory.read(memory.user,addr(wrapper)+8,&value,8));
+    assert(f.evidence.arena_event(bridge,arena::UboClassify,s) && s.pad==arena::Replacement);
+    assert(!memory.read(memory.user,addr(wrapper)+8,&value,8));
+    assert(!memory.read(memory.user,addr(resource)+0xb8,&value,4));
+    assert(!reader.read(reader.user,addr(wrapper)+8,&value,8));
+    assert(!reader.live(reader.user,{id,1}));
+    assert(bridge.ready() && bridge.policy().actual()==0);
+    // Native allocation identity still gates every classifier after a valid borrow.
+    put(f.r,0x1390,addr(resource));
+    assert(!f.evidence.arena_event(bridge,arena::UboClassify,s) && s.pad==arena::Unsupported);
+    assert(!bridge.ready());
+}
 int main() {
+    classifier_scope();
     Fixture f;arena::Bridge bridge(f.evidence.bridge_memory());assert(f.bootstrap(true,&bridge));
     std::array<std::byte,0x200> context{},worker{},scheduler{};
     std::array<std::byte,0x25700> app{};

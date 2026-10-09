@@ -55,7 +55,7 @@ struct Chain:Fixture {
     }
     ~Chain(){std::filesystem::remove_all(directory);}
     void event(uint64_t pc) {router.event(pc,s);}
-    void init() {
+    void bootstrap_router() {
         event(0x7fda0);s.x[19]=addr(r);s.x[0]=addr(r)+0xec0;s.x[1]=0x80000;s.x[8]=s.sp+0x140;
         event(0x29a14c);assert(s.x[1]==0x80080);put(stack,0x140,addr(resource));event(0x29a150);put(stack,0x140,uint64_t(0));
         s.x[0]=s.x[20]=addr(executable);s.sp=addr(stack)+0x100;event(0x301808);
@@ -63,7 +63,28 @@ struct Chain:Fixture {
         s.sp-=0x30;put(stack,0x98,uint64_t(base+0x300ae0));s.x[0]=0;event(0x300a38);
         s.sp=addr(stack)+0x100;s.x[20]=addr(executable);s.x[0]=1;event(0x30180c);
         s.x[19]=addr(r);s.x[1]=addr(command);event(0x29a528);s.x[24]=addr(r);s.x[0]=1;event(0x7fdbc);
+    }
+    void publish_worker() {
         s.x[19]=addr(worker);s.x[21]=addr(context);event(0x14099c);s.x[0]=addr(worker);event(0x140dbc);
+    }
+    void stock_append() {
+        s={};s.x[19]=addr(r);s.x[20]=528;s.x[21]=addr(stock_wrapper)+0x18;
+        event(0x299110);assert(s.pad==arena::Replacement);put(r,0x1418,uint32_t(576));
+    }
+    void geometry_classifier() {
+        s={};s.x[21]=addr(r);s.x[24]=addr(packets);s.x[3]=0;
+        put(packets,0x1bc,uint32_t(0));put(packets,0x1c0,uint32_t(128));
+        event(0x29f358);assert(s.pad==arena::Replacement);
+    }
+    void stock_classifier() {
+        s={};s.x[0]=addr(r);s.x[2]=addr(stock_wrapper);s.x[4]=UINT32_MAX;
+        s.x[30]=base+0x29b3c0;event(0x2988b0);assert(s.pad==arena::Original);
+        s.x[4]=0;event(0x2988b0);
+        std::fprintf(stderr,"stock classifier route=%llu\n",(unsigned long long)s.pad);
+        assert(s.pad==arena::Replacement);
+    }
+    void run_enter() {
+        s.x[0]=addr(worker);
         put(worker,0x10,uint32_t(syscall(SYS_gettid)));put(worker,0x14,uint32_t(0x80000000));s.x[30]=base+FT_NATIVE_RUN_RETURN;event(0x14e5a8);
     }
     void frame_start() {
@@ -129,9 +150,40 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t x8) n
     }
     return true;
 }
-int main(int argc,char **argv) {
-    const std::string mode=argc>1?argv[1]:"";
-    Chain f;active=&f;f.init();f.frame_start();f.frame_end();
+int run_chain(Chain &f,const std::string &mode) {
+    if(mode=="--worker") {
+        // Each invalid Run must leave the waiting bootstrap scope untouched.
+        // Restore one modeled native field at a time, then admit the real worker.
+        auto rejected=[&] {
+            f.event(0x14e5a8);
+            arena::Saved probe{};probe.x[0]=addr(f.r);probe.x[2]=addr(f.stock_wrapper);
+            const auto before=probe;f.router.event(0x2988b0,probe);
+            assert(!std::memcmp(&probe,&before,sizeof probe));
+        };
+        f.s={};f.s.x[0]=addr(f.worker);f.s.x[30]=Chain::base+FT_NATIVE_RUN_RETURN;
+        put(f.worker,0x10,uint32_t(syscall(SYS_gettid)));put(f.worker,0x14,uint32_t(0x80000000));
+        f.s.x[30]+=4;rejected();f.s.x[30]-=4;
+        f.s.x[0]+=8;rejected();f.s.x[0]-=8;
+        put(f.worker,0x10,uint32_t(0));rejected();put(f.worker,0x10,uint32_t(syscall(SYS_gettid)));
+        put(f.worker,0x14,uint32_t(0));rejected();put(f.worker,0x14,uint32_t(0x80000000));
+        put(f.worker,0x48,uint64_t(0));rejected();put(f.worker,0x48,addr(f.context));
+        put(f.app,0x256a0,uint64_t(0));rejected();put(f.app,0x256a0,addr(f.r));
+        put(f.r,0xa78,uint64_t(0));rejected();put(f.r,0xa78,uint64_t(0x1234));
+    }
+    f.run_enter();
+    if(mode=="--worker") {
+        std::thread foreign([&] {
+            arena::Saved probe{};probe.x[0]=addr(f.r);probe.x[2]=addr(f.stock_wrapper);
+            const auto before=probe;f.router.event(0x2988b0,probe);
+            assert(!std::memcmp(&probe,&before,sizeof probe));
+            probe.x[0]=addr(f.worker);probe.x[30]=Chain::base+FT_NATIVE_RUN_RETURN;
+            f.router.event(0x14e5a8,probe); // consumed handoff cannot be claimed again
+        });foreign.join();
+        // Stock startup before Adapter creation or any owned lease. Sentinel
+        // proves scope handoff separately from the ordinary descriptor borrow.
+        f.stock_classifier();f.geometry_classifier();
+    }
+    f.frame_start();f.frame_end();
     if(mode=="--unsafe-cleanup") {std::fprintf(stderr,"cleanup-entry: active owned borrow, no join\n");f.event(0x1381b8);assert(false);}
     if(mode=="--joined-cleanup" || mode=="--join-error-cleanup") {
         put(f.worker,8,uint64_t(0x123456));f.s={};f.s.sp=0x990000;f.s.x[0]=addr(f.worker);f.s.x[20]=addr(f.context);f.event(0x142704);
@@ -260,4 +312,35 @@ int main(int argc,char **argv) {
     f.s.x[0]=0;f.event(0x3021d8);d=f.router.diagnostics();
     assert(d.refusal==Refusal::None && d.uploads[0]==2 && d.uploads[1]==2 && d.encoded[0]==2 && d.encoded[1]==2 && d.queue_success==2 && d.pending);
     std::puts("runtime chain: private lease, origin x8, native demand, stereo staging/preparation/encoding, exact queue/wait, disposal/reset, pending Release, real pool-publication turnover and second stereo queue PASS; native boundaries modeled");
+    return 0;
+}
+int main(int argc,char **argv) {
+    const std::string mode=argc>1?argv[1]:"";
+    Chain f;active=&f;f.bootstrap_router();
+    if(mode=="--bootstrap-stock") {f.stock_append();f.stock_classifier();f.geometry_classifier();return 0;}
+    if(mode=="--bootstrap-geometry") {f.stock_append();f.geometry_classifier();return 0;}
+    if(mode.rfind("--bad-stock-",0)==0 || mode.rfind("--bad-geometry-",0)==0) {
+        f.stock_append();f.s={};f.s.x[0]=addr(f.r);f.s.x[2]=addr(f.stock_wrapper);
+        f.s.x[21]=addr(f.r);f.s.x[24]=addr(f.packets);
+        put(f.packets,0x1c0,uint32_t(128));
+        if(mode=="--bad-stock-owner")put(f.stock_resource,8,uint64_t(0));
+        if(mode=="--bad-stock-offset")f.s.x[4]=64;
+        if(mode=="--bad-stock-unreadable")f.s.x[2]=1;
+        if(mode=="--bad-stock-resource")put(f.stock_wrapper,8,uint64_t(1));
+        if(mode=="--bad-stock-capacity")put(f.stock_resource,0xb8,uint32_t(arena::Capacity+1));
+        if(mode=="--bad-geometry-offset")f.s.x[3]=64;
+        if(mode=="--bad-geometry-unreadable")f.s.x[24]=1;
+        if(mode=="--bad-geometry-cursor")put(f.packets,0x1c0,uint32_t(577));
+        f.event(mode.rfind("--bad-stock-",0)==0?0x2988b0:0x29f358);
+        assert(f.s.pad==arena::Unsupported);
+        f.s={};f.s.x[22]=addr(f.r);f.event(0x2987d4);assert(f.s.pad==arena::Unsupported);
+        std::puts("runtime stock: invalid scalar/owner/bounds refused, reset cannot heal failure PASS");return 0;
+    }
+    if(mode=="--worker")f.stock_append(); // existing charged stock debt crosses handoff intact
+    f.publish_worker();
+    if(mode=="--worker" || mode=="--worker-no-stock") {
+        std::thread worker([&]{assert(run_chain(f,mode)==0);});worker.join();
+        std::puts("runtime chain: actual bootstrap-to-worker thread boundary PASS");return 0;
+    }
+    return run_chain(f,mode);
 }
