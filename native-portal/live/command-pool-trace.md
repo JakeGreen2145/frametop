@@ -1,6 +1,6 @@
 # Command pool transition trace
 
-This change diagnoses trial 10's `pub_pred=13` without changing authorization. It does not claim to fix live stereo or prove which native C was missing in that trial. No device was accessed.
+The original trace diagnosed trial 10's `pub_pred=13`. Trial 11 then captured the missing identity and its first invalidation. The repair below preserves only that exact unpublished stock pool-return path. No device was accessed for the repair; live stereo after the repair remains unverified.
 
 ## Pinned native result
 
@@ -14,7 +14,26 @@ This change diagnoses trial 10's `pub_pred=13` without changing authorization. I
 
 Vulkan allocation/reset/Begin results, RTTI and debug annotation are explicit fake external boundaries. The test stops before the remaining synchronization-tree work. It does not certify GPU completion, synchronized pool reuse, concurrent ownership, or owned recording disposal.
 
-This proves that the generic pool-return site is not executable destruction. The current ledger still removes a noncurrent member there. That is a concrete candidate for trial 10, but the captured trial lacks C identity and its preceding transitions. No retention exception or unknown-C resurrection is added here.
+This proves that the generic pool-return site is not executable destruction. The original ledger nevertheless removed a noncurrent member there. Trial 11 confirmed that loss, rather than an unseen creation or foreign-thread observation gap, for the command that later failed publication.
+
+## Trial 11 repair
+
+The private `live-stereo-11/command-cause.json` records a contiguous trace prefix 1 through 183 with no overflow, identity loss or sink loss. Later buffer overflow does not erase this complete prefix. For one exact C and unchanged VkCommandBuffer:
+
+- Sequences 54 through 57 observe creation, paired successful Begin and ledger insertion on the bootstrap thread, with generation zero.
+- Sequence 58 observes `311648` with LR `297cb4` and x0 equal to C's pool plus `d0`. The old observer erases that unpublished member, although native code returns it to the pool without destroying it.
+- The authenticated worker handoff succeeds. Sequences 119 through 122 observe real successful reset/Begin on that same C, but the old ledger ignores them.
+- Sequence 143 returns C through `297cb4` again. Sequences 170 through 173 repeat successful reset/Begin. Sequence 179 publishes the same C and handle, passes device and turnover checks, then fails predicate 13 because membership was lost at sequence 58.
+
+The pinned witness now executes the actual caller at `297ca0`, including its stack-slot C load, C+50 pool lookup, +d0 adjustment, BL and complete native pool return. It derives LR `297cb4` independently of the C++ guard. It also verifies x19=C and x20=pool throughout the reset/Begin callbacks from the real pool recycler.
+
+The repair retains only a known, never-published, generation-zero, fully begun member returned by that exact caller. It rechecks native D, nonnull bounded pool, exact x0=pool+d0 and unchanged VkCommandBuffer. Current and retained command roles and the Lifecycle-owned command cannot take this exception. Return clears Begin authorization, keeps generation zero and adds no general read role. Unknown commands remain unknown; delete and handle-clear still revoke membership.
+
+On Run, renewal must observe the real reset entry/result and Begin entry/result with paired stack coordinates and raw Vulkan success. The retained stock pool, D, C, Vk handle, recycler LR and native x19/x20 association must still match. Failed or missing reset/Begin cannot authorize publication. Only the existing successful wrapper-publication path issues a generation. A persistent published bit prevents a later generation-zero reset state from masquerading as a never-published stock command. Owned completion, current/retained disposal, reset settlement and pending Release remain Lifecycle-controlled.
+
+The production-chain fixture reconstructs these affected-command events across a real bootstrap-to-worker thread handoff and two pool recycles. It does not replay every unrelated journal event. Addresses, stacks, native memory writes and Vulkan boundaries are modeled; the caller and pool machinery are separately executed from the pinned ELF. After publication, the same fixture completes owned stereo, exact queue/wait, disposal/reset, pending Release and a second stereo queue. Trace assertions verify the precise affected-C sequence, unchanged membership and handle, Begin revocation/renewal, and generation issuance only at publication.
+
+Negative fixtures cover wrong pool, caller LR, D and handle; sized delete and handle clear; absent or failed reset/Begin; wrong recycler LR; and the unchanged invalid-return unknown-C case. Separate current/retained owned-command attempts keep pending Release draining. The existing publication, handoff, queue and settlement tests remain enabled.
 
 ## Trace contract
 
@@ -38,7 +57,7 @@ The append-only buffer holds 1024 immutable records, with 128 remembered command
 
 Raw native addresses are deliberately present for equality comparisons in private trial evidence. Keep those logs private. The exported Diagnostics ABI and existing public capability fields are unchanged.
 
-## How the next private trial distinguishes causes
+## Interpreting a private trace
 
 Find the failing `2a23f4` row and compare its `command` with earlier rows:
 
@@ -65,4 +84,4 @@ systemd-run --user --scope -p MemoryMax=650M -p MemorySwapMax=0 \
   python3 native-portal/live/runtime_test.py --sanitize
 ```
 
-Local results are in ignored `native-portal/live/build/runtime/command-trace-{verification,asan,evidence}.log`. `runtime_test.py` also links the complete production router DSO on the CPU host. An ARM64 production bundle was not built or activated in this task.
+Repair results are in ignored `native-portal/live/build/runtime/pool-return-{red,green,asan,evidence}.log`. The new successful-publication fixture first failed on the original code, then passed after the repair. `runtime_test.py` also links the complete production router DSO on the CPU host. An ARM64 production bundle was not built or activated in this task.

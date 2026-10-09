@@ -96,7 +96,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         if(!c.generation)c.generation=generations_.issue();
         d.generation=c.generation;
         if(!check(c.generation,18))return fail(pc);
-        recording_=c.generation;turnover_={};return true;
+        c.published=true;c.stock_pool=0;recording_=c.generation;turnover_={};return true;
     }
     if(pc==0x305260 || pc==0x2953a0) {
         if(s.x[0]!=command_wrapper_) return false;
@@ -133,6 +133,21 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         if(command==creation_) return fail(pc);
         for(auto &c:recordings_) if(c.command==command) {
             if(spans_[6].begin==command || spans_[7].begin==command) {fail(pc);return true;}
+            // The pinned stock tail at 297ca0 loads C from its stack slot,
+            // obtains C+50, and calls this pool's return method at LR297cb4.
+            // Trial 11 returns an unpublished C here on bootstrap and Run.
+            // Preserve identity only; no Begin, generation or settlement is
+            // inferred. Current/retained commands stay on the Lifecycle path.
+            if(pc==0x311648 && s.x[30]==base_+0x297cb4 && !c.published &&
+               !c.generation && c.begun && !c.renewal &&
+               (!lifecycle_ || lifecycle_owner_.command!=command)) {
+                uint64_t D=0,pool=0,vk=0;
+                if(!read_self(command+8,&D,8) || D!=identity_.renderer+0x50 ||
+                   !read_self(command+0x50,&pool,8) || !pool || pool>UINT64_MAX-0xd0 ||
+                   s.x[0]!=pool+0xd0 || (c.stock_pool && c.stock_pool!=pool) ||
+                   !read_self(command+0x738,&vk,8) || vk!=c.vk)return fail(pc);
+                c.stock_pool=pool;c.begun=false;return true;
+            }
             c={};return true;
         }
         return false;
@@ -144,6 +159,13 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         const auto object=(pc==0x300b20 || pc==0x300a08)?s.x[0]:s.x[19];
         for(auto &c:recordings_)if(c.command==object) {
             uint64_t vk=0;if(!read_self(c.command+0x738,&vk,8) || vk!=c.vk)return fail(pc);
+            if(c.stock_pool) {
+                uint64_t D=0,pool=0;
+                if(!read_self(c.command+8,&D,8) || D!=identity_.renderer+0x50 ||
+                   !read_self(c.command+0x50,&pool,8) || pool!=c.stock_pool ||
+                   s.x[19]!=c.command || s.x[20]!=pool ||
+                   ((pc==0x300b20 || pc==0x300a08) && s.x[30]!=base_+0x2a9cdc))return fail(pc);
+            }
             if(pc==0x300b20) {
                 if(c.generation==recording_)recording_=0;
                 c.generation=0;c.begun=false;c.reset_sp=s.sp;c.reset_lr=s.x[30];c.renewal=1;

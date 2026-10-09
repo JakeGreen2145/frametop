@@ -23,7 +23,8 @@ def main():
     flags+=['-DFT_BOOT_DISPATCH_LR='+hex(bootstrap['dispatch_lrs'][0]),
             '-DFT_BOOT_RELEASE_LR='+hex(bootstrap['release_lr']),'-DFT_BOOT_POOL_LR='+hex(bootstrap['pool_lr']),
             '-DFT_BOOT_QUEUE_LR='+hex(bootstrap['queue_lr']),
-            '-DFT_RECYCLE_LR='+hex(bootstrap['recycle_lr'])]
+            '-DFT_RECYCLE_LR='+hex(bootstrap['recycle_lr']),
+            '-DFT_STOCK_POOL_LR='+hex(bootstrap['stock_pool_lr'])]
     results=[]
     for test in ['runtime_test','runtime_owner_test','command_trace_test','runtime_chain_test']:
         binary=build/(test+('-asan' if args.sanitize else ''))
@@ -33,7 +34,10 @@ def main():
             print(result.stdout+result.stderr,end='');results.append({'command':call,'code':result.returncode,'output':result.stdout+result.stderr})
             if result.returncode:
                 (build/'verification.json').write_text(json.dumps(results,indent=2));return result.returncode
-    modes=['--bootstrap-turnover','--bootstrap-bad-caller','--bootstrap-bad-renderer',
+    pool_faults=['lr','pool','device','handle','delete','clear','no-reset','no-begin',
+                 'reset-failed','begin-failed','reset-lr']
+    modes=['--publication-pool-live','--pool-owned-current','--pool-owned-retained']+['--publication-pool-'+s for s in pool_faults]+[
+           '--bootstrap-turnover','--bootstrap-bad-caller','--bootstrap-bad-renderer',
            '--bootstrap-bad-generation','--bootstrap-bad-release','--bootstrap-bad-pool',
            '--bootstrap-bad-reset','--bootstrap-bad-begin',
            '--bootstrap-stock','--bootstrap-geometry','--worker-no-stock','--worker','--joined-cleanup',

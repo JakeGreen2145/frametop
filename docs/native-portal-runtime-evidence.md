@@ -35,7 +35,7 @@ The future trusted trampoline must supply actual saved registers from the hash-v
 | `0x29bd18`, `0x29c238` | Revoke before renderer teardown with x0=R. |
 | `0x2fe090` | Revoke at unmap entry for the exact arena resource. No remap recovery is claimed. |
 | `0x2966a0`, `0x294678` | Read the native pointer-to-slot argument at destruction entry and revoke if it names the owned wrapper or marker. |
-| `0x311648`, `0x4b3d0`, `0x3003d0` | Revoke a pending C before native release, sized delete or handle clear. Release takes C in x1; the other sites take x0. If C is the published owner, revoke the provider before reading freed or reused storage. |
+| `0x311648`, `0x4b3d0`, `0x3003d0` | Release takes C in x1; delete/handle-clear take x0. Unrecognized pool returns, delete and clear revoke pending membership. The exact unpublished stock return at LR `0x297cb4` preserves known C/Vk identity only after native D/pool/handle checks and clears Begin authorization. Real paired reset/Begin success on Run is required before publication. Current/retained owned debt remains on the existing scoped turnover and Lifecycle path. See [trial 11 repair](../native-portal/live/command-pool-trace.md#trial-11-repair). |
 | `0x305260`, `0x2953a0` | Revoke the published command wrapper before its native reference release or destruction. |
 | `0x300b20`, unmatched `0x300a08` | Clear recording authorization before reset or another begin, even if the eventual Vulkan call fails. No cursor/frame/address inference can restore it. |
 

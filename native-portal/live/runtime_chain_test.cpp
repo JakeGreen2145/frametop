@@ -113,7 +113,7 @@ struct Chain:Fixture {
         event(0x2a23f4);put(r,0x1380,addr(command));
         if(post_run) {
             // Later ignored publications cannot overwrite the first refusal.
-            const bool good=mode=="--publication-good" || mode=="--publication-alternate";
+            const bool good=mode=="--publication-good" || mode=="--publication-alternate" || mode=="--publication-pool-live";
             if(!good){s.x[0]=1;event(0x2a23f4);}
             // Probe actual capability through a frame; diagnostics.initialized
             // in the exported ABI is the initial attach snapshot, not Evidence.
@@ -132,6 +132,32 @@ struct Chain:Fixture {
         assert(router.diagnostics().initialized);
         put(r,0x15a8,addr(passes)+passes.size());
         s={};s.x[0]=addr(worker);s.x[21]=addr(context);event(0x140dbc);
+    }
+    void stock_pool_return(const std::string &mode) {
+        // Trial 11 seq58 on bootstrap, seq143 on Run. Only C/pool identities
+        // are relocated. LR is derived by the pinned native instruction witness.
+        s={};s.sp=addr(stack)+0x100;s.x[0]=addr(bootstrap_pool)+0xd0;s.x[1]=addr(executable);
+        s.x[30]=base+FT_STOCK_POOL_LR;
+        if(mode=="--publication-pool-lr")s.x[30]+=4;
+        if(mode=="--publication-pool-pool")s.x[0]+=8;
+        if(mode=="--publication-pool-device")put(executable,8,addr(r)+0x58);
+        if(mode=="--publication-pool-handle")put(executable,0x738,uint64_t(0xc099));
+        event(0x311648);
+        put(executable,8,addr(r)+0x50);put(executable,0x738,uint64_t(0xc001));
+        if(mode=="--publication-pool-delete" || mode=="--publication-pool-clear") {
+            s.x[0]=addr(executable);event(mode=="--publication-pool-delete"?0x4b3d0:0x3003d0);
+        }
+    }
+    void stock_pool_recycle(const std::string &mode) {
+        s={};s.x[0]=s.x[19]=addr(executable);s.x[20]=addr(bootstrap_pool);
+        s.sp=addr(stack)+0x100;s.x[30]=base+FT_RECYCLE_LR;
+        if(mode=="--publication-pool-no-reset") {event(0x300a08);return;}
+        if(mode=="--publication-pool-reset-lr")s.x[30]+=4;
+        event(0x300b20);
+        s.sp-=0x20;s.x[0]=mode=="--publication-pool-reset-failed"?uint32_t(-4):0;event(0x300c54);
+        if(mode=="--publication-pool-no-begin")return;
+        s.sp+=0x20;s.x[0]=addr(executable);event(0x300a08);
+        s.sp-=0x30;s.x[0]=mode=="--publication-pool-begin-failed"?uint32_t(-4):0;event(0x300a38);
     }
     void publish_worker() {
         s.x[19]=addr(worker);s.x[21]=addr(context);event(0x14099c);s.x[0]=addr(worker);event(0x140dbc);
@@ -219,7 +245,7 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t x8) n
     }
     return true;
 }
-int run_chain(Chain &f,const std::string &mode) {
+int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     if(mode=="--worker") {
         // Each invalid Run must leave the waiting bootstrap scope untouched.
         // Restore one modeled native field at a time, then admit the real worker.
@@ -239,7 +265,7 @@ int run_chain(Chain &f,const std::string &mode) {
         put(f.app,0x256a0,uint64_t(0));rejected();put(f.app,0x256a0,addr(f.r));
         put(f.r,0xa78,uint64_t(0));rejected();put(f.r,0xa78,uint64_t(0x1234));
     }
-    f.run_enter();
+    if(!entered)f.run_enter();
     if(mode=="--worker") {
         std::thread foreign([&] {
             arena::Saved probe{};probe.x[0]=addr(f.r);probe.x[2]=addr(f.stock_wrapper);
@@ -317,6 +343,12 @@ int run_chain(Chain &f,const std::string &mode) {
     d=f.router.diagnostics();assert(d.uploads[0]==1 && d.uploads[1]==1 && d.encoded[0]==1 && d.encoded[1]==1 && d.pending);
     assert(f.native_acquires==1 && f.lookups==2);
     request.op=Operation::Release;++request.sequence;assert(client.exchange(request,reply));assert(reply.state==State::Draining);
+    if(mode=="--pool-owned-current") {
+        f.stock_pool_return("");
+        assert(f.router.diagnostics().pending && !f.router.diagnostics().queue_success);
+        ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
+        std::puts("stock pool exception cannot settle current owned debt PASS");return 0;
+    }
     // Real Command/Lifecycle classes, with explicitly modeled native queue,
     // post-stamp, wait, vector transfer/disposal and reset memory transitions.
     f.s={};f.s.sp=0x880000;f.s.x[0]=0xbeef;f.s.x[1]=addr(f.executable);f.s.x[30]=Chain::base+FT_BOOT_QUEUE_LR;f.event(0x3018b0);
@@ -358,6 +390,12 @@ int run_chain(Chain &f,const std::string &mode) {
     f.s.sp-=0x30;put(f.stack,0x98,uint64_t(Chain::base+0x300ae0));f.s.x[0]=0;f.event(0x300a38);
     f.s.sp=addr(f.stack)+0x100;f.s.x[20]=addr(next_command);f.s.x[0]=1;f.event(0x30180c);
     f.s.sp=0x8fff30;f.s.x[19]=addr(f.r);f.s.x[0]=addr(next_wrapper);f.event(0x2a23f4);put(f.r,0x1380,addr(next_wrapper));
+    if(mode=="--pool-owned-retained") {
+        f.stock_pool_return("");
+        assert(f.router.diagnostics().pending && f.router.diagnostics().queue_success==1);
+        ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
+        std::puts("stock pool exception cannot settle retained owned debt PASS");return 0;
+    }
     f.s.x[22]=addr(f.r);f.event(0x2987d8);put(f.r,0x15c0,addr(f.passes));f.event(0x298840);
     ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
     f.s.sp=0x840000;f.s.x[0]=addr(f.executable);f.s.x[30]=Chain::base+0x301000;f.event(0x300b20);
@@ -402,6 +440,9 @@ int main(int argc,char **argv) {
     const bool publication=mode.rfind("--publication-",0)==0;
     Chain f;active=&f;f.bootstrap_router(bootstrap || publication);
     if(publication) {
+        const bool pool=mode.rfind("--publication-pool-",0)==0 && mode!="--publication-pool-drop";
+        // First native stock return is BEFORE the actual bootstrap/worker handoff.
+        if(pool)f.stock_pool_return(mode);
         f.publish_worker();
         std::thread worker([&]{
             f.run_enter();
@@ -417,7 +458,16 @@ int main(int argc,char **argv) {
                 f.s.sp+=0x20;f.s.x[0]=addr(f.executable);f.event(0x300a08);
                 f.s.sp-=0x30;f.s.x[0]=0;f.event(0x300a38);
             }
+            if(pool) {
+                f.stock_pool_recycle(mode);
+                f.stock_pool_return("");
+                f.stock_pool_recycle(mode);
+            }
             f.bootstrap_turnover(mode,true);
+            if(mode=="--publication-pool-live") {
+                put(f.r,0x15a8,addr(f.passes)+f.passes.size());
+                assert(run_chain(f,"",true)==0);
+            }
         });worker.join();return 0;
     }
     if(mode=="--command-trace-gap") {

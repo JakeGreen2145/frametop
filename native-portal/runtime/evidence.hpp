@@ -118,7 +118,8 @@ class Evidence {
     render::Identity identity_{};
     std::array<Span,8> spans_{};
     struct Recording { uint64_t command=0,vk=0,generation=0;bool begun=false;
-        uint64_t reset_sp=0,reset_lr=0;unsigned renewal=0; };
+        uint64_t reset_sp=0,reset_lr=0;unsigned renewal=0;
+        uint64_t stock_pool=0;bool published=false; };
     std::array<Recording,64> recordings_{};
     binding::Generations generations_;
     std::optional<binding::Lifecycle> lifecycle_;

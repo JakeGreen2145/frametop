@@ -165,7 +165,7 @@ bool Evidence::event_impl(uint64_t pc,const arena::Saved &s) noexcept {
             if(!at(command+0x738,vk) || vk!=c.vk || !at(command+8,D) || D!=R+0x50) return fail(pc);
             // Issue only for the published owner, not the last-created pool member.
             c.generation=generations_.issue();if(!c.generation) return fail(pc);
-            recording_=c.generation;break;
+            c.published=true;recording_=c.generation;break;
         }
         return true;
     }

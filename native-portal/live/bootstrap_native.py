@@ -116,6 +116,14 @@ def bootstrap_native():
     put(stack+0x98,next_w);x(19,R);m.reg_write(A.UC_ARM64_REG_SP,stack)
     run(0x2a23e8,0x2a23f4);assert x(0)==next_w and get(stack+0x98)==0
     run(0x2a23f4,0x2a23f8);assert get(R+0x1380)==next_w
+    # Trial 11's exact stock caller. Execute the stack load, null check, native
+    # C+50 pool lookup, +d0 adjustment and BL, rather than copying a guessed LR.
+    put(stack+0x80,C);put(C+0x50,pool)
+    m.reg_write(A.UC_ARM64_REG_SP,stack)
+    m.ctl_remove_cache(0,0x600000)
+    run(0x297ca0,0x311648)
+    assert x(0)==pool+0xd0 and x(1)==C and x(30)==0x297cb4
+    stock_pool_lr=x(30)
     # Full no-sync command return/recycle/pop cycle. The same C and Vk handle
     # survive the pool return. Real pool dispatch calls real Reset -> Begin and
     # appends C to the ready deque. Only Vulkan, RTTI and debug annotation are
@@ -128,7 +136,7 @@ def bootstrap_native():
         put(got,cell);put(cell,target)
     def cycle_hook(uc,pc,size,user):
         if pc in (0x301808,0x30180c,0x300a08,0x300a38,0x300b20,0x300c54,0x311648,0x2a23f4):
-            cycle_seen.append((pc,x(0),x(19),x(30),m.reg_read(A.UC_ARM64_REG_SP)))
+            cycle_seen.append((pc,x(0),x(19),x(30),m.reg_read(A.UC_ARM64_REG_SP),x(20)))
         if pc==allocate:
             assert x(0)==0x1234 and x(2)==C+0x738
             put(x(2),0xc001);x(0,0)
@@ -151,8 +159,10 @@ def bootstrap_native():
     for raw_reset,raw_begin in [(0,0),(-4,0),(0,-4)]:
         cycle_seen.clear()
         put(pool+0xd0+0x40,pool+0x300)
-        x(0,pool+0xd0);x(1,C);x(30,0x900ff000);m.reg_write(A.UC_ARM64_REG_SP,stack)
-        run(0x311648,0x900ff000)
+        put(stack+0x80,C);m.reg_write(A.UC_ARM64_REG_SP,stack)
+        m.ctl_remove_cache(0,0x600000)
+        run(0x297ca0,0x297cb4)
+        assert cycle_seen[0][3]==stock_pool_lr
         assert get(pool+0x300)==C and get(C+0x738)==0xc001
         assert bytes(m.mem_read(C+0x28,1))==b'\x01'
         put(pool+0xd0,0x599c10);assert get(0x599c20)==0x2a9c88
@@ -166,6 +176,7 @@ def bootstrap_native():
         pcs=[r[0] for r in cycle_seen]
         assert pcs==[0x311648,0x300b20,0x300c54]+([0x300a08,0x300a38] if raw_reset==0 else [])
         assert get(C+0x738)==0xc001
+        assert all(r[2]==C and r[5]==pool for r in cycle_seen if r[0]!=0x311648)
         good=raw_reset==raw_begin==0
         assert get(pool+0xb0)==pool+0x400+(8 if good else 0)
         if good:
@@ -179,7 +190,7 @@ def bootstrap_native():
         recycle.append({'reset':raw_reset,'begin':raw_begin,'ready':good,'sites':[hex(r[0]) for r in cycle_seen]})
     m.hook_del(hook)
     return {'release_lr':release_lr,'pool_lr':0x3052f0,'queue_lr':queue_lr,'dispatch_lrs':[lr for _,lr in callers],
-            'recycle_lr':0x2a9cdc,'pool_cycle':recycle}
+            'stock_pool_lr':stock_pool_lr,'recycle_lr':0x2a9cdc,'pool_cycle':recycle}
 
 
 if __name__ == '__main__':
