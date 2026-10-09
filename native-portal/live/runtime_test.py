@@ -25,6 +25,10 @@ def main():
             '-DFT_BOOT_QUEUE_LR='+hex(bootstrap['queue_lr']),
             '-DFT_RECYCLE_LR='+hex(bootstrap['recycle_lr']),
             '-DFT_STOCK_POOL_LR='+hex(bootstrap['stock_pool_lr'])]
+    (build/'pump.private.hpp').write_text(
+        'static constexpr uint64_t pump_events[][6] = {'+
+        ','.join('{'+','.join(hex(v) for v in row)+'}' for row in bootstrap['pump'])+'};\n')
+    flags+=['-I'+str(build),'-DFT_OUTER_LR='+hex(bootstrap['outer_lr'])]
     results=[]
     for test in ['runtime_test','runtime_owner_test','command_trace_test','runtime_chain_test']:
         binary=build/(test+('-asan' if args.sanitize else ''))
@@ -36,7 +40,7 @@ def main():
                 (build/'verification.json').write_text(json.dumps(results,indent=2));return result.returncode
     pool_faults=['lr','pool','device','handle','delete','clear','no-reset','no-begin',
                  'reset-failed','begin-failed','reset-lr']
-    modes=['--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
+    modes=['--main-pump','--main-pump-owner','--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
            '--repeated-owned-reset-failed','--repeated-owned-begin-failed',
            '--repeated-owned-no-wait','--repeated-owned-no-disposal',
            '--publication-pool-live','--pool-owned-current','--pool-owned-retained']+['--publication-pool-'+s for s in pool_faults]+[
@@ -48,7 +52,7 @@ def main():
            '--bad-stock-owner','--bad-stock-offset','--bad-stock-unreadable',
            '--bad-stock-resource','--bad-stock-capacity','--bad-geometry-offset',
            '--bad-geometry-unreadable','--bad-geometry-cursor']
-    for mode,expected in [('--unsafe-cleanup',-signal.SIGABRT),('--join-error-cleanup',-signal.SIGABRT)]+[(m,0) for m in modes]:
+    for mode,expected in [('--unsafe-cleanup',-signal.SIGABRT),('--join-error-cleanup',-signal.SIGABRT),('--timeout-cleanup',-signal.SIGABRT)]+[(m,0) for m in modes]:
         binary=build/('runtime_chain_test'+('-asan' if args.sanitize else ''))
         result=subprocess.run([str(binary),mode],capture_output=True,text=True)
         print(mode,result.stdout+result.stderr,end='\n');assert result.returncode==expected,(mode,result.returncode,result.stderr)
@@ -59,9 +63,9 @@ def main():
         ('--diagnostics-start-unreadable',12,'0x29bd18','0x29bd18','0x17'),
         ('--diagnostics-start-failed',5,'0x305260','0x29bd18','0x17'),
         ('--diagnostics-stop-unrelated',0,'0x0','0x29bd18','0x0'),
-        ('--diagnostics-stop-waiting',0,'0x0','0x142620','0xf'),
-        ('--diagnostics-stop-same',0,'0x0','0x142620','0xf'),
-        ('--diagnostics-stop-unknown',0,'0x0','0x142620','0x0'),
+        ('--diagnostics-stop-waiting',0,'0x0','0x0','0xf'),
+        ('--diagnostics-stop-same',0,'0x0','0x1426d4','0xf'),
+        ('--diagnostics-stop-unknown',0,'0x0','0x0','0x0'),
         ('--diagnostics-run-lr',3,'0x0','0x0','0x1f')]:
         result=subprocess.run([str(binary),mode],capture_output=True,text=True,timeout=5)
         print(mode,result.stdout+result.stderr)
@@ -72,8 +76,8 @@ def main():
         expected_pc='0x14e5a8' if mode=='--diagnostics-run-lr' else '0x140dbc' if predicate else '0x0'
         assert fields['first_owner_pc']==expected_pc
         assert fields['first_evidence_pc']==failure and fields['first_stop_pc']==stop,(mode,fields)
-        if stop=='0x142620':
-            assert fields['stop_flags']=={'--diagnostics-stop-waiting':'0x31','--diagnostics-stop-same':'0x33','--diagnostics-stop-unknown':'0x10'}[mode]
+        if stop=='0x1426d4':
+            assert fields['stop_flags']=='0x35'
             assert fields['stop_lr']=='0x123456'
         assert fields['owner_events']==owners and fields['frames']=='0' and fields['seals']=='0'
         assert fields['uploads']=='0,0' and fields['handoff']=='0'
@@ -101,7 +105,7 @@ def main():
         assert fields['first_evidence_pc']==('0x2a23f4' if predicate else '0x0')
         assert fields['handoff']=='1' and fields['uploads']=='0,0' and fields['queue_success']=='0'
         results.append({'mode':mode,'code':result.returncode,'output':result.stdout+result.stderr})
-    for mode in ['--diagnostics-good','--diagnostics-bad']:
+    for mode in ['--diagnostics-good','--diagnostics-bad']+['--association-'+str(i) for i in range(1,8)]:
         result=subprocess.run([str(binary),mode],capture_output=True,text=True)
         print(mode,result.stdout+result.stderr)
         assert result.returncode==0,(mode,result.stderr)
@@ -118,6 +122,12 @@ def main():
             assert fields[key]=='0x0',(mode,key,fields)
         assert fields['first_owner_pred']=='0'
         good=mode.endswith('good')
+        failed=int(mode.rsplit('-',1)[1]) if mode.startswith('--association-') else 0 if good else 6
+        assert fields.get('assoc_failed')==str(failed),(mode,fields)
+        assert int(fields['assoc_checked'],16)==((1<<(failed+1))-2 if failed else 254)
+        assert int(fields['assoc_passed'],16)==((1<<failed)-2 if failed else 254)
+        assert fields['assoc_owner']==str(int(failed!=1))
+        assert fields['assoc_lr']==hex(bootstrap['outer_lr']) and int(fields['assoc_frame'])>0
         for key in ['associated','idle','can_acquire','adapter','capable']:
             assert fields[key]==str(int(good)),(mode,key,fields)
         assert fields['seal_block']==('none' if good else 'association')

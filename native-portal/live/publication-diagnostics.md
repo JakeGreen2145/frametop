@@ -6,7 +6,7 @@ Trial 09 journal lines 224 and 299 report successful Run handoff, seals and fram
 
 The CPU production-router fixture now publishes an already-begun pool member after authentic handoff to a separate Run thread, before any adapter or lease. This succeeds for both pinned callers `0x6caf0` and `0x9e6e0`. The latter is excluded from the whole-dispatch graph entry scope but still gets the separate current-transfer scope at `0x2a2320`. Therefore the different caller allowlists alone do not establish the trial's cause. A failed transfer would ordinarily invalidate at the earlier wrapper release `0x305260`, which also requires `transferred_` after Run.
 
-`bootstrap_native.py` executes the hash-pinned shutdown prologue: incoming `x0` becomes `x20` at `0x142664`; the later `0x1426fc` loads the worker from that same context's `+0x98` before wait `0x142704`. External bodies are not modeled as successful joins. It also retains the existing actual dispatch caller, pool-pop, release and publication instruction checks.
+`bootstrap_native.py` executes the hash-pinned main-pump prologue: incoming `x0` becomes `x20` at `0x142664`; the later `0x1426fc` loads the worker from that same context's `+0x98` before wait `0x142704`. External bodies are not modeled as successful joins. It also retains the existing actual dispatch caller, pool-pop, release and publication instruction checks.
 
 ## Reading the next trial
 
@@ -62,7 +62,7 @@ Other fields:
 
 Bits 6 and 7 are meaningful only after predicate 13 passed. Native pointers and raw Vulkan handles are not logged.
 
-The first stop PC, `stop_flags`, and relative `stop_lr` share one atomic record. At `0x142620`, bit 0 says an authenticated context was already known and bit 1 says incoming `x0` equals it. Thus low bits `3` identify the same context, `1` a different context, and `0` an as-yet unknown context. Other bits are `2=x20 match`, `3=x21 match`, `4=bootstrap thread`, `5=handoff waiting`, `6=runtime_owned`. No extra native memory reads are needed. The existing unconditional stop remains unchanged pending actual argument evidence.
+The first stop PC, `stop_flags`, and relative `stop_lr` share one atomic record. Flags remain `0=context known`, `1=x0 match`, `2=x20 match`, `3=x21 match`, `4=bootstrap thread`, `5=handoff waiting`, `6=runtime_owned`. No extra native memory reads are needed. The subsequent pinned main-loop witness proved that `0x142620` is normal entry, not shutdown. The manifest and both router paths now use the authenticated shutdown store at `0x1426d4`, with context in x20 and w1 equal to 1. Historical entry-stop captures below describe the old implementation, not the repaired contract.
 
 ## Verification
 
@@ -70,4 +70,4 @@ Red test against the original implementation failed because `pub_pred` was absen
 
 The separate Evidence ASan/UBSan runner passed both layer and no-layer fixtures. Both runners enforce `MemoryMax=650M`, `MemorySwapMax=0`. Router peak was 443912192 bytes; Evidence peak was 246190080 bytes. Reports are in ignored `live/build/runtime/verification.json` and `integration/build/runtime-evidence/verification-asan.json`.
 
-These are CPU boundary and pinned-instruction results, not live GPU upload or stereo submission proof. The next live journal must supply `pub_pred` and `stop_flags` before a repair is justified.
+These are CPU boundary and pinned-instruction results, not live GPU upload or stereo submission proof. The next live journal must supply the current seal association masks and first failed ID to diagnose the independent `associated=0` blocker. The main-entry stop repair does not claim live camera association or stereo success.

@@ -405,15 +405,15 @@
       }
     },
     {
-      "relative_pc": 1320480,
-      "pc": "0x142620",
-      "guard": "fd7bb9a9211800f021602c91fd030091",
-      "guard_sha256": "b443f7252822f41cb8137dc882f090b155a882d5b597f8592275a08797470746",
-      "word": "0xa9b97bfd",
+      "relative_pc": 1320660,
+      "pc": "0x1426d4",
+      "guard": "81aa0039200100b401e4013901718252",
+      "guard_sha256": "0a8b8ea3cd91db5060a70a070802ba6c3682a9e3791e2d6a74a61cfc52d00426",
+      "word": "0x3900aa81",
       "kind": 0,
       "emitter": "observer",
       "site_id": null,
-      "continuation": "0x142624",
+      "continuation": "0x1426d8",
       "selectors": {
         "0": "relocated-original"
       }

@@ -50,13 +50,39 @@ def bootstrap_native():
             run(entry,0x900ff000)
             assert x(19)==0xabc and m.reg_read(A.UC_ARM64_REG_SP)==stack
             if slot: assert get(slot)==0
-    # Shutdown entry keeps its incoming context x0 in x20, then obtains the
-    # exact worker from context+98 at the wait. Stop at external calls; their
-    # implementation/results are not modeled as successful joins.
-    put(context+0x98,region+0x51000)
-    x(0,context);m.reg_write(A.UC_ARM64_REG_SP,stack)
-    run(0x142620,0x185128);assert x(20)==context
-    run(0x1426fc,0x142704);assert x(0)==region+0x51000 and x(20)==context
+    # Integrate the context-stop-review witness: execute normal entry/backedge
+    # BEFORE quit. Opaque watchdog/log/sleep calls are CPU returns, never joins.
+    pump=[];worker=region+0x51000
+    def pump_hook(uc,pc,size,user):
+        if pc in (0x142620,0x142694,0x1426d4):
+            pump.append([pc,int(x(0)==context),int(x(0)==worker),x(1),int(x(20)==context),x(30)])
+        if pc in (0x185128,0x1844a0,0x181190,0x184fa0,0x174510,0x17aa50):
+            x(0,0);m.reg_write(A.UC_ARM64_REG_PC,x(30))
+    hook=m.hook_add(UC_HOOK_CODE,pump_hook)
+    put(context+0x98,worker);x(20,context);m.reg_write(A.UC_ARM64_REG_SP,stack)
+    run(0x14286c,0x142300)
+    assert pump[0][0]==0x142620 and pump[0][1] and pump[0][5]==0x142874
+    assert bytes(m.mem_read(context+0x2a,1))==b'\x00'
+    x(0,1);run(0x1426ac,0x142300)
+    assert pump[-1][0]==0x142694 and bytes(m.mem_read(context+0x2a,1))==b'\x00'
+    saved=m.context_save();m.mem_write(context+0x2b,b'\x01');x(0,context);x(30,region+0xff000)
+    run(0x142300,region+0xff000);assert x(0)==0
+    m.context_restore(saved);x(0,0);run(0x1426ac,0x142704)
+    assert pump[-1][0]==0x1426d4 and pump[-1][3]==1 and pump[-1][4]
+    assert bytes(m.mem_read(context+0x2a,1))==b'\x01'
+    assert x(0)==worker and x(1)==5000 and x(20)==context
+    # Never execute wait or invent join success.
+    m.mem_write(context+0x2a,b'\x00\x00')
+    # Derive actual outer LR and worker/context/application chain as well.
+    put(worker+0x48,context);put(context+0x1a8,app);x(19,worker)
+    run(0x14a5c8,0x147a48);outer_lr=x(30);assert x(0)==worker
+    m.reg_write(A.UC_ARM64_REG_SP,stack);run(0x147a48,0x6f9f8)
+    assert x(19)==worker and x(0)==app
+    put(app+0x25320,region+0x70000);x(0,app)
+    run(0x6d6e0,0x15f9e0);assert x(0)==region+0x70000
+    x(20,app);m.reg_write(A.UC_ARM64_REG_SP,stack)
+    run(0x9ee90,0x9ee98);assert x(0)+0x68c==app+0x2568c
+    m.hook_del(hook)
     # Actual pre-Run branch, including the app+60 conditional tail. The large
     # configuration routine and provider are stopped at entry, not invented GPU
     # successes. Neither branch proves which caller produced the live release.
@@ -190,7 +216,8 @@ def bootstrap_native():
         recycle.append({'reset':raw_reset,'begin':raw_begin,'ready':good,'sites':[hex(r[0]) for r in cycle_seen]})
     m.hook_del(hook)
     return {'release_lr':release_lr,'pool_lr':0x3052f0,'queue_lr':queue_lr,'dispatch_lrs':[lr for _,lr in callers],
-            'stock_pool_lr':stock_pool_lr,'recycle_lr':0x2a9cdc,'pool_cycle':recycle}
+            'stock_pool_lr':stock_pool_lr,'recycle_lr':0x2a9cdc,'pool_cycle':recycle,
+            'pump':pump,'outer_lr':outer_lr}
 
 
 if __name__ == '__main__':

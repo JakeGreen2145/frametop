@@ -36,7 +36,13 @@ The baseline `3c52ee7` production router passes the entire two-frame chain on an
 
 The extended CPU chain keeps a charged stock append across the real thread handoff, exercises stock classifiers before any lease, rejects malformed Run identities and foreign-thread callbacks, then completes stereo uploads, encoding, queue/wait, pending Release, disposal/reset and a second recording. Separate negatives retain Unsupported on wrong resource ownership, changed offsets, unreadable fields and invalid bounds; a reset cannot heal refusal. Exact baseline reproduction and normal/sanitized verification logs are retained locally under `native-portal/live/build/runtime/`. The normal and ASan/UBSan router suites, sanitized Evidence suite with pinned instruction checks, and arena instruction/preservation suite pass under 650 MiB with zero swap. This is CPU evidence only; the live failure's exact guard branch and post-fix headset output still require parent-side verification.
 
-## Shutdown side effect — explicit parent review required
+## Main pump and shutdown
+
+`0x142620` is normal main-pump entry, called at `0x142870` with return address `0x142874`. Its normal backedge at `0x142694` does not stop rendering. The complete loader manifest now observes `0x1426d4`, the actual shutdown-tail `strb w1,[x20,#0x2a]`, instead of entry. The observer preserves that original store and continuation `0x1426d8`. It revokes admission only on the authenticated bootstrap thread, with nonzero known context equal to x20 and pinned w1 equal to 1. The owner route uses the same predicate. Foreign threads, unrelated contexts and unknown contexts cannot latch this stop.
+
+`bootstrap_native.py` integrates the pinned context-stop witness. It executes the real caller, normal entry/backedge, native quit predicate, shutdown store and exact-worker wait argument assembly. Its observed coordinates feed the compiled production-router fixture rather than copying expected guard literals. External watchdog/log/sleep functions return only in the CPU model; the witness does not execute a wait or claim a successful join.
+
+### Shutdown side effect requiring parent review
 
 This bounded-trial composition intentionally **aborts the compositor before `0x1381b8` cleanup** if it has created owned native state and cannot prove the shutdown worker's successful join. It pairs the actual `0x142704` worker wait, exact pthread handle at `0x183f78`, raw join result at `0x183f7c`, and native wait return at `0x142708`. Zero TID/handle alone is insufficient: the native path can clear them after a join error.
 
@@ -79,6 +85,18 @@ The first runner links every production component into one DSO and tests real pr
 After the production control server starts, a separate collector samples a private atomic-word mailbox every 250 ms. Stderr lines begin `ft-native-live`. No extra opt-in is required inside the already opted-in bounded loader trial. The collector attempts at most 64 lines per Runtime, only when sampled predicates, refusal, phase coverage or owner-event coverage change. Increasing event/frame/upload counters alone does not produce output. `remaining=0` marks the last permitted attempt. Output is nonblocking and best-effort: a full or failed journal/pipe can lose a line; logging never grants capability or retries native work. No formatting, file I/O or logging occurs on native callbacks.
 
 Each line includes the latest owner callback's relative `pc`, sticky `first_refusal` and its `first_pc`, latest refusal, phase coverage, native owner-handoff coverage, and the most recently sampled seal ingredients. `seal=1 seal_pc=0x1480b8` distinguishes a genuine seal sample from startup defaults. The ingredients are `graph`, `initialized`, `origin_ok`, `associated`, `idle`, `demand`, `can_acquire`, `owned_debt`, `pipeline`, `adapter`, `tracking`, and `policy`. `capable`, `pending`, `stopped`, per-eye uploads/encoding, queue-success count and submitted frame accompany them. No renderer/device addresses, camera pixels, tokens or credentials are logged.
+
+Association fields belong to that same seal and `assoc_frame`, not the latest arbitrary callback. `assoc_owner` reports `outer_owner==authenticated worker`; `assoc_lr` is the actual relative outer-entry LR. `assoc_checked` and `assoc_passed` use bit positions 1 through 7, and `assoc_failed` is the first failed ID, or zero on success:
+
+1. Read `outer_owner+0x48`.
+2. Loaded context equals authenticated context.
+3. Read authenticated `context+0x1a8`.
+4. Application is nonzero.
+5. Read `application+0x25320`.
+6. Camera is nonzero.
+7. Read `application+0x2568c`.
+
+Success is `assoc_checked=0xfe assoc_passed=0xfe assoc_failed=0`. A failure records only the checks reached by the existing short-circuit chain. No extra downstream reads, changed offsets or admission rules are introduced. Predicate, owner-equality and LR changes trigger the existing bounded collector; frame progress alone does not. Tests inject each failure independently, including protected context/cache pages, and verify production collector output. Tracking and policy remain separate blockers.
 
 `seal_block` labels the first absent ingredient in diagnostic order when capability is false. It is not a new gate. Tracking and policy can prevent frame admission independently of capability, so inspect their flags too. The first startup refusal can remain `graph-ownership` at `0x7fdbc` even after a successful handoff; use the current seal facts, not that historical refusal alone. Fast intermediate transitions can be coalesced by polling. `phases` retains observed owner-phase coverage even if a callback was between polls.
 

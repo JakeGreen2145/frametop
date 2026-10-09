@@ -78,6 +78,10 @@ class LoaderTests(unittest.TestCase):
         for s in runtime['sites']:
             self.assertEqual(rows[s['relative_pc']]['emitter'],s['emitter'])
         self.assertEqual(rows[0x161ed8]['emitter'],'replace-call')
+        self.assertNotIn(0x142620,rows) # main pump entry is not shutdown
+        self.assertEqual(rows[0x1426d4]['emitter'],'observer')
+        self.assertEqual(rows[0x1426d4]['kind'],0)
+        self.assertEqual(rows[0x1426d4]['continuation'],'0x1426d8')
         bad=B/'bad-runtime.json'
         for mutation in ['missing','duplicate','emitter','continuation','abi','guard']:
             changed=json.loads(manifest.read_text())

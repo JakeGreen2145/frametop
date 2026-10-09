@@ -11,6 +11,8 @@ struct LiveDiagnostics {
     uint64_t first_owner_rejection=0,first_evidence_pc=0,first_stop_pc=0;
     runtime::PublicationDiagnostic publication{};
     uint64_t stop_flags=0,stop_lr=0;
+    uint64_t assoc_checked=0,assoc_passed=0,assoc_failed=0,assoc_lr=0,assoc_frame=0;
+    bool assoc_owner=false;
     uint64_t uploads[2]{},encoded[2]{},queue_success=0,submitted_frame=0;
     Refusal first_refusal=Refusal::None,refusal=Refusal::NativeInitialization;
     bool seal=false,graph=false,initialized=false,origin_ok=false,associated=false,idle=false;
@@ -46,6 +48,8 @@ public:
         if(lines_ && owners==owners_ && d.first_owner_rejection==a.first_owner_rejection &&
            d.first_evidence_pc==a.first_evidence_pc && d.first_stop_pc==a.first_stop_pc &&
            d.publication.predicate==a.publication.predicate && d.stop_flags==a.stop_flags && d.stop_lr==a.stop_lr &&
+           d.assoc_checked==a.assoc_checked && d.assoc_passed==a.assoc_passed && d.assoc_failed==a.assoc_failed &&
+           d.assoc_owner==a.assoc_owner && d.assoc_lr==a.assoc_lr &&
            d.phases==a.phases && d.first_refusal==a.first_refusal &&
            d.refusal==a.refusal && d.seal==a.seal && d.graph==a.graph && d.initialized==a.initialized &&
            d.origin_ok==a.origin_ok && d.associated==a.associated && d.idle==a.idle && d.demand==a.demand &&
@@ -60,6 +64,7 @@ public:
             "pub_recording=%llu pub_generation=%llu pub_renewal=%llu pub_entries=%llu pub_attempt=%llu "
             "first_refusal=%s first_pc=0x%llx refusal=%s seal=%u seal_pc=0x%llx seal_block=%s "
             "graph=%u initialized=%u origin_ok=%u associated=%u idle=%u demand=%u can_acquire=%u owned_debt=%u "
+            "assoc_checked=0x%llx assoc_passed=0x%llx assoc_failed=%llu assoc_owner=%u assoc_lr=0x%llx assoc_frame=%llu "
             "pipeline=%u adapter=%u tracking=%u policy=%u capable=%u pending=%u stopped=%u "
             "events=%llu frames=%llu seals=%llu uploads=%llu,%llu encoded=%llu,%llu queue_success=%llu submitted_frame=%llu remaining=%u\n",
             lines_+1,(unsigned long long)d.pc,(unsigned long long)d.phases,(unsigned long long)owners,unsigned(bool(owners&(1ull<<5))),
@@ -74,7 +79,10 @@ public:
             (unsigned long long)d.publication.entries,(unsigned long long)d.publication.attempt,
             refusal_name(d.first_refusal),(unsigned long long)d.first_pc,refusal_name(d.refusal),d.seal,
             (unsigned long long)(d.seal?0x1480b8:0),seal_block(d),d.graph,d.initialized,d.origin_ok,d.associated,d.idle,
-            d.demand,d.can_acquire,d.owned_debt,d.pipeline,d.adapter,d.tracking,d.policy,d.capable,d.pending,d.stopped,
+            d.demand,d.can_acquire,d.owned_debt,
+            (unsigned long long)d.assoc_checked,(unsigned long long)d.assoc_passed,(unsigned long long)d.assoc_failed,
+            d.assoc_owner,(unsigned long long)d.assoc_lr,(unsigned long long)d.assoc_frame,
+            d.pipeline,d.adapter,d.tracking,d.policy,d.capable,d.pending,d.stopped,
             (unsigned long long)d.events,(unsigned long long)d.frames,(unsigned long long)d.seals,
             (unsigned long long)d.uploads[0],(unsigned long long)d.uploads[1],(unsigned long long)d.encoded[0],
             (unsigned long long)d.encoded[1],(unsigned long long)d.queue_success,(unsigned long long)d.submitted_frame,limit-lines_-1);

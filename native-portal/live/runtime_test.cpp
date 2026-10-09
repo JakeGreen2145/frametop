@@ -33,6 +33,16 @@ int main() {
     assert(facts.format(facts_only,0,line,sizeof line));
     assert(std::strstr(line,"first_evidence_pc=0x305260 first_stop_pc=0x29bd18"));
     assert(!facts.format(facts_only,0,line,sizeof line));
+    DiagnosticLog association;LiveDiagnostics sample{};
+    assert(association.format(sample,0,line,sizeof line));
+    for(auto field:{&LiveDiagnostics::assoc_checked,&LiveDiagnostics::assoc_passed,
+                    &LiveDiagnostics::assoc_failed,&LiveDiagnostics::assoc_lr}) {
+        sample.*field=1;assert(association.format(sample,0,line,sizeof line));
+        assert(!association.format(sample,0,line,sizeof line));
+    }
+    sample.assoc_owner=true;assert(association.format(sample,0,line,sizeof line));
+    sample.assoc_frame=100;assert(!association.format(sample,0,line,sizeof line));
+    assert(std::strstr(line,"assoc_checked=0x1 assoc_passed=0x1 assoc_failed=1 assoc_owner=1 assoc_lr=0x1"));
     static_assert(sizeof(Diagnostics)==96); // exported mailbox ABI stays unchanged
     static_assert(sizeof(arena::Saved)==800);
     Runtime runtime;

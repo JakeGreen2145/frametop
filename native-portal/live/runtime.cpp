@@ -87,7 +87,7 @@ struct Runtime::Impl {
     binding::Scope backend_scope{},queue_scope{},stamp_scope{},resource_scope{},wait_scope{};
     binding::Signal queue_signal{},wait_signal{};
     bool backend_admitted=false,backend_open=false,queue_open=false,stamp_open=false,resource_open=false,wait_open=false;
-    uint64_t sequence=0,wrapper=0,marker=0,invocation=0,outer_sp=0,outer_owner=0;
+    uint64_t sequence=0,wrapper=0,marker=0,invocation=0,outer_sp=0,outer_owner=0,outer_lr=0;
     uint64_t origin_epoch=0,origin_token=0,frame_number=0;
     ft::portal::Mat4 origin{};Frame frame{};EyeInput eye{};
     PolicyInput policy{};bool tracking=false,outer=false,owned=false,pinned=false;
@@ -104,7 +104,7 @@ struct Runtime::Impl {
     }
     void stop_at(uint64_t pc,const arena::Saved &s) noexcept {
         // One atomic record even when bootstrap and Run race. No native reads.
-        // 142620's incoming x0 is the context, proved by pinned instructions.
+        // At the shutdown store 1426d4, x20 is the authenticated context.
         const uint64_t flags=uint64_t(bool(context)) | uint64_t(context && s.x[0]==context)<<1 |
             uint64_t(context && s.x[20]==context)<<2 | uint64_t(context && s.x[21]==context)<<3 |
             uint64_t(tid()==bootstrap_tid)<<4 | uint64_t(handoff_wait.load())<<5 |
@@ -394,8 +394,10 @@ struct Runtime::Impl {
         if(!pinned || getpid()!=pid)return;
         // Shutdown guard is owned by the original initializer thread. It pairs
         // the real timed wait and actual pthread_join result before cleanup.
+        const bool shutdown_store=pc==0x1426d4 && tid()==bootstrap_tid && context &&
+            s.x[20]==context && uint32_t(s.x[1])==1;
         if(tid()==bootstrap_tid) {
-            if(pc==0x142620) {stop_at(pc,s);backend.invalidate(Reason::Off);}
+            if(shutdown_store) {stop_at(pc,s);backend.invalidate(Reason::Off);}
             if(pc==0x142704 && worker && s.x[0]==worker && s.x[20]==context) {
                 stop_at(pc,s);backend.invalidate(Reason::Off);wait_sp=s.sp;shutdown_wait=true;join_attempt=join_ok=false;
                 get(worker+8,native_handle);
@@ -466,7 +468,7 @@ struct Runtime::Impl {
         if(arena_site<arena::SiteCount) {
             evidence.arena_event(bridge,arena_site,s);
         }
-        if(pc==0x142620 || pc==0x29bd18 || pc==0x29c238) {
+        if(shutdown_store || pc==0x29bd18 || pc==0x29c238) {
             stop_at(pc,s);backend.invalidate(Reason::Off);if(adapter)adapter->off();refuse(Refusal::Stopped);
         }
         if(pc==0x112e50 && uint8_t(s.x[1])) {
@@ -512,6 +514,7 @@ struct Runtime::Impl {
         if(pc==0x147a48) {
             if(outer || frame_number==UINT64_MAX) {refuse(Refusal::Policy);return;}
             outer=true;outer_sp=s.sp;outer_owner=s.x[0];owned=false;tracking=false;policy_seen=0;policy_conflict=false;policy_ready=false;
+            outer_lr=s.x[30]>=base && s.x[30]-base<0x600000?s.x[30]-base:0;
             ++frame_number;++diag.frames;
         }
         if(outer)policy_tap(pc,s);
@@ -549,9 +552,20 @@ struct Runtime::Impl {
             if(!origin_ok) {backend.invalidate(Reason::Origin);refuse(Refusal::Origin);}
             if(!tracking)refuse(Refusal::Tracking);
             uint64_t native_context=0,application=0;uint8_t cache=1;
-            bool associated=get(outer_owner+0x48,native_context) && native_context==context &&
-                get(context+0x1a8,application) && application && get(application+0x25320,camera) && camera &&
-                get(application+0x2568c,cache);
+            // Record only the existing short-circuit reads. Failed checks do
+            // not inspect any downstream pointer or change camera admission.
+            live.assoc_checked=live.assoc_passed=live.assoc_failed=0;
+            live.assoc_owner=outer_owner==worker;live.assoc_lr=outer_lr;live.assoc_frame=frame_number;
+            auto association_check=[&](unsigned id,bool ok) {
+                live.assoc_checked|=uint64_t(1)<<id;
+                if(ok)live.assoc_passed|=uint64_t(1)<<id;
+                else if(!live.assoc_failed)live.assoc_failed=id;
+                return ok;
+            };
+            const bool associated=association_check(1,get(outer_owner+0x48,native_context)) &&
+                association_check(2,native_context==context) && association_check(3,get(context+0x1a8,application)) &&
+                association_check(4,application!=0) && association_check(5,get(application+0x25320,camera)) &&
+                association_check(6,camera!=0) && association_check(7,get(application+0x2568c,cache));
             if(associated)external_camera=camera;
             std::array<unsigned char,40> camera_state{};
             bool idle=associated && cache==0 && runtime::read_self(camera+0x340,camera_state.data(),camera_state.size());

@@ -9,10 +9,12 @@
 #undef main
 #pragma GCC diagnostic pop
 #include <filesystem>
+#include "pump.private.hpp"
 using namespace native_portal::live;
 struct Chain:Fixture {
     Runtime router;
-    std::array<std::byte,0x200> context{},worker{},scheduler{};
+    alignas(4096) std::array<std::byte,4096> context{};
+    std::array<std::byte,0x200> worker{},scheduler{};
     std::array<std::byte,0x25700> app{};
     std::array<std::byte,0x2000> outer_stack{};
     std::array<std::byte,0x1000> camera{},camera_stack{};
@@ -209,8 +211,13 @@ struct Chain:Fixture {
         s.x[0]=addr(worker);
         put(worker,0x10,uint32_t(syscall(SYS_gettid)));put(worker,0x14,uint32_t(0x80000000));s.x[30]=base+FT_NATIVE_RUN_RETURN;event(0x14e5a8);
     }
-    void frame_start() {
-        s={};s.sp=addr(outer_stack);s.x[0]=addr(worker);event(0x147a48);
+    void pump_event(unsigned i) {
+        const auto &p=pump_events[i];s={};s.sp=0x990000;
+        s.x[0]=p[1]?addr(context):p[2]?addr(worker):0;
+        s.x[1]=p[3];s.x[20]=p[4]?addr(context):0;s.x[30]=base+p[5];event(p[0]);
+    }
+    void frame_start(uint64_t owner=0) {
+        s={};s.sp=addr(outer_stack);s.x[0]=owner?owner:addr(worker);s.x[30]=base+FT_OUTER_LR;event(0x147a48);
         s.sp=addr(outer_stack)+0x100;s.x[19]=addr(outer_stack)+0x610;
         s.x[3]=0;event(0x112ab4);s.x[1]=1;s.x[2]=0;event(0x112aec);
         event(0x112afc);s.x[1]=0;event(0x112c10);s.x[0]=0;event(0x112ac4);
@@ -305,6 +312,27 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         // proves scope handoff separately from the ordinary descriptor borrow.
         f.stock_classifier();f.geometry_classifier();
     }
+    if(mode.rfind("--association-",0)==0) {
+        const auto fault=unsigned(std::stoul(mode.substr(14)));
+        void *memory=MAP_FAILED;
+        if(fault==2)put(f.worker,0x48,addr(f.app));
+        if(fault==3)assert(!mprotect(f.context.data(),4096,PROT_NONE));
+        if(fault==4)put(f.context,0x1a8,uint64_t(0));
+        if(fault==5)put(f.context,0x1a8,uint64_t(1));
+        if(fault==6)put(f.app,0x25320,uint64_t(0));
+        if(fault==7) {
+            memory=mmap(nullptr,0x28000,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+            assert(memory!=MAP_FAILED);auto *app=static_cast<std::byte*>(memory)+0xa00;
+            std::memcpy(app,f.app.data(),f.app.size());put(f.context,0x1a8,uint64_t(app));
+            assert(!mprotect(static_cast<std::byte*>(memory)+0x26000,4096,PROT_NONE));
+        }
+        f.frame_start(fault==1?1:0);f.frame_end();
+        std::this_thread::sleep_for(std::chrono::milliseconds(600));
+        assert(!f.router.diagnostics().capable && !f.router.diagnostics().stopped);
+        if(fault==3)assert(!mprotect(f.context.data(),4096,PROT_READ|PROT_WRITE));
+        if(memory!=MAP_FAILED)assert(!munmap(memory,0x28000));
+        return 0;
+    }
     if(mode=="--diagnostics-bad")put(f.app,0x25320,uint64_t(0));
     f.frame_start();f.frame_end();
     if(mode=="--diagnostics-good" || mode=="--diagnostics-bad") {
@@ -316,12 +344,16 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         return 0;
     }
     if(mode=="--unsafe-cleanup") {std::fprintf(stderr,"cleanup-entry: active owned borrow, no join\n");f.event(0x1381b8);assert(false);}
-    if(mode=="--joined-cleanup" || mode=="--join-error-cleanup") {
+    if(mode=="--joined-cleanup" || mode=="--join-error-cleanup" || mode=="--timeout-cleanup") {
+        f.pump_event(2);f.frame_start();f.frame_end();assert(f.router.diagnostics().stopped);
         put(f.worker,8,uint64_t(0x123456));f.s={};f.s.sp=0x990000;f.s.x[0]=addr(f.worker);f.s.x[20]=addr(f.context);f.event(0x142704);
+        if(mode!="--timeout-cleanup") {
         f.s.sp-=0x20;f.s.x[0]=0x123456;f.s.x[20]=addr(f.worker);f.event(0x183f78);
         f.s.x[0]=mode=="--joined-cleanup"?0:22;f.event(0x183f7c);
         put(f.worker,8,uint64_t(0));put(f.worker,0x10,uint32_t(0));
-        f.s.sp+=0x20;f.s.x[0]=1;f.event(0x142708);std::fprintf(stderr,"cleanup-entry: observed join result\n");f.event(0x1381b8);
+        f.s.sp+=0x20;
+        }
+        f.s.x[0]=mode=="--timeout-cleanup"?0:1;f.event(0x142708);std::fprintf(stderr,"cleanup-entry: observed join result\n");f.event(0x1381b8);
         assert(mode=="--joined-cleanup");std::puts("runtime cleanup: exact observed native join allows cleanup PASS; pthread boundary modeled");return 0;
     }
     if(mode=="--external") {
@@ -523,6 +555,36 @@ int main(int argc,char **argv) {
     const bool publication=mode.rfind("--publication-",0)==0;
     const bool repeated=mode.rfind("--repeated-",0)==0;
     Chain f;active=&f;f.bootstrap_router(bootstrap || publication || repeated);
+    if(mode=="--main-pump" || mode=="--main-pump-owner") {
+        f.pump_event(0); // normal entry on bootstrap-owned route before publication
+        assert(!f.router.diagnostics().stopped);
+        f.publish_worker();f.pump_event(0);f.pump_event(1); // handoff-wait route
+        if(mode=="--main-pump-owner") {
+            f.run_enter();f.pump_event(0);f.pump_event(1);f.frame_start();f.frame_end();
+            assert(!f.router.diagnostics().stopped && f.router.diagnostics().capable);
+            f.pump_event(2);f.frame_start();f.frame_end();
+            assert(f.router.diagnostics().stopped && !f.router.diagnostics().capable);return 0;
+        }
+        std::atomic<unsigned> stage{0};
+        std::thread worker([&] {
+            f.run_enter();f.frame_start();f.frame_end();
+            assert(!f.router.diagnostics().stopped && f.router.diagnostics().capable);
+            // A foreign worker cannot authenticate the bootstrap shutdown store.
+            f.pump_event(2);f.frame_start();f.frame_end();assert(!f.router.diagnostics().stopped);
+            stage=1;while(stage.load()!=2)std::this_thread::yield();
+            f.frame_start();f.frame_end();assert(!f.router.diagnostics().stopped && f.router.diagnostics().capable);
+            stage=3;while(stage.load()!=4)std::this_thread::yield();
+            f.frame_start();f.frame_end();assert(f.router.diagnostics().stopped && !f.router.diagnostics().capable);
+        });
+        while(stage.load()!=1)std::this_thread::yield();
+        f.pump_event(0);f.pump_event(1);
+        f.s={};f.s.x[20]=addr(f.app);f.s.x[1]=1;f.event(pump_events[2][0]); // unrelated context
+        f.s.x[20]=addr(f.context);f.s.x[1]=0;f.event(pump_events[2][0]); // not pinned store value
+        stage=2;while(stage.load()!=3)std::this_thread::yield();
+        f.pump_event(2); // actual shutdown store, still BEFORE any wait callback
+        stage=4;worker.join();
+        std::puts("pinned normal entry/backedge and foreign/context/value rejection; real shutdown revokes before wait PASS");return 0;
+    }
     if(repeated) {
         f.stock_pool_return("");f.publish_worker();
         std::thread worker([&] {
@@ -596,9 +658,9 @@ int main(int argc,char **argv) {
                 f.event(0x14e5a8);
             });worker.join();
         } else if(mode=="--diagnostics-stop-waiting" || mode=="--diagnostics-stop-same" || mode=="--diagnostics-stop-unknown") {
-            f.s={};f.s.x[0]=mode=="--diagnostics-stop-same"?addr(f.context):addr(f.app);
-            f.s.x[30]=Chain::base+0x123456;f.event(0x142620);
-            f.s.x[0]=addr(f.context);f.s.x[30]=0;f.event(0x142620); // first record stays paired
+            f.s={};f.s.x[20]=mode=="--diagnostics-stop-waiting"?addr(f.app):addr(f.context);
+            f.s.x[1]=1;f.s.x[30]=Chain::base+0x123456;f.event(0x1426d4);
+            f.s.x[30]=0;f.event(0x1426d4); // first record stays paired
         } else if(mode=="--diagnostics-stop-unrelated") {
             // Existing router stop is unconditional, Evidence revocation is not.
             f.s={};f.s.x[0]=addr(f.worker);f.event(0x29bd18);
