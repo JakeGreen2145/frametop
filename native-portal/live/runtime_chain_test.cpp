@@ -148,16 +148,43 @@ struct Chain:Fixture {
             s.x[0]=addr(executable);event(mode=="--publication-pool-delete"?0x4b3d0:0x3003d0);
         }
     }
-    void stock_pool_recycle(const std::string &mode) {
-        s={};s.x[0]=s.x[19]=addr(executable);s.x[20]=addr(bootstrap_pool);
+    void stock_pool_recycle(const std::string &mode,uint64_t C=0) {
+        s={};s.x[0]=s.x[19]=C?C:addr(executable);s.x[20]=addr(bootstrap_pool);
         s.sp=addr(stack)+0x100;s.x[30]=base+FT_RECYCLE_LR;
         if(mode=="--publication-pool-no-reset") {event(0x300a08);return;}
         if(mode=="--publication-pool-reset-lr")s.x[30]+=4;
         event(0x300b20);
         s.sp-=0x20;s.x[0]=mode=="--publication-pool-reset-failed"?uint32_t(-4):0;event(0x300c54);
         if(mode=="--publication-pool-no-begin")return;
-        s.sp+=0x20;s.x[0]=addr(executable);event(0x300a08);
+        s.sp+=0x20;s.x[0]=s.x[19];event(0x300a08);
         s.sp-=0x30;s.x[0]=mode=="--publication-pool-begin-failed"?uint32_t(-4):0;event(0x300a38);
+    }
+    void stock_turnover(uint64_t C,uint64_t W,uint64_t next) {
+        // Empty stock dispatch, current transfer, wrapper release/pool return,
+        // and actual replacement publication coordinates. No owned settlement.
+        put(r,0x15a8,addr(passes));
+        s={};s.x[0]=addr(r);s.sp=0x900000;s.x[30]=base+FT_BOOT_DISPATCH_LR;event(0x2a1e18);
+        s.sp-=0xd0;s.x[19]=addr(r);event(0x2a2230);event(0x2a2320);
+        put(r,0x1380,uint64_t(0));s.x[0]=W;s.x[30]=base+FT_BOOT_RELEASE_LR;event(0x305260);
+        s.sp-=0x30;s.x[0]=addr(bootstrap_pool)+0xd0;s.x[1]=C;s.x[19]=W;s.x[30]=base+FT_BOOT_POOL_LR;event(0x311648);
+        s.sp+=0x30;s.x[19]=addr(r);s.x[0]=next;event(0x2a23f4);put(r,0x1380,next);
+    }
+    void repeated_stock(const std::string &fault="") {
+        // Start with executable published and bootstrap_command returned. Repeat
+        // the trial-12 published -> reset/Begin -> stock return -> re-publication
+        // schedule, not merely the initial unpublished pool cycle.
+        stock_pool_recycle("",addr(bootstrap_command));
+        for(unsigned cycle=0;cycle<12;++cycle) {
+            stock_turnover(addr(executable),addr(command),addr(bootstrap_wrapper));
+            stock_pool_recycle(cycle==11?fault:"");
+            stock_pool_return("");
+            stock_pool_recycle("");
+            stock_turnover(addr(bootstrap_command),addr(bootstrap_wrapper),addr(command));
+            stock_pool_recycle("",addr(bootstrap_command));
+            frame_start();frame_end();
+            assert(router.diagnostics().capable==(fault.empty() || cycle!=11));
+        }
+        if(fault.empty())std::puts("12 complete published stock pool cycles PASS; native boundaries modeled");
     }
     void publish_worker() {
         s.x[19]=addr(worker);s.x[21]=addr(context);event(0x14099c);s.x[0]=addr(worker);event(0x140dbc);
@@ -309,6 +336,17 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     request.sequence=1;request.sent_ns=boottime();assert(client.exchange(request,reply));assert(reply.capability && reply.epoch);
     request.op=Operation::Update;request.epoch=reply.epoch;request.origin=reply.origin;request.generation=1;++request.sequence;
     request.sent_ns=boottime();assert(client.exchange(request,reply));
+    const bool repeated=mode.rfind("--repeated-",0)==0;
+    const unsigned cycles=repeated?8:1;
+    std::array<std::byte,0x7b0> next_command{};std::array<std::byte,0x10> next_wrapper{};
+    uint64_t cb=0xc001,sem=0xa004,value=0;
+    TimelineSubmit timeline{};SubmitInfo submit{};
+    for(unsigned cycle=0;cycle<cycles;++cycle) {
+    const bool final=cycle+1==cycles;
+    const bool reset_failed=final && mode=="--repeated-owned-reset-failed";
+    const bool begin_failed=final && mode=="--repeated-owned-begin-failed";
+    const bool no_wait=final && mode=="--repeated-owned-no-wait";
+    const bool no_disposal=final && mode=="--repeated-owned-no-disposal";
     f.frame_start();f.record(0);f.record(1);f.frame_end();
     if(mode=="--foreign-external") {
         std::thread external([&]{
@@ -331,7 +369,7 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         assert(!f.lookups && f.router.diagnostics().pending && f.router.diagnostics().refusal==Refusal::GraphOwnership);
         std::puts("runtime refused graph: both immutable owned markers dropped, stock packet unchanged, no pipeline or settlement fabricated PASS; native boundaries modeled");return 0;
     }
-    assert(f.lookups==2);
+    assert(f.lookups==2*(cycle+1));
     for(unsigned eye=0;eye<2;++eye) {
         f.s={};f.s.sp=0x8ff000;f.s.x[19]=addr(f.packets)+eye*0x2b0;f.s.x[21]=addr(f.r);f.s.x[22]=addr(f.passes)+eye*0x98;
         f.event(0x2a1c18);assert(f.s.pad==0);
@@ -340,8 +378,8 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         f.s.x[30]=Chain::base+0x2a1c58;f.event(0x29f518);
         if(eye==0 && mode=="--stop-after-left")f.router.stop();
     }
-    d=f.router.diagnostics();assert(d.uploads[0]==1 && d.uploads[1]==1 && d.encoded[0]==1 && d.encoded[1]==1 && d.pending);
-    assert(f.native_acquires==1 && f.lookups==2);
+    d=f.router.diagnostics();assert(d.uploads[0]==cycle+1 && d.uploads[1]==cycle+1 && d.encoded[0]==cycle+1 && d.encoded[1]==cycle+1 && d.pending);
+    assert(f.native_acquires==cycle+1 && f.lookups==2*(cycle+1));
     request.op=Operation::Release;++request.sequence;assert(client.exchange(request,reply));assert(reply.state==State::Draining);
     if(mode=="--pool-owned-current") {
         f.stock_pool_return("");
@@ -352,25 +390,27 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     // Real Command/Lifecycle classes, with explicitly modeled native queue,
     // post-stamp, wait, vector transfer/disposal and reset memory transitions.
     f.s={};f.s.sp=0x880000;f.s.x[0]=0xbeef;f.s.x[1]=addr(f.executable);f.s.x[30]=Chain::base+FT_BOOT_QUEUE_LR;f.event(0x3018b0);
-    uint64_t cb=0xc001,sem=0xa004,value=binding::Command::timeline_value({addr(f.sync),42,1});
-    TimelineSubmit timeline{};timeline.type=1000207003;timeline.signal_count=1;timeline.signals=uint64_t(&value);
-    SubmitInfo submit{};submit.type=4;submit.next=uint64_t(&timeline);submit.command_count=1;submit.commands=uint64_t(&cb);
+    value=binding::Command::timeline_value({addr(f.sync),f.signal_value.serial,1});
+    timeline.type=1000207003;timeline.signal_count=1;timeline.signals=uint64_t(&value);
+    submit.type=4;submit.next=uint64_t(&timeline);submit.command_count=1;submit.commands=uint64_t(&cb);
     submit.signal_count=1;submit.signals=uint64_t(&sem);
     f.s.x[19]=addr(f.executable);f.s.x[0]=0xa005;f.s.x[1]=1;f.s.x[2]=uint64_t(&submit);f.s.x[3]=0;f.event(0x3021d4);
     f.s.x[0]=0;f.event(0x3021d8);
     f.s.x[0]=addr(f.executable);f.s.x[1]=addr(f.sync);f.s.x[2]=uint64_t(&f.signal_value);f.event(0x302208);
     for(auto *object:{&f.resource}) {
         f.s.sp=0x870000;f.s.x[0]=addr(*object);f.s.x[1]=addr(f.sync);f.s.x[2]=uint64_t(&f.signal_value);f.event(0x310ea0);
-        put(*object,0x10,addr(f.sync));put(*object,0x18,uint64_t(42));put(*object,0x20,int8_t(1));
+        put(*object,0x10,addr(f.sync));put(*object,0x18,f.signal_value.serial);put(*object,0x20,int8_t(1));
         f.s.x[19]=addr(*object);f.s.sp-=0x30;f.event(0x310f20);
     }
     f.s.sp=0x870000;f.s.x[0]=addr(f.executable);f.s.x[1]=addr(f.sync);f.s.x[2]=uint64_t(&f.signal_value);f.event(0x310ea0);
-    put(f.executable,0x10,addr(f.sync));put(f.executable,0x18,uint64_t(42));put(f.executable,0x20,int8_t(1));
+    put(f.executable,0x10,addr(f.sync));put(f.executable,0x18,f.signal_value.serial);put(f.executable,0x20,int8_t(1));
     f.s.x[19]=addr(f.executable);f.s.sp-=0x30;f.event(0x310f20);
-    f.s.sp=0x880000;f.event(0x30220c);assert(f.router.diagnostics().queue_success==1);
+    f.s.sp=0x880000;f.event(0x30220c);assert(f.router.diagnostics().queue_success==cycle+1);
     ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
+    if(!no_wait) {
     f.s.sp=0x860000;f.s.x[0]=addr(f.sync);f.s.x[1]=uint64_t(&f.signal_value);f.s.x[30]=Chain::base+0x311104;f.event(0x3160b8);
     f.s.sp-=0x40;f.s.x[0]=0;f.event(0x316110);f.s.sp+=0x40;f.s.x[0]=1;f.event(0x316120);
+    }
     ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
     f.s.sp=0x8fff30;f.s.x[19]=addr(f.r);f.event(0x2a2230);
     put(f.r,0x15a8,addr(f.passes));put(f.r,0x15b8,addr(f.passes));put(f.r,0x15c0,addr(f.passes)+f.passes.size());f.event(0x2a2320);
@@ -380,7 +420,7 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     put(f.executable,0x50,addr(f.bootstrap_pool));
     f.s.sp-=0x30;f.s.x[0]=addr(f.bootstrap_pool)+0xd0;f.s.x[1]=addr(f.executable);
     f.s.x[19]=addr(f.command);f.s.x[30]=Chain::base+FT_BOOT_POOL_LR;f.event(0x311648);
-    std::array<std::byte,0x7b0> next_command{};std::array<std::byte,0x10> next_wrapper{};
+    if(!cycle) {
     put(next_command,8,addr(f.r)+0x50);put(next_command,0x738,uint64_t(0xc002));put(next_wrapper,8,addr(next_command));
     put(next_command,0x428,uint64_t(&f.signal_pointer));put(next_command,0x430,uint64_t(&f.signal_pointer)+8);
     put(next_command,0x50,addr(f.bootstrap_pool));
@@ -389,6 +429,7 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     f.s.sp-=0x40;f.s.x[19]=addr(next_command);f.s.x[30]=Chain::base+0x300ae0;f.event(0x300a08);
     f.s.sp-=0x30;put(f.stack,0x98,uint64_t(Chain::base+0x300ae0));f.s.x[0]=0;f.event(0x300a38);
     f.s.sp=addr(f.stack)+0x100;f.s.x[20]=addr(next_command);f.s.x[0]=1;f.event(0x30180c);
+    }
     f.s.sp=0x8fff30;f.s.x[19]=addr(f.r);f.s.x[0]=addr(next_wrapper);f.event(0x2a23f4);put(f.r,0x1380,addr(next_wrapper));
     if(mode=="--pool-owned-retained") {
         f.stock_pool_return("");
@@ -396,12 +437,35 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
         std::puts("stock pool exception cannot settle retained owned debt PASS");return 0;
     }
-    f.s.x[22]=addr(f.r);f.event(0x2987d8);put(f.r,0x15c0,addr(f.passes));f.event(0x298840);
+    f.s.x[22]=addr(f.r);
+    if(!no_disposal)f.event(0x2987d8);
+    put(f.r,0x15c0,addr(f.passes));
+    if(!no_disposal)f.event(0x298840);
     ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
     f.s.sp=0x840000;f.s.x[0]=addr(f.executable);f.s.x[30]=Chain::base+0x301000;f.event(0x300b20);
-    f.s.sp-=0x20;f.s.x[19]=addr(f.executable);f.s.x[0]=0;f.event(0x300c54);
-    f.s.sp+=0x20;f.s.x[0]=addr(f.executable);f.event(0x300a08);
-    f.s.sp-=0x30;f.s.x[0]=0;f.event(0x300a38);
+    f.s.sp-=0x20;f.s.x[19]=addr(f.executable);f.s.x[0]=reset_failed?uint32_t(-4):0;f.event(0x300c54);
+    if(!reset_failed) {
+        f.s.sp+=0x20;f.s.x[0]=addr(f.executable);f.event(0x300a08);
+        f.s.sp-=0x30;f.s.x[0]=begin_failed?uint32_t(-4):0;f.event(0x300a38);
+    }
+    if(begin_failed) {
+        // Successful reset already destroyed the old executable and permits
+        // settlement. Failed Begin must still forbid successor publication.
+        assert(!f.router.diagnostics().pending);
+        f.stock_pool_return("");f.stock_pool_recycle("");
+        f.stock_turnover(addr(next_command),addr(next_wrapper),addr(f.command));
+        f.frame_start();f.frame_end();
+        assert(!f.router.diagnostics().capable && f.router.diagnostics().uploads[0]==cycles);
+        ++request.sequence;assert(client.exchange(request,reply) && reply.state!=State::Draining);
+        std::puts("owned old generation settled by reset, failed Begin cannot renew or publish after 7 settled cycles PASS");return 0;
+    }
+    if(reset_failed || no_wait || no_disposal) {
+        assert(f.router.diagnostics().pending);
+        f.stock_pool_return("");f.stock_pool_recycle("");
+        assert(f.router.diagnostics().pending && f.router.diagnostics().queue_success==cycles);
+        ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
+        std::puts("owned incomplete settlement stays pending through stock pool return/retry after 7 settled cycles PASS");return 0;
+    }
     d=f.router.diagnostics();std::fprintf(stderr,"settlement refusal=%u pending=%u queue=%llu\n",unsigned(d.refusal),d.pending,(unsigned long long)d.queue_success);
     assert(!d.pending);++request.sequence;assert(client.exchange(request,reply));
     if(mode!="--stop-after-left")assert(reply.state==State::Off);
@@ -412,7 +476,26 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     // Actual pool turnover: successor C was published before old C's GPU+CPU
     // reset issued its next generation. It remains an authentic recording.
     f.frame_start();f.s.x[0]=addr(f.app);f.s.x[1]=0;f.s.x[2]=addr(f.outer_stack)+0xc70;f.s.x[3]=addr(f.outer_stack)+0x610;f.event(0x148244);
-    f.s.x[0]=1;f.event(0x9ee5c);f.s.x[27]=0;f.event(0x9ee98);assert(f.native_releases==1);put(f.app,0x2568c,uint8_t(0));f.frame_end();
+    f.s.x[0]=1;f.event(0x9ee5c);f.s.x[27]=0;f.event(0x9ee98);assert(f.native_releases==cycle+1);put(f.app,0x2568c,uint8_t(0));f.frame_end();
+    if(!repeated)break;
+    // Lifecycle has settled both eyes and released its retained command. The
+    // successor generation must survive until a NEW actual stock reset/Begin.
+    // Then interleave the exact stock pool return and re-publication before the
+    // next full owned queue/wait/disposal cycle on the same native C/handle.
+    f.stock_pool_recycle("");f.stock_pool_return("");f.stock_pool_recycle("");
+    f.stock_turnover(addr(next_command),addr(next_wrapper),addr(f.command));
+    f.stock_pool_recycle("",addr(next_command));
+    f.frame_start();f.frame_end();assert(f.router.diagnostics().capable && !f.router.diagnostics().pending);
+    if(cycle+1==cycles) {
+        assert(f.router.diagnostics().queue_success==cycles && f.native_releases==cycles);
+        std::puts("8 complete owned queue/wait/disposal/reset/Release cycles interleaved with stock recycling PASS; native boundaries modeled");return 0;
+    }
+    request.op=Operation::Acquire;request.epoch=0;request.generation=0;request.origin=0;++request.sequence;request.sent_ns=boottime();
+    assert(client.exchange(request,reply) && reply.epoch);request.epoch=reply.epoch;request.origin=reply.origin;
+    request.op=Operation::Update;request.generation=1;++request.sequence;request.sent_ns=boottime();assert(client.exchange(request,reply));
+    f.s.x[22]=addr(f.r);f.event(0x2987d4);put(f.r,0x1418,uint32_t(0));
+    put(f.r,0x15a8,addr(f.passes)+f.passes.size());f.enqueues=0;++f.signal_value.serial;
+    }
     f.frame_start();f.frame_end();request.op=Operation::Acquire;request.epoch=0;request.generation=0;request.origin=0;++request.sequence;request.sent_ns=boottime();
     assert(client.exchange(request,reply) && reply.epoch);request.epoch=reply.epoch;request.origin=reply.origin;
     request.op=Operation::Update;request.generation=1;++request.sequence;request.sent_ns=boottime();assert(client.exchange(request,reply));
@@ -438,7 +521,22 @@ int main(int argc,char **argv) {
     const std::string mode=argc>1?argv[1]:"";
     const bool bootstrap=mode=="--bootstrap-turnover" || mode.rfind("--bootstrap-bad-",0)==0;
     const bool publication=mode.rfind("--publication-",0)==0;
-    Chain f;active=&f;f.bootstrap_router(bootstrap || publication);
+    const bool repeated=mode.rfind("--repeated-",0)==0;
+    Chain f;active=&f;f.bootstrap_router(bootstrap || publication || repeated);
+    if(repeated) {
+        f.stock_pool_return("");f.publish_worker();
+        std::thread worker([&] {
+            f.run_enter();f.stock_pool_recycle("");
+            f.bootstrap_turnover("--publication-pool-live",true);
+            const auto fault=mode=="--repeated-reset-failed"?"--publication-pool-reset-failed":
+                mode=="--repeated-begin-failed"?"--publication-pool-begin-failed":"";
+            f.repeated_stock(fault);
+            if(!*fault) {
+                put(f.r,0x15a8,addr(f.passes)+f.passes.size());
+                assert(run_chain(f,mode,true)==0);
+            }
+        });worker.join();return 0;
+    }
     if(publication) {
         const bool pool=mode.rfind("--publication-pool-",0)==0 && mode!="--publication-pool-drop";
         // First native stock return is BEFORE the actual bootstrap/worker handoff.

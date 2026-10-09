@@ -1,6 +1,6 @@
 # Command pool transition trace
 
-The original trace diagnosed trial 10's `pub_pred=13`. Trial 11 then captured the missing identity and its first invalidation. The repair below preserves only that exact unpublished stock pool-return path. No device was accessed for the repair; live stereo after the repair remains unverified.
+The original trace diagnosed trial 10's `pub_pred=13`. Trial 11 captured the first unpublished pool-return identity loss. Trial 12 proved the same command was lost again after publication and a complete reset/Begin. The repair now scopes publication to the executable generation. No device was accessed for this repair; live stereo after it remains unverified.
 
 ## Pinned native result
 
@@ -27,13 +27,32 @@ The private `live-stereo-11/command-cause.json` records a contiguous trace prefi
 
 The pinned witness now executes the actual caller at `297ca0`, including its stack-slot C load, C+50 pool lookup, +d0 adjustment, BL and complete native pool return. It derives LR `297cb4` independently of the C++ guard. It also verifies x19=C and x20=pool throughout the reset/Begin callbacks from the real pool recycler.
 
-The repair retains only a known, never-published, generation-zero, fully begun member returned by that exact caller. It rechecks native D, nonnull bounded pool, exact x0=pool+d0 and unchanged VkCommandBuffer. Current and retained command roles and the Lifecycle-owned command cannot take this exception. Return clears Begin authorization, keeps generation zero and adds no general read role. Unknown commands remain unknown; delete and handle-clear still revoke membership.
+The initial repair retained only a known, never-published, generation-zero, fully begun member returned by that exact caller. It rechecks native D, nonnull bounded pool, exact x0=pool+d0 and unchanged VkCommandBuffer. Current and retained command roles and the Lifecycle-owned command cannot take this exception. Return clears Begin authorization, keeps generation zero and adds no general read role. Unknown commands remain unknown; delete and handle-clear still revoke membership.
 
-On Run, renewal must observe the real reset entry/result and Begin entry/result with paired stack coordinates and raw Vulkan success. The retained stock pool, D, C, Vk handle, recycler LR and native x19/x20 association must still match. Failed or missing reset/Begin cannot authorize publication. Only the existing successful wrapper-publication path issues a generation. A persistent published bit prevents a later generation-zero reset state from masquerading as a never-published stock command. Owned completion, current/retained disposal, reset settlement and pending Release remain Lifecycle-controlled.
+On Run, renewal must observe the real reset entry/result and Begin entry/result with paired stack coordinates and raw Vulkan success. The retained stock pool, D, C, Vk handle, recycler LR and native x19/x20 association must still match. Failed or missing reset/Begin cannot authorize publication. Only the existing successful wrapper-publication path issues a generation. The initial repair kept the published bit permanently set. Trial 12 exposed why that lifetime-wide interpretation was too strict after a complete successful reset/Begin. Owned completion, current/retained disposal, reset settlement and pending Release remain Lifecycle-controlled.
 
 The production-chain fixture reconstructs these affected-command events across a real bootstrap-to-worker thread handoff and two pool recycles. It does not replay every unrelated journal event. Addresses, stacks, native memory writes and Vulkan boundaries are modeled; the caller and pool machinery are separately executed from the pinned ELF. After publication, the same fixture completes owned stereo, exact queue/wait, disposal/reset, pending Release and a second stereo queue. Trace assertions verify the precise affected-C sequence, unchanged membership and handle, Begin revocation/renewal, and generation issuance only at publication.
 
 Negative fixtures cover wrong pool, caller LR, D and handle; sized delete and handle clear; absent or failed reset/Begin; wrong recycler LR; and the unchanged invalid-return unknown-C case. Separate current/retained owned-command attempts keep pending Release draining. The existing publication, handoff, queue and settlement tests remain enabled.
+
+## Trial 12 generation-scoped repair
+
+The private `live-stereo-12/command-cause.json` contains the complete affected-command prefix through sequence 244. In `journal-full.txt`, the terminal summary reports 299 attempted and consumed records, with zero overflow, identity overflow and sink loss.
+
+- Sequence 25 inserts C. Sequence 41 returns it through LR `297cb4` without losing membership, confirming the initial repair works.
+- Sequences 115 through 118 observe successful reset/Begin. Sequence 149 publishes generation 3.
+- Sequences 174 through 178 dispatch, transfer and return its wrapper through the managed path. Sequences 180 through 183 fully reset and begin C again, leaving generation zero and Begin true.
+- Sequence 184 returns that same C through LR `297cb4`, but the sticky published bit erases membership. Sequences 235 through 238 are therefore ignored and publication 244 fails predicate 13.
+
+`recording.cpp` clears `published` only at the paired successful Begin result after the existing reset/result/Begin checks. Reset entry, reset success alone, failed Begin and pool return do not clear it. No pool-return guard is relaxed. Current/retained read roles, the exact Lifecycle owner and nonzero Lifecycle-issued successor generations still exclude owned debt from the stock exception. Queue completion and CPU disposal remain separate requirements.
+
+The new production-router fixture begins unpublished, crosses the real worker-thread handoff, publishes, and completes 12 stock publication/reset/return/republication cycles. It then completes eight owned stereo queue/wait/current-transfer/retained-disposal/reset/Release cycles on the same C and Vk handle, interleaving stock renewal and republication between owned cycles. It reuses the bounded member storage and advances actual fixture timeline serials. Collector assertions verify all affected returns retain membership, stock publication issues fresh generations, each owned Begin receives its Lifecycle-issued nonzero successor, and the complete trace has no loss.
+
+After successful prior cycles, negative modes inject failed stock reset/Begin, failed owned reset/Begin, missing exact GPU wait and missing retained-disposal observations. Missing wait/disposal and failed reset preserve pending Release through attempted stock return and retry. A successful owned reset can settle the old executable even if the subsequent Begin fails; that failure must refuse new publication, not resurrect already settled debt. Existing current/retained pool-return refusals remain enabled.
+
+The new repeated-stock assertion failed on the unchanged baseline and passed after the one-assignment repair. Both normal and ASan/UBSan full-router runners passed 82 recorded checks, including production DSO linking and pinned native pool execution. The separate Evidence ASan/UBSan suite passed. Runs enforced `memory.max=681574400` and `memory.swap.max=0`; router peaks were 260366336 bytes normally and 498503680 bytes with sanitizers. Logs and reports are ignored `live/build/runtime/published-recycle-{red,full,asan,evidence}.log` and `published-recycle-verification{,-asan}.json`.
+
+Native memory transitions and Vulkan results remain modeled in the router fixture. This change does not alter context-stop or camera-association handling and does not claim device or live optical verification.
 
 ## Trace contract
 

@@ -8,7 +8,7 @@ import sys
 
 def verify(binary):
     results = []
-    for mode in ['--publication-pool-drop', '--publication-pool-live', '--command-trace-gap']:
+    for mode in ['--publication-pool-drop', '--publication-pool-live', '--repeated-cycles', '--command-trace-gap']:
         result = subprocess.run([str(binary), mode], capture_output=True, text=True, timeout=5)
         assert result.returncode == 0, result.stderr
         rows = [dict(w.split('=', 1) for w in line.split()[1:])
@@ -62,6 +62,34 @@ def verify(binary):
             assert pub['native_vk'] == pub['after_vk'] == added['after_vk'] == '0xc001'
             assert 'second stereo queue PASS' in result.stdout
             print('command trace: trial-11 same-C bootstrap return, real thread handoff, two reset/Begin cycles, publication and owned settlement PASS')
+        elif mode == '--repeated-cycles':
+            pub = next(r for r in rows if r['pc'] == '0x2a23f4')
+            cycle = [r for r in rows if r['command'] == pub['command']]
+            returns = [r for r in cycle if r['pc'] == '0x311648' and r['lr'] == '0x297cb4']
+            pubs = [r for r in cycle if r['pc'] == '0x2a23f4']
+            assert len(returns) == len(pubs) == 1 + 12 + 8
+            for returned in returns:
+                assert returned['before_member'] == returned['after_member'] == '1'
+                assert returned['before_vk'] == returned['after_vk'] == '0xc001'
+                assert returned['begun'] == '1,0' and returned['generation'] == '0,0'
+            for published in pubs:
+                assert published['generation'].split(',')[0] == '0'
+                assert int(published['generation'].split(',')[1]) > 0
+                assert published['accepted'] == '1'
+            owned_begins = [r for r in cycle if r['pc'] == '0x300a38' and r['lr'] == '0x301000']
+            assert len(owned_begins) == 8
+            for begun in owned_begins:
+                assert begun['renewal'] == '3,0' and begun['begun'] == '0,1'
+                assert int(begun['generation'].split(',')[1]) > 0
+                assert int(begun['flags'].split(',')[0], 16) & 64  # actual Lifecycle attached
+            assert all(r['failure'] == '0x0' for r in rows)
+            summaries = [dict(w.split('=', 1) for w in line.split()[1:])
+                         for line in result.stderr.splitlines() if line.startswith('ft-native-command-summary ')]
+            assert summaries and int(summaries[-1]['consumed']) == len(rows)
+            assert summaries[-1]['attempted'] == summaries[-1]['consumed']
+            assert all(summaries[-1][k] == '0' for k in ['overflow', 'identity_overflow', 'sink_lost'])
+            assert '8 complete owned queue/wait/disposal/reset/Release cycles' in result.stdout
+            print('command trace: repeated published stock reuse and complete interleaved Lifecycle settlement PASS')
         else:
             for route in ['handoff-wait', 'foreign']:
                 skipped = [r for r in rows if r['route'] == route]

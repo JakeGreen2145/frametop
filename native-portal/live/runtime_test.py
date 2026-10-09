@@ -36,7 +36,10 @@ def main():
                 (build/'verification.json').write_text(json.dumps(results,indent=2));return result.returncode
     pool_faults=['lr','pool','device','handle','delete','clear','no-reset','no-begin',
                  'reset-failed','begin-failed','reset-lr']
-    modes=['--publication-pool-live','--pool-owned-current','--pool-owned-retained']+['--publication-pool-'+s for s in pool_faults]+[
+    modes=['--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
+           '--repeated-owned-reset-failed','--repeated-owned-begin-failed',
+           '--repeated-owned-no-wait','--repeated-owned-no-disposal',
+           '--publication-pool-live','--pool-owned-current','--pool-owned-retained']+['--publication-pool-'+s for s in pool_faults]+[
            '--bootstrap-turnover','--bootstrap-bad-caller','--bootstrap-bad-renderer',
            '--bootstrap-bad-generation','--bootstrap-bad-release','--bootstrap-bad-pool',
            '--bootstrap-bad-reset','--bootstrap-bad-begin',

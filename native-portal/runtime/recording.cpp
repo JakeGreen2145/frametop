@@ -135,7 +135,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
             if(spans_[6].begin==command || spans_[7].begin==command) {fail(pc);return true;}
             // The pinned stock tail at 297ca0 loads C from its stack slot,
             // obtains C+50, and calls this pool's return method at LR297cb4.
-            // Trial 11 returns an unpublished C here on bootstrap and Run.
+            // Stock can return an initial or successfully reset/rebegun C here.
             // Preserve identity only; no Begin, generation or settlement is
             // inferred. Current/retained commands stay on the Lifecycle path.
             if(pc==0x311648 && s.x[30]==base_+0x297cb4 && !c.published &&
@@ -177,7 +177,11 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
                 c.renewal=3;
             } else {
                 if(c.renewal!=3 || s.sp+0x30!=c.reset_sp || uint32_t(s.x[0]))return fail(pc);
-                c.renewal=0;c.begun=true;
+                // Publication belongs to the executable generation, not C's
+                // lifetime. Only the paired successful reset+Begin reaches here.
+                // Owned debt is still guarded by current/retained roles, the
+                // Lifecycle owner and its separately issued nonzero generation.
+                c.renewal=0;c.begun=true;c.published=false;
             }
             break;
         }
