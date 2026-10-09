@@ -18,7 +18,7 @@ bool Evidence::owner_event(uint64_t pc,const arena::Saved &s) noexcept {
            staging_ticket_ || call_ || lifecycle_)return false;
         handoff_.store(1,std::memory_order_release);return true;
     }
-    if(pc!=0x14e5a8 || handoff_.load(std::memory_order_acquire)!=1 || s.x[0]!=worker_ || s.x[30]!=base_+0x1841ec)return false;
+    if(pc!=0x14e5a8 || handoff_.load(std::memory_order_acquire)!=1 || s.x[0]!=worker_ || s.x[30]!=base_+0x182aa8)return false;
     uint64_t context=0,worker=0,scheduler=0,app=0,R=0,device=0;uint32_t native_tid=0,status=0;
     if(!read_self(worker_+0x48,&context,8) || context!=context_ ||
        !read_self(context+0x98,&worker,8) || worker!=worker_ ||

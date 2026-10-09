@@ -15,7 +15,7 @@ int main() {
     f.s.x[19]=addr(worker);f.s.x[21]=addr(context);assert(f.evidence.owner_event(0x14099c,f.s));
     f.s.x[0]=addr(worker);assert(f.evidence.owner_event(0x140dbc,f.s));
     std::thread render([&]{
-        arena::Saved r{};r.x[0]=addr(worker);r.sp=0x900000;r.x[30]=Fixture::base+0x1841ec;
+        arena::Saved r{};r.x[0]=addr(worker);r.sp=0x900000;r.x[30]=Fixture::base+FT_NATIVE_RUN_RETURN;
         put(worker,0x10,uint32_t(syscall(SYS_gettid)));put(worker,0x14,uint32_t(0x80000000));
         assert(f.evidence.owner_event(0x14e5a8,r));assert(f.evidence.graph_capable());
         assert(f.objects());render::Observation o{};assert(f.evidence.snapshot(addr(f.wrapper),addr(f.marker),o));

@@ -64,7 +64,7 @@ struct Chain:Fixture {
         s.sp=addr(stack)+0x100;s.x[20]=addr(executable);s.x[0]=1;event(0x30180c);
         s.x[19]=addr(r);s.x[1]=addr(command);event(0x29a528);s.x[24]=addr(r);s.x[0]=1;event(0x7fdbc);
         s.x[19]=addr(worker);s.x[21]=addr(context);event(0x14099c);s.x[0]=addr(worker);event(0x140dbc);
-        put(worker,0x10,uint32_t(syscall(SYS_gettid)));put(worker,0x14,uint32_t(0x80000000));s.x[30]=base+0x1841ec;event(0x14e5a8);
+        put(worker,0x10,uint32_t(syscall(SYS_gettid)));put(worker,0x14,uint32_t(0x80000000));s.x[30]=base+FT_NATIVE_RUN_RETURN;event(0x14e5a8);
     }
     void frame_start() {
         s={};s.sp=addr(outer_stack);s.x[0]=addr(worker);event(0x147a48);

@@ -14,6 +14,10 @@ def main():
     args=parser.parse_args();os.environ['TMPDIR']='/home/jakeg/.hermes/cache/scratch';resource.setrlimit(resource.RLIMIT_CORE,(0,0));cg,report=limits();build=ROOT/'live/build/runtime';build.mkdir(parents=True,exist_ok=True)
     flags=['g++','-std=c++17','-Wall','-Wextra','-Werror','-O1','-g','-pthread','-I'+str(args.vulkan_include),'-I'+str(ROOT/'include')]
     if args.sanitize:flags+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
+    from native_caller import run_return
+    native_lr=run_return()
+    print('Pinned pthread thunk Run return:',hex(native_lr))
+    flags+=['-DFT_NATIVE_RUN_RETURN='+hex(native_lr)]
     results=[]
     for test in ['runtime_test','runtime_owner_test','runtime_chain_test']:
         binary=build/(test+('-asan' if args.sanitize else ''))
