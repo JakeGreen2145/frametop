@@ -40,7 +40,7 @@ def main():
                 (build/'verification.json').write_text(json.dumps(results,indent=2));return result.returncode
     pool_faults=['lr','pool','device','handle','delete','clear','no-reset','no-begin',
                  'reset-failed','begin-failed','reset-lr']
-    modes=['--main-pump','--main-pump-owner','--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
+    modes=['--application-direct','--application-fallback','--main-pump','--main-pump-owner','--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
            '--repeated-owned-reset-failed','--repeated-owned-begin-failed',
            '--repeated-owned-no-wait','--repeated-owned-no-disposal',
            '--publication-pool-live','--pool-owned-current','--pool-owned-retained']+['--publication-pool-'+s for s in pool_faults]+[
@@ -57,6 +57,16 @@ def main():
         result=subprocess.run([str(binary),mode],capture_output=True,text=True)
         print(mode,result.stdout+result.stderr,end='\n');assert result.returncode==expected,(mode,result.returncode,result.stderr)
         if expected==-signal.SIGABRT:assert 'cleanup-entry' in result.stderr and 'terminate called' not in result.stderr
+        if mode.startswith('--application-'):
+            sealed=[dict(word.split('=',1) for word in line.split()[1:]) for line in result.stderr.splitlines()
+                    if line.startswith('ft-native-live ') and 'seal=1 ' in line]
+            assert sealed and 'second stereo queue PASS' in result.stdout,(mode,result.stderr)
+            for sample in sealed:
+                assert sample['assoc_failed']=='0' and sample['associated']=='1'
+                fallback=mode.endswith('fallback')
+                assert sample['assoc_fallback']==str(int(fallback))
+                order=list(range(1,17)) if fallback else [8,1,2,3,4,12,5,6,7,13,14,15,16]
+                assert int(sample['assoc_checked'],16)==int(sample['assoc_passed'],16)==sum(1<<i for i in order)
         results.append({'mode':mode,'expected_exit':expected,'code':result.returncode,'output':result.stdout+result.stderr})
     for mode,predicate,failure,stop,owners in [
         ('--diagnostics-start-renderer',13,'0x29bd18','0x29bd18','0x17'),
@@ -105,7 +115,7 @@ def main():
         assert fields['first_evidence_pc']==('0x2a23f4' if predicate else '0x0')
         assert fields['handoff']=='1' and fields['uploads']=='0,0' and fields['queue_success']=='0'
         results.append({'mode':mode,'code':result.returncode,'output':result.stdout+result.stderr})
-    for mode in ['--diagnostics-good','--diagnostics-bad']+['--association-'+str(i) for i in range(1,8)]:
+    for mode in ['--diagnostics-good','--diagnostics-bad']+['--association-'+str(i) for i in [1,2,3,4,5,6,7,8,9,10,11,12,14,16,17]]:
         result=subprocess.run([str(binary),mode],capture_output=True,text=True)
         print(mode,result.stdout+result.stderr)
         assert result.returncode==0,(mode,result.stderr)
@@ -123,16 +133,42 @@ def main():
         assert fields['first_owner_pred']=='0'
         good=mode.endswith('good')
         failed=int(mode.rsplit('-',1)[1]) if mode.startswith('--association-') else 0 if good else 6
+        fallback=failed in [4,9,10,11,17]
+        if failed==17:failed=12
+        order=[8,1,2,3]+([9,10,11] if fallback else [])+[4,12,5,6,7,13,14,15,16]
+        checks=order[:order.index(failed)+1] if failed else order
+        checked=sum(1<<i for i in checks)
         assert fields.get('assoc_failed')==str(failed),(mode,fields)
-        assert int(fields['assoc_checked'],16)==((1<<(failed+1))-2 if failed else 254)
-        assert int(fields['assoc_passed'],16)==((1<<failed)-2 if failed else 254)
-        assert fields['assoc_owner']==str(int(failed!=1))
+        assert int(fields['assoc_checked'],16)==checked,(mode,fields,checks)
+        assert int(fields['assoc_passed'],16)==checked-(1<<failed if failed else 0)
+        assert fields['assoc_owner']==str(int(failed!=8))
+        assert fields['assoc_fallback']==str(int(fallback))
         assert fields['assoc_lr']==hex(bootstrap['outer_lr']) and int(fields['assoc_frame'])>0
         for key in ['associated','idle','can_acquire','adapter','capable']:
             assert fields[key]==str(int(good)),(mode,key,fields)
         assert fields['seal_block']==('none' if good else 'association')
         assert 'renderer=' not in sealed[0] and 'device=' not in sealed[0]
         results.append({'mode':mode,'code':result.returncode,'output':result.stdout+result.stderr})
+    for failed in range(1,19):
+        mode='--policy-'+str(failed)
+        result=subprocess.run([str(binary),mode],capture_output=True,text=True,timeout=5)
+        assert result.returncode==0,(mode,result.stderr)
+        lines=[line for line in result.stderr.splitlines() if line.startswith('ft-native-live ') and 'seal=1 ' in line]
+        assert len(lines)==1,(mode,result.stderr)
+        fields=dict(word.split('=',1) for word in lines[0].split()[1:])
+        assert fields['policy']=='0' and fields['associated']=='1' and fields['assoc_failed']=='0'
+        sampled=failed!=18
+        assert fields['policy_sampled']==str(int(sampled))
+        assert fields['policy_failed']==str(failed if sampled else 0),(mode,fields)
+        assert int(fields['policy_checked'],16)==((1<<(failed+1))-2 if sampled else 0)
+        assert int(fields['policy_passed'],16)==((1<<failed)-2 if sampled else 0)
+        seen=0xb7-(0x80 if failed==7 else 1 if failed==8 else 0)
+        assert int(fields['policy_seen'],16)==seen,(mode,fields)
+        if failed==14:assert fields['policy_actual']=='0x1' and fields['policy_expected']=='0x0'
+        if failed==15:assert fields['policy_actual']=='0x2' and fields['policy_expected']=='0x0'
+        if failed==16:assert fields['policy_style']=='2,1'
+        if failed==17:assert fields['policy_alpha']=='0x3f800000,0x0'
+        results.append({'mode':mode,'code':0,'output':result.stdout+result.stderr})
     from command_trace_test import verify as verify_command_trace
     results.extend(verify_command_trace(binary))
     # Real journal-style socket output, plus saturated sink: neither changes

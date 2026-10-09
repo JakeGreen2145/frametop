@@ -86,7 +86,7 @@ After the production control server starts, a separate collector samples a priva
 
 Each line includes the latest owner callback's relative `pc`, sticky `first_refusal` and its `first_pc`, latest refusal, phase coverage, native owner-handoff coverage, and the most recently sampled seal ingredients. `seal=1 seal_pc=0x1480b8` distinguishes a genuine seal sample from startup defaults. The ingredients are `graph`, `initialized`, `origin_ok`, `associated`, `idle`, `demand`, `can_acquire`, `owned_debt`, `pipeline`, `adapter`, `tracking`, and `policy`. `capable`, `pending`, `stopped`, per-eye uploads/encoding, queue-success count and submitted frame accompany them. No renderer/device addresses, camera pixels, tokens or credentials are logged.
 
-Association fields belong to that same seal and `assoc_frame`, not the latest arbitrary callback. `assoc_owner` reports `outer_owner==authenticated worker`; `assoc_lr` is the actual relative outer-entry LR. `assoc_checked` and `assoc_passed` use bit positions 1 through 7, and `assoc_failed` is the first failed ID, or zero on success:
+Association fields belong to that same seal and `assoc_frame`, not the latest arbitrary callback. `assoc_owner` reports `outer_owner==authenticated worker`; `assoc_lr` is the actual relative outer-entry LR. `assoc_checked` and `assoc_passed` use bit positions 1 through 16, and `assoc_failed` is the first failed ID, or zero on success:
 
 1. Read `outer_owner+0x48`.
 2. Loaded context equals authenticated context.
@@ -95,8 +95,33 @@ Association fields belong to that same seal and `assoc_frame`, not the latest ar
 5. Read `application+0x25320`.
 6. Camera is nonzero.
 7. Read `application+0x2568c`.
+8. Current Evidence has authenticated Run identities, matching outer worker and context.
+9. Read `context+0x1c0`, only after a successfully read null primary application.
+10. Nonnull scheduler matches the scheduler authenticated at Run.
+11. Read authenticated `scheduler+8`.
+12. Selected application matches the application authenticated at Run.
+13. Read selected `application+0x256a0`.
+14. Renderer matches Evidence identity.
+15. Read authenticated `renderer+0xa78`.
+16. Device matches Evidence identity.
 
-Success is `assoc_checked=0xfe assoc_passed=0xfe assoc_failed=0`. A failure records only the checks reached by the existing short-circuit chain. No extra downstream reads, changed offsets or admission rules are introduced. Predicate, owner-equality and LR changes trigger the existing bounded collector; frame progress alone does not. Tests inject each failure independently, including protected context/cache pages, and verify production collector output. Tracking and policy remain separate blockers.
+Evaluation order is 8, 1, 2, 3, then 9–11 only for native fallback, then 4, 12, 5–7, 13–16. `assoc_fallback=1` means the successfully read primary was null, not that fallback succeeded. Direct success has checked/pass masks `0x1f1fe`; fallback success has `0x1fffe`. `assoc_failed=0` indicates success. Unchecked bits are unknown. Every failed check short-circuits without downstream reads. A nonnull primary bypasses scheduler reads, even when that scheduler is unreadable; it still must match the authenticated application.
+
+The hash-pinned instruction witness executes both selection branches at outer entry and near seal: `147acc -> 148f28..148f30 -> 147ad0` and `148090 -> 148f1c..148f24 -> 148094`. The null path is the native scheduler+8 selection, not a readiness substitute. The production-router fixture covers both branches through stereo queue and settlement on a real Run thread, plus protected reads, wrong scheduler/application, renderer and device identities. These remain CPU results, not live camera proof.
+
+Policy diagnostics use only existing native reads, locals and predicate results. They are copied at the same seal as association, with no policy behavior change. `policy_sampled=0` means the native output checkpoint was not seen in this frame. `policy_seen` records the tap mask. `policy_checked` and `policy_passed` use the following predicate IDs, and `policy_failed` is the first failure:
+
+| IDs | Checks |
+|---|---|
+| 1–5 | Existing reads of p0, p1, construct, style and alpha |
+| 6 | No conflicting tap values |
+| 7 | A forced-state tap was seen |
+| 8 | Required style, enabled, special and request taps were seen |
+| 9–11 | No special, request or forced state |
+| 12–13 | p0 and p1 are boolean-valued |
+| 14–17 | Construct, demand, style and alpha equal the existing pure-policy result |
+
+`policy_actual` bits 0–3 are construct, demand, p0 and p1. `policy_expected` bits 0–1 are expected construct and demand. `policy_style` and `policy_alpha` give actual,expected pairs, with alpha as exact float bits. Failed or unchecked read fields are not valid measurements; consult checked/pass masks. Seen bits 0–13 map to style, enabled, pointer argument, scalar tap, special, request, construct input, four forced-state sites, suppression, base and gain. Diagnostics reset per frame and remain frozen between seals. Predicate changes trigger the existing 64-line collector, but frame progress alone does not. Tracking and policy remain independent blockers; this change does not repair policy or synthesize readiness.
 
 `seal_block` labels the first absent ingredient in diagnostic order when capability is false. It is not a new gate. Tracking and policy can prevent frame admission independently of capability, so inspect their flags too. The first startup refusal can remain `graph-ownership` at `0x7fdbc` even after a successful handoff; use the current seal facts, not that historical refusal alone. Fast intermediate transitions can be coalesced by polling. `phases` retains observed owner-phase coverage even if a callback was between polls.
 

@@ -74,10 +74,17 @@ def bootstrap_native():
     # Never execute wait or invent join success.
     m.mem_write(context+0x2a,b'\x00\x00')
     # Derive actual outer LR and worker/context/application chain as well.
-    put(worker+0x48,context);put(context+0x1a8,app);x(19,worker)
+    scheduler=region+0x54000
+    put(worker+0x48,context);put(scheduler+8,app);x(19,worker)
     run(0x14a5c8,0x147a48);outer_lr=x(30);assert x(0)==worker
-    m.reg_write(A.UC_ARM64_REG_SP,stack);run(0x147a48,0x6f9f8)
-    assert x(19)==worker and x(0)==app
+    for fallback in (False,True):
+        put(context+0x1a8,0 if fallback else app)
+        # An unmapped scheduler proves the nonnull branch bypasses fallback.
+        put(context+0x1c0,scheduler if fallback else 1)
+        x(0,worker);m.reg_write(A.UC_ARM64_REG_SP,stack)
+        run(0x147a48,0x6f9f8);assert x(19)==worker and x(0)==app
+        x(19,worker);run(0x148088,0x148094);assert x(0)==app
+    put(context+0x1a8,app);put(context+0x1c0,scheduler)
     put(app+0x25320,region+0x70000);x(0,app)
     run(0x6d6e0,0x15f9e0);assert x(0)==region+0x70000
     x(20,app);m.reg_write(A.UC_ARM64_REG_SP,stack)

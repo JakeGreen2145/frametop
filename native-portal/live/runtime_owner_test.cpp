@@ -64,6 +64,7 @@ static void owner_predicates() {
     std::array<std::byte,0x10> next{};put(next,8,addr(f.other));turnover.sp+=0x30;
     turnover.x[0]=addr(next);turnover.x[19]=addr(f.r);assert(f.evidence.event(0x2a23f4,turnover));put(f.r,0x1380,addr(next));
     assert(f.evidence.owner_event(0x140dbc,s,&predicate) && !predicate);
+    assert(!f.evidence.application_owner().application);
     std::thread thread([&] {
         s.x[30]=Fixture::base+FT_NATIVE_RUN_RETURN;
         put(worker,0x10,uint32_t(syscall(SYS_gettid)));put(worker,0x14,uint32_t(0x80000000));
@@ -74,7 +75,16 @@ static void owner_predicates() {
         put(app,0x256a0,uint64_t(0));refused(0x14e5a8,17);put(app,0x256a0,addr(f.r));
         assert(f.evidence.owner_event(0x14e5a8,s,&predicate) && !predicate);
         assert(f.evidence.graph_capable());
+        const auto owner=f.evidence.application_owner();
+        assert(owner.worker==addr(worker) && owner.context==addr(context) &&
+               owner.scheduler==addr(scheduler) && owner.application==addr(app));
+        uint64_t value=0;auto memory=f.evidence.bridge_memory();
+        assert(!memory.read(memory.user,addr(scheduler)+8,&value,8));
+        std::thread foreign([&]{assert(!f.evidence.application_owner().application);});foreign.join();
+        s.x[0]=addr(f.r);f.evidence.event(0x29bd18,s);
+        assert(!f.evidence.application_owner().application);
     });thread.join();
+    assert(!f.evidence.application_owner().application);
 }
 int main() {
     owner_predicates();

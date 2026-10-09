@@ -3,10 +3,12 @@
 #include <cassert>
 #include <cstring>
 #include <thread>
+#include <memory>
 using namespace native_portal;
 using native_portal::live::CommandTrace;
 int main() {
-    CommandTrace trace;
+    auto storage=std::make_unique<CommandTrace>();auto &trace=*storage;
+    assert(CommandTrace::capacity==8192);
     arena::Saved s{};s.x[0]=1;s.x[20]=1;s.x[30]=0x70001234;s.sp=2;
     const auto saved=s;
     trace.push(0x4b3d0,s,0x70000000,10,11,CommandTrace::Foreign);
@@ -34,15 +36,15 @@ int main() {
     std::array<std::thread,4> writers;
     for(unsigned t=0;t<writers.size();++t)writers[t]=std::thread([&,t] {
         auto input=s;input.x[19]=100+t;
-        for(unsigned i=0;i<300;++i)trace.push(0x300a38,input,0x70000000,100+t,11,CommandTrace::Foreign);
+        for(size_t i=0;i<CommandTrace::capacity/4+1;++i)trace.push(0x300a38,input,0x70000000,100+t,11,CommandTrace::Foreign);
     });
     for(auto &writer:writers)writer.join();
     done=true;reader.join();
-    assert(trace.count()==1202);
+    assert(trace.count()==2+4*(CommandTrace::capacity/4+1));
     for(size_t i=0;i<CommandTrace::capacity;++i)assert(trace.read(i,row));
     assert(!trace.read(CommandTrace::capacity,row));
     assert(trace.read(0,row) && !std::memcmp(&first,&row,sizeof row));
-    CommandTrace identities;
+    auto identity_storage=std::make_unique<CommandTrace>();auto &identities=*identity_storage;
     for(size_t i=0;i<=CommandTrace::identity_capacity;++i) {
         s.x[0]=i+1;identities.push(0x301808,s,0,10,10,CommandTrace::Owner);
     }

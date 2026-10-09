@@ -74,6 +74,9 @@ class Evidence {
     CommandDiagnostic command_diagnostic() const noexcept {return owner()?command_diagnostic_:CommandDiagnostic{};}
     bool graph_event(uint64_t,const arena::Saved &) noexcept;
     bool graph_capable() const noexcept;
+    // Exact identities authenticated at worker Run; no read/write registry.
+    struct ApplicationOwner {uint64_t worker=0,context=0,scheduler=0,application=0;};
+    ApplicationOwner application_owner() const noexcept;
     bool settled(const render::Binding &,const render::Provenance &,const render::Provenance &,const render::Completion &) const noexcept;
     bool command_owner(binding::Owner &) const noexcept;
     bool release_lifecycle() noexcept;

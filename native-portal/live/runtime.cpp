@@ -90,7 +90,7 @@ struct Runtime::Impl {
     uint64_t sequence=0,wrapper=0,marker=0,invocation=0,outer_sp=0,outer_owner=0,outer_lr=0;
     uint64_t origin_epoch=0,origin_token=0,frame_number=0;
     ft::portal::Mat4 origin{};Frame frame{};EyeInput eye{};
-    PolicyInput policy{};bool tracking=false,outer=false,owned=false,pinned=false;
+    PolicyInput policy{};PolicyDiagnostic policy_diagnostic{};bool tracking=false,outer=false,owned=false,pinned=false;
     std::array<unsigned char,0x660> effective{};
     std::array<uint64_t,14> policy_values{};uint64_t policy_seen=0;bool policy_conflict=false;
     std::atomic<bool> stopped{false};Diagnostics diag{};Mailbox<Diagnostics> published;
@@ -117,7 +117,7 @@ struct Runtime::Impl {
     ~Impl(){collector_stop=true;if(collector.joinable())collector.join();}
     void collect() {
         collector=std::thread([this] {
-            DiagnosticLog log;char line[1536];
+            DiagnosticLog log;char line[DiagnosticLog::line_capacity];
             size_t trace_next=0;uint64_t trace_lost=0,trace_last=UINT64_MAX;unsigned trace_summaries=0;
             // Reopen pipes/files with an independent nonblocking file description.
             // Journal stderr is a socket: send(MSG_DONTWAIT) leaves its flags alone.
@@ -513,7 +513,7 @@ struct Runtime::Impl {
         }
         if(pc==0x147a48) {
             if(outer || frame_number==UINT64_MAX) {refuse(Refusal::Policy);return;}
-            outer=true;outer_sp=s.sp;outer_owner=s.x[0];owned=false;tracking=false;policy_seen=0;policy_conflict=false;policy_ready=false;
+            outer=true;outer_sp=s.sp;outer_owner=s.x[0];owned=false;tracking=false;policy_seen=0;policy_conflict=false;policy_ready=false;policy_diagnostic={};
             outer_lr=s.x[30]>=base && s.x[30]-base<0x600000?s.x[30]-base:0;
             ++frame_number;++diag.frames;
         }
@@ -530,16 +530,31 @@ struct Runtime::Impl {
             uint32_t bits=uint32_t(policy_values[12]);std::memcpy(&policy.base,&bits,4);
             bits=uint32_t(policy_values[13]);std::memcpy(&policy.gain,&bits,4);
             uint8_t p0=0,p1=0,construct=0;uint32_t style=0;float alpha=0;
-            const bool read=get(s.x[19]+0x1e0,p0) && get(s.x[19]+0x1e1,p1) &&
-                get(s.x[19]+0x62c,construct) && get(s.x[19]+0x630,style) && get(s.x[19]+0x648,alpha);
+            policy_diagnostic={};policy_diagnostic.sampled=true;policy_diagnostic.seen=policy_seen;
+            auto check=[&](unsigned id,bool ok) {
+                policy_diagnostic.checked|=uint64_t(1)<<id;
+                if(ok)policy_diagnostic.passed|=uint64_t(1)<<id;
+                else if(!policy_diagnostic.failed)policy_diagnostic.failed=id;
+                return ok;
+            };
+            const bool read=check(1,get(s.x[19]+0x1e0,p0)) && check(2,get(s.x[19]+0x1e1,p1)) &&
+                check(3,get(s.x[19]+0x62c,construct)) && check(4,get(s.x[19]+0x630,style)) && check(5,get(s.x[19]+0x648,alpha));
             policy.p0=p0!=0;policy.p1=p1!=0;const auto expected=pure_policy(policy,false);
             const uint64_t required=(1ull<<0)|(1ull<<1)|(1ull<<4)|(1ull<<5);
             // Unsupported branches remain entirely stock. These fields are real
             // load results and the original function's unmodified outputs.
-            policy_ready=read && !policy_conflict && forced_seen && (policy_seen&required)==required &&
-                !policy.special && !policy.request && !policy.forced && p0<=1 && p1<=1 &&
-                expected.construct==bool(construct) && expected.demand==bool(s.x[23]) &&
-                expected.style==style && expected.alpha==alpha;
+            policy_ready=read && check(6,!policy_conflict) && check(7,forced_seen) && check(8,(policy_seen&required)==required) &&
+                check(9,!policy.special) && check(10,!policy.request) && check(11,!policy.forced) && check(12,p0<=1) && check(13,p1<=1) &&
+                check(14,expected.construct==bool(construct)) && check(15,expected.demand==bool(s.x[23])) &&
+                check(16,expected.style==style) && check(17,expected.alpha==alpha);
+            // Existing locals only. checked/passed say which native output reads
+            // succeeded; default locals following a failed read are not evidence.
+            policy_diagnostic.actual=uint64_t(bool(construct)) | uint64_t(bool(s.x[23]))<<1 |
+                uint64_t(bool(p0))<<2 | uint64_t(bool(p1))<<3;
+            policy_diagnostic.expected=uint64_t(expected.construct) | uint64_t(expected.demand)<<1;
+            policy_diagnostic.style=style;policy_diagnostic.expected_style=expected.style;
+            uint32_t actual_bits=0,expected_bits=0;std::memcpy(&actual_bits,&alpha,4);std::memcpy(&expected_bits,&expected.alpha,4);
+            policy_diagnostic.alpha=actual_bits;policy_diagnostic.expected_alpha=expected_bits;
         }
         if(outer && pc==0x63920) {
             struct Pose {unsigned char transform[72];uint32_t result;uint8_t valid,connected;uint8_t padding[2];} pose{};
@@ -551,9 +566,11 @@ struct Runtime::Impl {
             const bool origin_ok=origin_sample();
             if(!origin_ok) {backend.invalidate(Reason::Origin);refuse(Refusal::Origin);}
             if(!tracking)refuse(Refusal::Tracking);
-            uint64_t native_context=0,application=0;uint8_t cache=1;
-            // Record only the existing short-circuit reads. Failed checks do
-            // not inspect any downstream pointer or change camera admission.
+            uint64_t native_context=0,application=0,scheduler=0,renderer=0,device=0;uint8_t cache=1;
+            const auto application_owner=evidence.application_owner();
+            const auto identity=evidence.identity();
+            // Record the actual short-circuit checks. Failed reads or identity
+            // checks never inspect downstream pointers.
             live.assoc_checked=live.assoc_passed=live.assoc_failed=0;
             live.assoc_owner=outer_owner==worker;live.assoc_lr=outer_lr;live.assoc_frame=frame_number;
             auto association_check=[&](unsigned id,bool ok) {
@@ -562,10 +579,26 @@ struct Runtime::Impl {
                 else if(!live.assoc_failed)live.assoc_failed=id;
                 return ok;
             };
-            const bool associated=association_check(1,get(outer_owner+0x48,native_context)) &&
-                association_check(2,native_context==context) && association_check(3,get(context+0x1a8,application)) &&
-                association_check(4,application!=0) && association_check(5,get(application+0x25320,camera)) &&
-                association_check(6,camera!=0) && association_check(7,get(application+0x2568c,cache));
+            live.assoc_fallback=false;
+            bool selected=association_check(8,application_owner.worker && outer_owner==application_owner.worker &&
+                    context==application_owner.context) &&
+                association_check(1,get(outer_owner+0x48,native_context)) &&
+                association_check(2,native_context==context) && association_check(3,get(context+0x1a8,application));
+            // Pinned native 147acc -> 148f28 and 148090 -> 148f1c:
+            // only a successfully read null primary selects scheduler+8.
+            if(selected && !application) {
+                live.assoc_fallback=true;
+                selected=association_check(9,get(context+0x1c0,scheduler)) &&
+                    association_check(10,scheduler && scheduler==application_owner.scheduler) &&
+                    association_check(11,get(scheduler+8,application));
+            }
+            const bool associated=selected && association_check(4,application!=0) &&
+                association_check(12,application==application_owner.application) &&
+                association_check(5,get(application+0x25320,camera)) &&
+                association_check(6,camera!=0) && association_check(7,get(application+0x2568c,cache)) &&
+                association_check(13,get(application+0x256a0,renderer)) &&
+                association_check(14,renderer==identity.renderer) &&
+                association_check(15,get(renderer+0xa78,device)) && association_check(16,device==identity.device);
             if(associated)external_camera=camera;
             std::array<unsigned char,40> camera_state{};
             bool idle=associated && cache==0 && runtime::read_self(camera+0x340,camera_state.data(),camera_state.size());
@@ -592,7 +625,8 @@ struct Runtime::Impl {
             live.associated=associated;live.idle=idle;live.demand=bool(demand);
             live.can_acquire=demand && demand->can_acquire();live.owned_debt=demand && demand->owned_debt();
             live.pipeline=pipeline_abi;live.adapter=adapter && adapter->state().initialized;
-            live.tracking=tracking;live.policy=policy_ready;
+            live.tracking=tracking;live.policy=policy_ready;live.policy_detail=policy_diagnostic;
+            if(!live.policy_detail.sampled)live.policy_detail.seen=policy_seen;
             if(adapter && adapter->state().initialized && policy_ready && associated && tracking && !stopped &&
                runtime::read_self(s.sp+0x610,effective.data(),effective.size())) {
                 if(!gate)gate.emplace(backend);

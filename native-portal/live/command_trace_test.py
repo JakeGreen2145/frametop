@@ -8,14 +8,23 @@ import sys
 
 def verify(binary):
     results = []
-    for mode in ['--publication-pool-drop', '--publication-pool-live', '--repeated-cycles', '--command-trace-gap']:
+    for mode in ['--publication-pool-drop', '--publication-pool-live', '--repeated-cycles', '--command-trace-gap', '--command-trace-capacity']:
         result = subprocess.run([str(binary), mode], capture_output=True, text=True, timeout=5)
         assert result.returncode == 0, result.stderr
         rows = [dict(w.split('=', 1) for w in line.split()[1:])
                 for line in result.stderr.splitlines() if line.startswith('ft-native-command ')]
         assert rows, 'missing bounded command transition trace'
         assert [int(r['seq']) for r in rows] == list(range(1, len(rows)+1))
-        if mode == '--publication-pool-drop':
+        if mode == '--command-trace-capacity':
+            summaries=[dict(w.split('=',1) for w in line.split()[1:])
+                       for line in result.stderr.splitlines() if line.startswith('ft-native-command-summary ')]
+            summary=summaries[-1];capacity=int(summary['capacity'])
+            assert len(rows)==capacity and int(summary['consumed'])==capacity
+            assert int(summary['attempted'])-capacity==int(summary['overflow'])>0
+            assert summary['sink_lost']=='0'
+            assert rows[-1]['route']=='handoff-wait' and rows[-1]['pc']=='0x300a38'
+            print('command trace: real collector full bounded capacity, later records and explicit overflow PASS')
+        elif mode == '--publication-pool-drop':
             pub = next(r for r in rows if r['pc'] == '0x2a23f4')
             command = pub['command']
             cycle = [r for r in rows if r['command'] == command]

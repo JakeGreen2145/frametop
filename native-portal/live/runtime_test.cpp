@@ -10,7 +10,7 @@
 using namespace native_portal;
 using namespace native_portal::live;
 int main() {
-    DiagnosticLog log;LiveDiagnostics live{};char line[1536];
+    DiagnosticLog log;LiveDiagnostics live{};char line[DiagnosticLog::line_capacity];
     assert(!log.format(live,0,line,1)); // truncated output does not spend the budget
     assert(log.format(live,0,line,sizeof line));
     live.pc=0x1480b8;live.events=10000;live.frames=1000;
@@ -43,6 +43,17 @@ int main() {
     sample.assoc_owner=true;assert(association.format(sample,0,line,sizeof line));
     sample.assoc_frame=100;assert(!association.format(sample,0,line,sizeof line));
     assert(std::strstr(line,"assoc_checked=0x1 assoc_passed=0x1 assoc_failed=1 assoc_owner=1 assoc_lr=0x1"));
+    DiagnosticLog policy_log;LiveDiagnostics policy_sample{};
+    assert(policy_log.format(policy_sample,0,line,sizeof line));
+    for(auto field:{&PolicyDiagnostic::checked,&PolicyDiagnostic::passed,&PolicyDiagnostic::failed,
+                    &PolicyDiagnostic::seen,&PolicyDiagnostic::actual,&PolicyDiagnostic::expected,
+                    &PolicyDiagnostic::style,&PolicyDiagnostic::expected_style,&PolicyDiagnostic::alpha,&PolicyDiagnostic::expected_alpha}) {
+        policy_sample.policy_detail.*field=1;assert(policy_log.format(policy_sample,0,line,sizeof line));
+        assert(!policy_log.format(policy_sample,0,line,sizeof line));
+    }
+    policy_sample.policy_detail.sampled=true;assert(policy_log.format(policy_sample,0,line,sizeof line));
+    policy_sample.frames=100;assert(!policy_log.format(policy_sample,0,line,sizeof line));
+    policy_sample.assoc_fallback=true;assert(policy_log.format(policy_sample,0,line,sizeof line));
     static_assert(sizeof(Diagnostics)==96); // exported mailbox ABI stays unchanged
     static_assert(sizeof(arena::Saved)==800);
     Runtime runtime;

@@ -2,6 +2,7 @@
 // Production router end-to-end. Native calls, native graph writes and Vulkan are
 // modeled boundaries. No device, loader, camera, installed native bytes or SSH.
 #include "runtime.hpp"
+#include "command_trace.hpp"
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wreturn-type"
 #define main previous_evidence_main
@@ -13,10 +14,12 @@
 using namespace native_portal::live;
 struct Chain:Fixture {
     Runtime router;
-    alignas(4096) std::array<std::byte,4096> context{};
-    std::array<std::byte,0x200> worker{},scheduler{};
+    alignas(4096) std::array<std::byte,0xe40> context_padding{};
+    std::array<std::byte,4096> context{};
+    alignas(4096) std::array<std::byte,4096> worker{},scheduler{};
+    alignas(4096) std::array<std::byte,0xa00> app_padding{};
     std::array<std::byte,0x25700> app{};
-    std::array<std::byte,0x2000> outer_stack{};
+    alignas(4096) std::array<std::byte,0x2000> outer_stack{};
     std::array<std::byte,0x1000> camera{},camera_stack{};
     std::array<std::byte,0x20> stock_wrapper{};
     std::array<std::byte,0x128> stock_resource{};
@@ -30,7 +33,7 @@ struct Chain:Fixture {
     uint64_t system_interface=0,signal_pointer=0;
     struct {uint64_t serial=42;int8_t subserial=1;uint8_t padding[7]{};} signal_value;
     std::array<float,12> origin_matrix{1,0,0,0,0,1,0,1.6f,0,0,1,0};
-    unsigned enqueues=0,lookups=0,native_acquires=0,native_releases=0;
+    unsigned enqueues=0,lookups=0,native_acquires=0,native_releases=0,policy_fault=0;
     std::string directory;
     Chain() {
         put(worker,0,uint64_t(base+0x5a1428));put(worker,0x48,addr(context));
@@ -219,9 +222,25 @@ struct Chain:Fixture {
     void frame_start(uint64_t owner=0) {
         s={};s.sp=addr(outer_stack);s.x[0]=owner?owner:addr(worker);s.x[30]=base+FT_OUTER_LR;event(0x147a48);
         s.sp=addr(outer_stack)+0x100;s.x[19]=addr(outer_stack)+0x610;
-        s.x[3]=0;event(0x112ab4);s.x[1]=1;s.x[2]=0;event(0x112aec);
-        event(0x112afc);s.x[1]=0;event(0x112c10);s.x[0]=0;event(0x112ac4);
-        put(outer_stack,0x610+0x630,uint32_t(1));put(outer_stack,0x610+0x648,float(0));s.x[23]=0;event(0x112b58);
+        s.x[3]=0;if(policy_fault!=8)event(0x112ab4);s.x[1]=1;s.x[2]=0;event(0x112aec);
+        if(policy_fault==6){s.x[1]=0;event(0x112aec);}
+        event(policy_fault==9?0x112c70:0x112afc);
+        s.x[1]=policy_fault==10;event(0x112c10);s.x[0]=policy_fault==11;if(policy_fault!=7)event(0x112ac4);
+        put(outer_stack,0x610+0x1e0,uint8_t(policy_fault==12?2:0));
+        put(outer_stack,0x610+0x1e1,uint8_t(policy_fault==13?2:0));
+        put(outer_stack,0x610+0x62c,uint8_t(policy_fault==14));
+        put(outer_stack,0x610+0x630,uint32_t(policy_fault==16?2:1));
+        put(outer_stack,0x610+0x648,float(policy_fault==17?1:0));s.x[23]=policy_fault==15;
+        void *policy_memory=MAP_FAILED;
+        if(policy_fault>=1 && policy_fault<=5) {
+            constexpr unsigned offsets[]={0,0x1e0,0x1e1,0x62c,0x630,0x648};
+            policy_memory=mmap(nullptr,8192,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+            assert(policy_memory!=MAP_FAILED);
+            assert(!mprotect(static_cast<std::byte*>(policy_memory)+4096,4096,PROT_NONE));
+            s.x[19]=uint64_t(policy_memory)+4096-offsets[policy_fault];
+        }
+        if(policy_fault!=18)event(0x112b58);
+        if(policy_memory!=MAP_FAILED)assert(!munmap(policy_memory,8192));
         std::array<std::byte,80> pose{};put(pose,0x48,uint32_t(200));put(pose,0x4c,uint16_t(0x101));s.x[3]=addr(pose);event(0x63920);
         s.sp=addr(outer_stack);event(0x1480b8);
     }
@@ -314,25 +333,42 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     }
     if(mode.rfind("--association-",0)==0) {
         const auto fault=unsigned(std::stoul(mode.substr(14)));
-        void *memory=MAP_FAILED;
+        void *protected_page=nullptr;
+        if(fault==1)protected_page=f.worker.data();
         if(fault==2)put(f.worker,0x48,addr(f.app));
-        if(fault==3)assert(!mprotect(f.context.data(),4096,PROT_NONE));
-        if(fault==4)put(f.context,0x1a8,uint64_t(0));
-        if(fault==5)put(f.context,0x1a8,uint64_t(1));
-        if(fault==6)put(f.app,0x25320,uint64_t(0));
-        if(fault==7) {
-            memory=mmap(nullptr,0x28000,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-            assert(memory!=MAP_FAILED);auto *app=static_cast<std::byte*>(memory)+0xa00;
-            std::memcpy(app,f.app.data(),f.app.size());put(f.context,0x1a8,uint64_t(app));
-            assert(!mprotect(static_cast<std::byte*>(memory)+0x26000,4096,PROT_NONE));
+        if(fault==3)protected_page=reinterpret_cast<void*>(addr(f.context)&~uint64_t(4095));
+        if(fault==4 || fault==9 || fault==10 || fault==11 || fault==17)put(f.context,0x1a8,uint64_t(0));
+        if(fault==4)put(f.scheduler,8,uint64_t(0));
+        if(fault==5 || fault==7) {
+            assert((addr(f.app)&4095)==0xa00);
+            protected_page=reinterpret_cast<void*>((addr(f.app)&~uint64_t(4095))+(fault==5?0x25000:0x26000));
         }
-        f.frame_start(fault==1?1:0);f.frame_end();
+        if(fault==6)put(f.app,0x25320,uint64_t(0));
+        if(fault==9) {
+            assert((addr(f.context)&4095)==0xe40);
+            protected_page=reinterpret_cast<void*>((addr(f.context)+0x1c0)&~uint64_t(4095));
+        }
+        if(fault==10)put(f.context,0x1c0,addr(f.worker));
+        if(fault==11)protected_page=f.scheduler.data();
+        if(fault==12)put(f.context,0x1a8,uint64_t(1)); // nonnull must not try scheduler
+        if(fault==14)put(f.app,0x256a0,uint64_t(1));
+        if(fault==16)put(f.r,0xa78,uint64_t(1));
+        if(fault==17)put(f.scheduler,8,uint64_t(1)); // fallback app mismatch
+        if(protected_page)assert(!mprotect(protected_page,4096,PROT_NONE));
+        f.frame_start(fault==8?1:0);f.frame_end();
         std::this_thread::sleep_for(std::chrono::milliseconds(600));
         assert(!f.router.diagnostics().capable && !f.router.diagnostics().stopped);
-        if(fault==3)assert(!mprotect(f.context.data(),4096,PROT_READ|PROT_WRITE));
-        if(memory!=MAP_FAILED)assert(!munmap(memory,0x28000));
+        if(protected_page)assert(!mprotect(protected_page,4096,PROT_READ|PROT_WRITE));
         return 0;
     }
+    if(mode.rfind("--policy-",0)==0) {
+        f.policy_fault=unsigned(std::stoul(mode.substr(9)));
+        f.frame_start();f.frame_end();std::this_thread::sleep_for(std::chrono::milliseconds(600));
+        assert(!f.router.diagnostics().pending && !f.native_acquires && !f.native_releases);
+        return 0;
+    }
+    if(mode=="--application-fallback")put(f.context,0x1a8,uint64_t(0));
+    if(mode=="--application-direct")put(f.context,0x1c0,uint64_t(1)); // native direct branch never reads scheduler
     if(mode=="--diagnostics-bad")put(f.app,0x25320,uint64_t(0));
     f.frame_start();f.frame_end();
     if(mode=="--diagnostics-good" || mode=="--diagnostics-bad") {
@@ -630,6 +666,11 @@ int main(int argc,char **argv) {
             }
         });worker.join();return 0;
     }
+    if(mode=="--command-trace-capacity") {
+        f.publish_worker();f.s={};f.s.x[19]=addr(f.executable);
+        for(size_t i=0;i<CommandTrace::capacity+5;++i){f.s.x[0]=i;f.event(0x300a38);}
+        return 0; // actual collector teardown drains the bounded immutable slots
+    }
     if(mode=="--command-trace-gap") {
         f.publish_worker();
         f.begin_command(addr(f.other)); // bootstrap events while handoff waits
@@ -694,7 +735,7 @@ int main(int argc,char **argv) {
     }
     if(mode=="--worker")f.stock_append(); // existing charged stock debt crosses handoff intact
     f.publish_worker();
-    if(mode=="--worker" || mode=="--worker-no-stock") {
+    if(mode=="--worker" || mode=="--worker-no-stock" || mode.rfind("--application-",0)==0) {
         std::thread worker([&]{assert(run_chain(f,mode)==0);});worker.join();
         std::puts("runtime chain: actual bootstrap-to-worker thread boundary PASS");return 0;
     }

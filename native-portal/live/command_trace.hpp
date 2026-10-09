@@ -9,7 +9,7 @@ namespace native_portal::live {
 // lost evidence, NEVER admission or overwrite. The existing collector drains it.
 class CommandTrace {
 public:
-    static constexpr size_t capacity=1024,identity_capacity=128;
+    static constexpr size_t capacity=8192,identity_capacity=128;
     enum Route : uint64_t { Owner=1, HandoffWait=2, Foreign=3, OwnerEvent=4 };
     struct Row {
         uint64_t pc=0,lr=0,sp=0,tid=0,owner_tid=0,route=0,ledger_sampled=0;

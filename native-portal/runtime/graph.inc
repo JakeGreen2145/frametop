@@ -42,6 +42,10 @@ bool Evidence::owner_event(uint64_t pc,const arena::Saved &s,uint16_t *rejection
     if(bridge_)bridge_->scope_.thread=native_tid;
     run_=true;return true;
 }
+Evidence::ApplicationOwner Evidence::application_owner() const noexcept {
+    if(!initialized() || !run_ || handoff_.load()!=2)return {};
+    return {worker_,context_,scheduler_,application_};
+}
 bool Evidence::graph_capable() const noexcept {
     return initialized() && run_ && handoff_.load()==2 && recording_;
 }
