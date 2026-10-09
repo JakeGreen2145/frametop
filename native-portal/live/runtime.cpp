@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "runtime.hpp"
+#include "policy_sample.hpp"
 #include "diagnostics.hpp"
 #include "command_trace.hpp"
 #include <chrono>
@@ -92,7 +93,7 @@ struct Runtime::Impl {
     ft::portal::Mat4 origin{};Frame frame{};EyeInput eye{};
     PolicyInput policy{};PolicyDiagnostic policy_diagnostic{};bool tracking=false,outer=false,owned=false,pinned=false;
     std::array<unsigned char,0x660> effective{};
-    std::array<uint64_t,14> policy_values{};uint64_t policy_seen=0;bool policy_conflict=false;
+    PolicySample policy_sample{};
     std::atomic<bool> stopped{false};Diagnostics diag{};Mailbox<Diagnostics> published;
     LiveDiagnostics live{};Mailbox<LiveDiagnostics> live_published;
     CommandTrace command_trace;
@@ -261,22 +262,6 @@ struct Runtime::Impl {
             backend.invalidate(Reason::Origin);
         }
         return true;
-    }
-    void policy_tap(uint64_t pc,const arena::Saved &s) noexcept {
-        auto add=[&](unsigned i,uint64_t v){const auto bit=uint64_t(1)<<i;if((policy_seen&bit)&&policy_values[i]!=v)policy_conflict=true;policy_seen|=bit;policy_values[i]=v;};
-        uint32_t scalar=0;std::memcpy(&scalar,s.q[0],4);
-        switch(pc) {
-        case 0x112ab4:add(0,uint32_t(s.x[3]));break;
-        case 0x112aec:add(1,uint32_t(s.x[1]));add(2,s.x[2]);break;
-        case 0x112af4:add(3,scalar);break;
-        case 0x112afc:add(4,0);break;case 0x112c70:add(4,1);break;
-        case 0x112c10:add(5,uint32_t(s.x[1]));break;case 0x112c78:add(6,uint32_t(s.x[0]));break;
-        case 0x112ac4:add(7,uint32_t(s.x[0]));break;case 0x112b10:add(8,uint32_t(s.x[0]));break;
-        case 0x112c50:add(9,uint32_t(s.x[1]));break;case 0x112d14:add(10,uint32_t(s.x[23]));break;
-        case 0x112cfc:add(11,uint32_t(s.x[0]));break;case 0x112d2c:add(12,scalar);break;
-        case 0x112d90:{uint32_t v=0;std::memcpy(&v,s.q[1],4);add(13,v);break;}
-        default:break;
-        }
     }
     bool attach() noexcept {
         const auto id=evidence.identity();diag.initialized=evidence.initialized();diag.renderer=id.renderer;
@@ -513,24 +498,14 @@ struct Runtime::Impl {
         }
         if(pc==0x147a48) {
             if(outer || frame_number==UINT64_MAX) {refuse(Refusal::Policy);return;}
-            outer=true;outer_sp=s.sp;outer_owner=s.x[0];owned=false;tracking=false;policy_seen=0;policy_conflict=false;policy_ready=false;policy_diagnostic={};
+            outer=true;outer_sp=s.sp;outer_owner=s.x[0];owned=false;tracking=false;policy_sample={};policy_ready=false;policy_diagnostic={};
             outer_lr=s.x[30]>=base && s.x[30]-base<0x600000?s.x[30]-base:0;
             ++frame_number;++diag.frames;
         }
-        if(outer)policy_tap(pc,s);
+        if(outer)policy_sample.tap(pc,s);
         if(outer && pc==0x112b58) {
-            policy={};policy.style=uint32_t(policy_values[0]);policy.enabled=policy_values[1]==1;
-            policy.special=policy_values[4]!=0;policy.request=policy_values[5]!=0;policy.construct=policy_values[6]!=0;
-            bool forced_seen=false;uint64_t forced=0;
-            for(unsigned k=7;k<=10;++k)if(policy_seen&(uint64_t(1)<<k)) {
-                if(forced_seen && forced!=policy_values[k])policy_conflict=true;
-                forced_seen=true;forced=policy_values[k];
-            }
-            policy.forced=forced!=0;policy.suppression=policy_values[11]!=0;
-            uint32_t bits=uint32_t(policy_values[12]);std::memcpy(&policy.base,&bits,4);
-            bits=uint32_t(policy_values[13]);std::memcpy(&policy.gain,&bits,4);
             uint8_t p0=0,p1=0,construct=0;uint32_t style=0;float alpha=0;
-            policy_diagnostic={};policy_diagnostic.sampled=true;policy_diagnostic.seen=policy_seen;
+            policy_diagnostic={};policy_diagnostic.sampled=true;policy_diagnostic.seen=policy_sample.seen;
             auto check=[&](unsigned id,bool ok) {
                 policy_diagnostic.checked|=uint64_t(1)<<id;
                 if(ok)policy_diagnostic.passed|=uint64_t(1)<<id;
@@ -539,11 +514,10 @@ struct Runtime::Impl {
             };
             const bool read=check(1,get(s.x[19]+0x1e0,p0)) && check(2,get(s.x[19]+0x1e1,p1)) &&
                 check(3,get(s.x[19]+0x62c,construct)) && check(4,get(s.x[19]+0x630,style)) && check(5,get(s.x[19]+0x648,alpha));
-            policy.p0=p0!=0;policy.p1=p1!=0;const auto expected=pure_policy(policy,false);
-            const uint64_t required=(1ull<<0)|(1ull<<1)|(1ull<<4)|(1ull<<5);
+            policy=policy_sample.finish(s,p0!=0,p1!=0);const auto expected=pure_policy(policy,false);
             // Unsupported branches remain entirely stock. These fields are real
             // load results and the original function's unmodified outputs.
-            policy_ready=read && check(6,!policy_conflict) && check(7,forced_seen) && check(8,(policy_seen&required)==required) &&
+            policy_ready=read && check(6,!policy_sample.conflict) && check(7,policy_sample.forced_seen) && check(8,policy_sample.complete(policy)) &&
                 check(9,!policy.special) && check(10,!policy.request) && check(11,!policy.forced) && check(12,p0<=1) && check(13,p1<=1) &&
                 check(14,expected.construct==bool(construct)) && check(15,expected.demand==bool(s.x[23])) &&
                 check(16,expected.style==style) && check(17,expected.alpha==alpha);
@@ -626,7 +600,7 @@ struct Runtime::Impl {
             live.can_acquire=demand && demand->can_acquire();live.owned_debt=demand && demand->owned_debt();
             live.pipeline=pipeline_abi;live.adapter=adapter && adapter->state().initialized;
             live.tracking=tracking;live.policy=policy_ready;live.policy_detail=policy_diagnostic;
-            if(!live.policy_detail.sampled)live.policy_detail.seen=policy_seen;
+            if(!live.policy_detail.sampled)live.policy_detail.seen=policy_sample.seen;
             if(adapter && adapter->state().initialized && policy_ready && associated && tracking && !stopped &&
                runtime::read_self(s.sp+0x610,effective.data(),effective.size())) {
                 if(!gate)gate.emplace(backend);

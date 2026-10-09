@@ -225,10 +225,18 @@ struct Chain:Fixture {
     void frame_start(uint64_t owner=0) {
         s={};s.sp=addr(outer_stack);s.x[0]=owner?owner:addr(worker);s.x[30]=base+FT_OUTER_LR;event(0x147a48);
         s.sp=addr(outer_stack)+0x100;s.x[19]=addr(outer_stack)+0x610;
-        s.x[3]=0;if(policy_fault!=8)event(0x112ab4);s.x[1]=1;s.x[2]=0;event(0x112aec);
+        s.x[3]=0;if(policy_fault!=8)event(0x112ab4);
+        const auto forced=uint32_t(policy_fault==11);
+        s.x[0]=forced;if(policy_fault!=7)event(0x112ac4);
+        s.x[1]=1;s.x[2]=1;event(0x112aec);
         if(policy_fault==6){s.x[1]=0;event(0x112aec);}
         event(policy_fault==9?0x112c70:0x112afc);
-        s.x[1]=policy_fault==10;event(0x112c10);s.x[0]=policy_fault==11;if(policy_fault!=7)event(0x112ac4);
+        if(policy_fault==9){s.x[0]=0;event(0x112c78);}
+        s.x[1]=policy_fault==10;event(0x112c10);
+        s.x[0]=forced;if(policy_fault!=7)event(0x112b10);
+        s.x[1]=forced;if(policy_fault!=7)event(0x112c50);
+        event(0x112d2c);event(0x112d90);
+        s.x[0]=0;event(0x112cfc);s.x[23]=forced;if(policy_fault!=7)event(0x112d14);
         put(outer_stack,0x610+0x1e0,uint8_t(policy_fault==12?2:0));
         put(outer_stack,0x610+0x1e1,uint8_t(policy_fault==13?2:0));
         put(outer_stack,0x610+0x62c,uint8_t(policy_fault==14));
@@ -362,6 +370,28 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         std::this_thread::sleep_for(std::chrono::milliseconds(600));
         assert(!f.router.diagnostics().capable && !f.router.diagnostics().stopped);
         if(protected_page)assert(!mprotect(protected_page,4096,PROT_READ|PROT_WRITE));
+        return 0;
+    }
+    if(mode=="--policy-native-disabled" || mode=="--policy-native-special") {
+        const bool special=mode=="--policy-native-special";
+        // Both native branches bypass request, for different proved reasons.
+        f.s={};f.s.sp=addr(f.outer_stack);f.s.x[0]=addr(f.worker);f.s.x[30]=Chain::base+FT_OUTER_LR;f.event(0x147a48);
+        f.s.sp+=0x100;f.s.x[19]=addr(f.outer_stack)+0x610;f.s.x[20]=addr(f.app);
+        f.s.x[3]=0;f.event(0x112ab4);f.s.x[0]=0;f.event(0x112ac4);
+        f.s.x[1]=special;f.s.x[2]=special?0:1;f.event(0x112aec);
+        if(special) {
+            const float positive=1;std::memcpy(f.s.q[0],&positive,4);f.event(0x112af4);
+            f.event(0x112c70);f.s.x[0]=0;f.event(0x112c78);
+        } else f.event(0x112afc);
+        f.event(0x112b10);f.s.x[1]=0;f.event(0x112c50);
+        std::memset(f.s.q[0],0,16);f.event(0x112d2c);f.event(0x112d90);
+        f.s.x[0]=special;f.event(0x112cfc);f.s.x[23]=0;if(!special)f.event(0x112d14);
+        put(f.outer_stack,0x610+0x630,uint32_t(1));f.event(0x112b58);
+        std::array<std::byte,80> pose{};put(pose,0x48,uint32_t(200));put(pose,0x4c,uint16_t(0x101));f.s.x[3]=addr(pose);f.event(0x63920);
+        f.s.sp=addr(f.outer_stack);f.event(0x1480b8);f.frame_end();
+        assert(f.router.diagnostics().capable==!special); // readiness, NOT enabled/owned output
+        assert(!f.router.diagnostics().pending && !f.native_acquires && !f.native_releases);
+        std::this_thread::sleep_for(std::chrono::milliseconds(600));
         return 0;
     }
     if(mode.rfind("--policy-",0)==0) {

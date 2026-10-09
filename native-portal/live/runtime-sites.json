@@ -335,6 +335,20 @@
       }
     },
     {
+      "relative_pc": 1125748,
+      "pc": "0x112d74",
+      "guard": "0008221e0020211e00dc211e604a06bd",
+      "guard_sha256": "da6a7eac419c98bc97d141d749b038604cb479220ab0c16e2e596804c3e63f10",
+      "word": "0x1e220800",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x112d78",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
       "relative_pc": 1125776,
       "pc": "0x112d90",
       "guard": "604a06bdd8ffff17f30300aae00316aa",

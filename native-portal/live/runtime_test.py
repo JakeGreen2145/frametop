@@ -41,7 +41,7 @@ def main():
                 (build/'verification.json').write_text(json.dumps(results,indent=2));return result.returncode
     pool_faults=['lr','pool','device','handle','delete','clear','no-reset','no-begin',
                  'reset-failed','begin-failed','reset-lr']
-    modes=['--application-direct','--application-fallback','--main-pump','--main-pump-owner','--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
+    modes=['--policy-native-disabled','--policy-native-special','--application-direct','--application-fallback','--main-pump','--main-pump-owner','--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
            '--repeated-owned-reset-failed','--repeated-owned-begin-failed',
            '--repeated-owned-no-wait','--repeated-owned-no-disposal',
            '--publication-pool-live','--pool-owned-current','--pool-owned-retained']+['--publication-pool-'+s for s in pool_faults]+[
@@ -58,6 +58,14 @@ def main():
         result=subprocess.run([str(binary),mode],capture_output=True,text=True)
         print(mode,result.stdout+result.stderr,end='\n');assert result.returncode==expected,(mode,result.returncode,result.stderr)
         if expected==-signal.SIGABRT:assert 'cleanup-entry' in result.stderr and 'terminate called' not in result.stderr
+        if mode.startswith('--policy-native-'):
+            lines=[line for line in result.stderr.splitlines() if line.startswith('ft-native-live ') and 'seal=1 ' in line]
+            assert len(lines)==1,(mode,result.stderr)
+            fields=dict(word.split('=',1) for word in lines[0].split()[1:])
+            special=mode.endswith('special')
+            assert fields['policy_failed']==('9' if special else '0'),fields
+            assert fields['policy_seen']==('0x3bdf' if special else '0x3f97'),fields
+            assert fields['policy']==('0' if special else '1'),fields
         if mode.startswith('--application-'):
             sealed=[dict(word.split('=',1) for word in line.split()[1:]) for line in result.stderr.splitlines()
                     if line.startswith('ft-native-live ') and 'seal=1 ' in line]
@@ -163,7 +171,7 @@ def main():
         assert fields['policy_failed']==str(failed if sampled else 0),(mode,fields)
         assert int(fields['policy_checked'],16)==((1<<(failed+1))-2 if sampled else 0)
         assert int(fields['policy_passed'],16)==((1<<failed)-2 if sampled else 0)
-        seen=0xb7-(0x80 if failed==7 else 1 if failed==8 else 0)
+        seen=0x3fb7-(0x780 if failed==7 else 1 if failed==8 else 0)+(0x40 if failed==9 else 0)
         assert int(fields['policy_seen'],16)==seen,(mode,fields)
         if failed==14:assert fields['policy_actual']=='0x1' and fields['policy_expected']=='0x0'
         if failed==15:assert fields['policy_actual']=='0x2' and fields['policy_expected']=='0x0'
