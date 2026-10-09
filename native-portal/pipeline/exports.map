@@ -1,8 +1,8 @@
 FT_PORTAL_PIPELINE_1.0 {
   global:
-    vkGetInstanceProcAddr;
-    vkGetDeviceProcAddr;
-    vk_layerGetPhysicalDeviceProcAddr;
+    # Interface v2 supplies the three private proc-address functions by pointer.
+    # The live owner preloads this DSO through DT_NEEDED: exporting Vulkan API
+    # names here would preempt libvulkan and bypass its dispatch/handle unwrapping.
     vkNegotiateLoaderLayerInterfaceVersion;
     ft_pipeline_generation;
     ft_pipeline_begin;
