@@ -24,7 +24,8 @@ def main():
             '-DFT_BOOT_RELEASE_LR='+hex(bootstrap['release_lr']),'-DFT_BOOT_POOL_LR='+hex(bootstrap['pool_lr']),
             '-DFT_BOOT_QUEUE_LR='+hex(bootstrap['queue_lr']),
             '-DFT_RECYCLE_LR='+hex(bootstrap['recycle_lr']),
-            '-DFT_STOCK_POOL_LR='+hex(bootstrap['stock_pool_lr'])]
+            '-DFT_STOCK_POOL_LR='+hex(bootstrap['stock_pool_lr']),
+            '-DFT_INITIAL_POOL_LR='+hex(bootstrap['initial_pool_lr'])]
     (build/'pump.private.hpp').write_text(
         'static constexpr uint64_t pump_events[][6] = {'+
         ','.join('{'+','.join(hex(v) for v in row)+'}' for row in bootstrap['pump'])+'};\n')
@@ -169,6 +170,29 @@ def main():
         if failed==16:assert fields['policy_style']=='2,1'
         if failed==17:assert fields['policy_alpha']=='0x3f800000,0x0'
         results.append({'mode':mode,'code':0,'output':result.stdout+result.stderr})
+    # Feed every independently executed same-class native caller into the actual
+    # router. Cross every caller with identity/reset/Begin and owned-role faults.
+    for lr in bootstrap['command_pool_lrs']:
+        for mode in ['--publication-pool-live','--pool-owned-current','--pool-owned-retained']+[
+                '--publication-pool-'+s for s in pool_faults]:
+            result=subprocess.run([str(binary),mode],capture_output=True,text=True,timeout=5,
+                                  env={**os.environ,'FT_TEST_INITIAL_POOL_LR':hex(lr)})
+            assert result.returncode==0,(hex(lr),mode,result.stderr)
+            if mode=='--publication-pool-live':
+                rows=[dict(w.split('=',1) for w in line.split()[1:]) for line in result.stderr.splitlines()
+                      if line.startswith('ft-native-command ')]
+                returned=next(r for r in rows if r['pc']=='0x311648')
+                assert returned['lr']==hex(lr)
+                assert returned['before_member']==returned['after_member']=='1'
+                assert returned['begun']=='1,0' and returned['generation']=='0,0'
+                assert 'second stereo queue PASS' in result.stdout
+            results.append({'pool_lr':hex(lr),'mode':mode,'code':0})
+    for lr in bootstrap['excluded_pool_lrs']:
+        result=subprocess.run([str(binary),'--publication-pool-unsupported'],capture_output=True,text=True,
+                              timeout=5,env={**os.environ,'FT_TEST_INITIAL_POOL_LR':hex(lr)})
+        assert result.returncode==0,(hex(lr),result.stderr)
+        results.append({'excluded_pool_lr':hex(lr),'code':0})
+    print('same-class native pool caller/fault matrix and excluded returns PASS')
     from command_trace_test import verify as verify_command_trace
     results.extend(verify_command_trace(binary))
     # Real journal-style socket output, plus saturated sink: neither changes

@@ -54,6 +54,20 @@ The new repeated-stock assertion failed on the unchanged baseline and passed aft
 
 Native memory transitions and Vulkan results remain modeled in the router fixture. This change does not alter context-stop or camera-association handling and does not claim device or live optical verification.
 
+## Trial 14 initializer repair
+
+The private `live-stereo-14/command-cause.json` has a complete prefix through 1121 and a summary of 1234 attempted/consumed records with no overflow, identity overflow or sink loss. For the command that later fails publication, creation/Begin/insertion occur at 14 through 17. Sequence 19 returns it at `311648` through initializer LR `29a8b8`, erasing generation-zero membership. Worker reset/Begin at 111 through 114 cannot renew the missing entry. Later `297cb4` return and reset/Begin still leave it unknown at publication 1121.
+
+The pinned initializer tail at `29a8a4` loads C from `[sp+88]`, checks null, loads `[C+50]`, adds `d0`, then calls `311648` with x1=C and LR `29a8b8`. The witness executes those instructions, the full native return, pool recycler and ready-deque pop. It verifies unchanged C/Vk identity and actual callback order. Failed reset and failed Begin still prevent ready insertion.
+
+An exhaustive direct-BL scan of the pinned ELF identifies the immediate C+50/pool+d0 argument shape. The equivalent renderer normal/error tails have LRs `29798c`, `297cb4`, `297d40`, `29a8b8`, `29b080`, `29cbe0` and `29ccbc`. Each executes the same return/recycle/pop witness with successful, failed-reset and failed-Begin Vulkan boundaries. This covers the same-class paths together rather than waiting for another live LR failure. Exception-unwinding LRs `297a54`, `297e4c`, `29a918`, `29b250`, `29cddc`, `302808`, and wrapper LRs `3052f0`, `3053f0` remain outside this stock contract. Generic resource-return callers through `311058` are not admitted.
+
+`recording.cpp` extends only the exact caller set. All existing known-member, unpublished generation-zero, begun, renewal, device, pool, handle, current/retained and Lifecycle exclusions remain unchanged. A recognized return preserves identity and revokes Begin, never creates membership, a generation, read authority or settlement. Paired successful native reset/Begin remains mandatory before publication.
+
+The actual router reconstructs the trial-14 initializer return, real thread handoff, worker recycle, stock `297cb4` return, second recycle and publication. Its trace checks membership and Vk identity throughout, followed by owned stereo queue/wait/disposal/reset/Release and a second queue. The caller matrix crosses every admitted LR with pool/device/handle/caller faults, delete/clear, missing or failed reset/Begin, wrong recycler LR and current/retained owned debt. Every excluded direct caller is also refused. Existing repeated stock and complete owned Lifecycle cycles remain enabled.
+
+The trial-14 fixture failed on unchanged production code, then passed after the caller-set change. Normal and ASan/UBSan full-router runs each passed 227 recorded checks, including DSO linking; the separate Evidence ASan/UBSan suite passed. All runs used the 650 MiB, zero-swap scope. Logs are ignored `live/build/runtime/initial-pool-{red,green,asan,evidence}.log`. Native instructions execute over synthetic objects and Vulkan results remain explicit CPU boundaries. No device was accessed, and post-repair live startup or stereo is not verified.
+
 ## Trace contract
 
 The existing collector emits `ft-native-command` lines. Each line includes:

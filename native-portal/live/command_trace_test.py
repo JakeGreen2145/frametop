@@ -54,7 +54,7 @@ def verify(binary):
             added = cycle[3]
             for offset in [4, 9]:
                 returned, reset, reset_result, begin, begin_result = cycle[offset:offset+5]
-                assert returned['lr'] == '0x297cb4'
+                assert returned['lr'] == ('0x29a8b8' if offset == 4 else '0x297cb4')
                 assert returned['before_member'] == returned['after_member'] == '1'
                 assert returned['begun'] == '1,0' and returned['generation'] == '0,0'
                 assert returned['entries'].split(',')[0] == returned['entries'].split(',')[1]
@@ -70,7 +70,7 @@ def verify(binary):
             assert pub['generation'].split(',')[0] == '0' and int(pub['generation'].split(',')[1]) > 0
             assert pub['native_vk'] == pub['after_vk'] == added['after_vk'] == '0xc001'
             assert 'second stereo queue PASS' in result.stdout
-            print('command trace: trial-11 same-C bootstrap return, real thread handoff, two reset/Begin cycles, publication and owned settlement PASS')
+            print('command trace: trial-14 same-C initializer return, real thread handoff, two reset/Begin cycles, publication and owned settlement PASS')
         elif mode == '--repeated-cycles':
             pub = next(r for r in rows if r['pc'] == '0x2a23f4')
             cycle = [r for r in rows if r['command'] == pub['command']]

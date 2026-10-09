@@ -139,10 +139,13 @@ struct Chain:Fixture {
         s={};s.x[0]=addr(worker);s.x[21]=addr(context);event(0x140dbc);
     }
     void stock_pool_return(const std::string &mode) {
-        // Trial 11 seq58 on bootstrap, seq143 on Run. Only C/pool identities
-        // are relocated. LR is derived by the pinned native instruction witness.
+        // Trial 14 returns first through the initializer, then through the stock
+        // tail on Run. Pinned instructions derive both LRs; identity is relocated.
         s={};s.sp=addr(stack)+0x100;s.x[0]=addr(bootstrap_pool)+0xd0;s.x[1]=addr(executable);
         s.x[30]=base+FT_STOCK_POOL_LR;
+        const char *lr=std::getenv("FT_TEST_INITIAL_POOL_LR");
+        if(lr || !mode.empty())
+            s.x[30]=base+(lr?std::strtoull(lr,nullptr,0):FT_INITIAL_POOL_LR);
         if(mode=="--publication-pool-lr")s.x[30]+=4;
         if(mode=="--publication-pool-pool")s.x[0]+=8;
         if(mode=="--publication-pool-device")put(executable,8,addr(r)+0x58);

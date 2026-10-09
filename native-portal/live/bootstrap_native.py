@@ -6,6 +6,7 @@ Do not infer the live dispatch caller from the first-invalidation diagnostic: it
 contains no LR. Enumerate the renderer's real direct virtual callers instead.
 """
 import hashlib
+from itertools import product
 import os
 from pathlib import Path
 import struct
@@ -157,6 +158,37 @@ def bootstrap_native():
     run(0x297ca0,0x311648)
     assert x(0)==pool+0xd0 and x(1)==C and x(30)==0x297cb4
     stock_pool_lr=x(30)
+    # Same-class renderer command tails, including the live initializer. These
+    # paths derive pool+d0 from C+50 directly, unlike generic resource returns
+    # through 311058. Unwinding and wrapper destruction remain excluded.
+    command_tails = [(0x29a8a4,0x29a8b8,0x88), (0x297978,0x29798c,0x50),
+                     (0x297ca0,0x297cb4,0x80), (0x297d2c,0x297d40,0x80),
+                     (0x29b070,0x29b080,None), (0x29cbcc,0x29cbe0,0xa8),
+                     (0x29cca8,0x29ccbc,0xa8)]
+    # Exhaustive direct BL scan for this immediate C+50 -> pool+d0 shape.
+    # Do not add generic 311058 resource-return callers or exception tails.
+    excluded_pool_lrs=[0x297a54,0x297e4c,0x29a918,0x29b250,0x29cddc,
+                       0x302808,0x3052f0,0x3053f0]
+    direct=[]
+    add=bytes(m.mem_read(0x297cac,4))
+    load=bytes(m.mem_read(0x297ca8,4))
+    register_path=bytes(m.mem_read(0x29b070,12))
+    for p,n,data in segments:
+        for off in range(12,len(data)-3,4):
+            word=struct.unpack_from('<I',data,off)[0]
+            if word & 0xfc000000 != 0x94000000: continue
+            imm=word & 0x3ffffff
+            if imm & (1<<25): imm-=1<<26
+            if p+off+4*imm!=0x311648: continue
+            if (data[off-8:off]==load+add or data[off-12:off]==register_path):
+                direct.append(p+off+4)
+    assert sorted(direct)==sorted([lr for _,lr,_ in command_tails]+excluded_pool_lrs)
+    for start, lr, slot in command_tails:
+        if slot is not None: put(stack+slot,C)
+        x(22,C);m.reg_write(A.UC_ARM64_REG_SP,stack)
+        run(start,0x311648)
+        assert x(0)==pool+0xd0 and x(1)==C and x(30)==lr
+        assert m.reg_read(A.UC_ARM64_REG_SP)==stack
     # Full no-sync command return/recycle/pop cycle. The same C and Vk handle
     # survive the pool return. Real pool dispatch calls real Reset -> Begin and
     # appends C to the ready deque. Only Vulkan, RTTI and debug annotation are
@@ -189,13 +221,14 @@ def bootstrap_native():
     assert [r[0] for r in cycle_seen]==[0x301808,0x300a08,0x300a38,0x30180c]
     assert get(C+0x738)==0xc001 and x(0)==1
     recycle=[]
-    for raw_reset,raw_begin in [(0,0),(-4,0),(0,-4)]:
+    for (start,lr,slot),(raw_reset,raw_begin) in product(command_tails,[(0,0),(-4,0),(0,-4)]):
         cycle_seen.clear()
         put(pool+0xd0+0x40,pool+0x300)
-        put(stack+0x80,C);m.reg_write(A.UC_ARM64_REG_SP,stack)
+        if slot is not None: put(stack+slot,C)
+        x(22,C);m.reg_write(A.UC_ARM64_REG_SP,stack)
         m.ctl_remove_cache(0,0x600000)
-        run(0x297ca0,0x297cb4)
-        assert cycle_seen[0][3]==stock_pool_lr
+        run(start,lr)
+        assert cycle_seen[0][3]==lr
         assert get(pool+0x300)==C and get(C+0x738)==0xc001
         assert bytes(m.mem_read(C+0x28,1))==b'\x01'
         put(pool+0xd0,0x599c10);assert get(0x599c20)==0x2a9c88
@@ -220,9 +253,11 @@ def bootstrap_native():
             run(0x2a23e8,0x2a23f8);assert get(get(R+0x1380)+8)==C
             assert bytes(m.mem_read(C+0x28,1))==b'\x00'
             assert [r[0] for r in cycle_seen]==pcs+[0x2a23f4]
-        recycle.append({'reset':raw_reset,'begin':raw_begin,'ready':good,'sites':[hex(r[0]) for r in cycle_seen]})
+        recycle.append({'caller':hex(lr),'reset':raw_reset,'begin':raw_begin,'ready':good,'sites':[hex(r[0]) for r in cycle_seen]})
     m.hook_del(hook)
     return {'release_lr':release_lr,'pool_lr':0x3052f0,'queue_lr':queue_lr,'dispatch_lrs':[lr for _,lr in callers],
+            'excluded_pool_lrs':excluded_pool_lrs,
+            'initial_pool_lr':command_tails[0][1],'command_pool_lrs':[lr for _,lr,_ in command_tails],
             'stock_pool_lr':stock_pool_lr,'recycle_lr':0x2a9cdc,'pool_cycle':recycle,
             'pump':pump,'outer_lr':outer_lr}
 

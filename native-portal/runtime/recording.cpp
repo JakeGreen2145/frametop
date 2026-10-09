@@ -133,12 +133,16 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         if(command==creation_) return fail(pc);
         for(auto &c:recordings_) if(c.command==command) {
             if(spans_[6].begin==command || spans_[7].begin==command) {fail(pc);return true;}
-            // The pinned stock tail at 297ca0 loads C from its stack slot,
-            // obtains C+50, and calls this pool's return method at LR297cb4.
-            // Stock can return an initial or successfully reset/rebegun C here.
+            // Pinned renderer command tails obtain pool+d0 from C+50. The
+            // initializer LR29a8b8 and equivalent normal/error tails are executed
+            // through return/recycle/pop by bootstrap_native.py. Generic resource
+            // returns, unwinding and wrapper destruction are NOT this contract.
             // Preserve identity only; no Begin, generation or settlement is
             // inferred. Current/retained commands stay on the Lifecycle path.
-            if(pc==0x311648 && s.x[30]==base_+0x297cb4 && !c.published &&
+            bool stock_return=false;
+            for(uint64_t lr:{0x29798cu,0x297cb4u,0x297d40u,0x29a8b8u,0x29b080u,0x29cbe0u,0x29ccbcu})
+                stock_return=stock_return || s.x[30]==base_+lr;
+            if(pc==0x311648 && stock_return && !c.published &&
                !c.generation && c.begun && !c.renewal &&
                (!lifecycle_ || lifecycle_owner_.command!=command)) {
                 uint64_t D=0,pool=0,vk=0;
