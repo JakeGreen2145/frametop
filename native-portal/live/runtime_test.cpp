@@ -22,6 +22,17 @@ int main() {
     for(unsigned i=0;i<1000;++i) {
         live.capable=!live.capable;assert(!log.format(live,63,line,sizeof line));
     }
+    DiagnosticLog facts;LiveDiagnostics facts_only{};
+    assert(facts.format(facts_only,0,line,sizeof line));
+    facts_only.first_owner_rejection=(uint64_t(0x140dbc)<<16)|13;
+    assert(facts.format(facts_only,0,line,sizeof line));
+    assert(std::strstr(line,"first_owner_pc=0x140dbc first_owner_pred=13"));
+    facts_only.first_evidence_pc=0x305260;
+    assert(facts.format(facts_only,0,line,sizeof line));
+    facts_only.first_stop_pc=0x29bd18;
+    assert(facts.format(facts_only,0,line,sizeof line));
+    assert(std::strstr(line,"first_evidence_pc=0x305260 first_stop_pc=0x29bd18"));
+    assert(!facts.format(facts_only,0,line,sizeof line));
     static_assert(sizeof(Diagnostics)==96); // exported mailbox ABI stays unchanged
     static_assert(sizeof(arena::Saved)==800);
     Runtime runtime;

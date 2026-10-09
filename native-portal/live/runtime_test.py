@@ -38,6 +38,26 @@ def main():
         print(mode,result.stdout+result.stderr,end='\n');assert result.returncode==expected,(mode,result.returncode,result.stderr)
         if expected==-signal.SIGABRT:assert 'cleanup-entry' in result.stderr and 'terminate called' not in result.stderr
         results.append({'mode':mode,'expected_exit':expected,'code':result.returncode,'output':result.stdout+result.stderr})
+    for mode,predicate,failure,stop,owners in [
+        ('--diagnostics-start-renderer',13,'0x29bd18','0x29bd18','0x17'),
+        ('--diagnostics-start-unreadable',12,'0x29bd18','0x29bd18','0x17'),
+        ('--diagnostics-start-failed',5,'0x305260','0x29bd18','0x17'),
+        ('--diagnostics-stop-unrelated',0,'0x0','0x29bd18','0x0'),
+        ('--diagnostics-stop-waiting',0,'0x0','0x142620','0xf'),
+        ('--diagnostics-run-lr',3,'0x0','0x0','0x1f')]:
+        result=subprocess.run([str(binary),mode],capture_output=True,text=True,timeout=5)
+        print(mode,result.stdout+result.stderr)
+        assert result.returncode==0,(mode,result.stderr)
+        lines=[line for line in result.stderr.splitlines() if line.startswith('ft-native-live ')]
+        fields=dict(word.split('=',1) for word in lines[-1].split()[1:])
+        assert fields.get('first_owner_pred')==str(predicate),(mode,fields)
+        expected_pc='0x14e5a8' if mode=='--diagnostics-run-lr' else '0x140dbc' if predicate else '0x0'
+        assert fields['first_owner_pc']==expected_pc
+        assert fields['first_evidence_pc']==failure and fields['first_stop_pc']==stop,(mode,fields)
+        assert fields['owner_events']==owners and fields['frames']=='0' and fields['seals']=='0'
+        assert fields['uploads']=='0,0' and fields['handoff']=='0'
+        assert fields['first_refusal']=='graph-ownership' and fields['first_pc']=='0x7fdbc'
+        results.append({'mode':mode,'code':result.returncode,'output':result.stdout+result.stderr})
     for mode in ['--diagnostics-good','--diagnostics-bad']:
         result=subprocess.run([str(binary),mode],capture_output=True,text=True)
         print(mode,result.stdout+result.stderr)
@@ -51,6 +71,9 @@ def main():
         assert fields['handoff']=='1' and fields['origin_ok']=='1' and fields['pipeline']=='1'
         assert fields['tracking']=='1' and fields['policy']=='1'
         assert fields['first_refusal']=='graph-ownership' and fields['first_pc']=='0x7fdbc'
+        for key in ['first_owner_pc','first_evidence_pc','first_stop_pc']:
+            assert fields[key]=='0x0',(mode,key,fields)
+        assert fields['first_owner_pred']=='0'
         good=mode.endswith('good')
         for key in ['associated','idle','can_acquire','adapter','capable']:
             assert fields[key]==str(int(good)),(mode,key,fields)

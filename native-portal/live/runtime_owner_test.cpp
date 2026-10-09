@@ -25,7 +25,47 @@ static void classifier_scope() {
     assert(!f.evidence.arena_event(bridge,arena::UboClassify,s) && s.pad==arena::Unsupported);
     assert(!bridge.ready());
 }
+static void owner_predicates() {
+    Fixture f;assert(f.bootstrap(true));
+    std::array<std::byte,0x200> context{},worker{},scheduler{};
+    std::array<std::byte,0x25700> app{};
+    put(worker,0,uint64_t(Fixture::base+0x5a1428));put(worker,0x48,addr(context));
+    put(context,0x98,addr(worker));put(context,0x1c0,addr(scheduler));put(scheduler,8,addr(app));put(app,0x256a0,addr(f.r));
+    arena::Saved s{};s.x[19]=addr(worker);s.x[21]=addr(context);
+    auto refused=[&](uint64_t pc,uint16_t expected) {
+        const auto before=s;uint16_t predicate=999;
+        assert(!f.evidence.owner_event(pc,s,&predicate) && predicate==expected);
+        assert(!std::memcmp(&s,&before,sizeof s));
+        assert(!f.evidence.first_failure_pc() && !f.evidence.graph_capable());
+    };
+    s.x[19]=1;refused(0x14099c,6);s.x[19]=addr(worker);
+    put(worker,0,uint64_t(0));refused(0x14099c,7);put(worker,0,uint64_t(Fixture::base+0x5a1428));
+    s.x[21]+=8;refused(0x14099c,9);s.x[21]-=8;
+    uint16_t predicate=999;assert(f.evidence.owner_event(0x14099c,s,&predicate) && !predicate);
+    refused(0x14099c,3);
+    s.x[0]=addr(worker)+8;refused(0x140dbc,3);s.x[0]=addr(worker);
+    s.x[21]+=8;refused(0x140dbc,4);s.x[21]-=8;
+    put(context,0x98,uint64_t(0));refused(0x140dbc,7);put(context,0x98,addr(worker));
+    put(context,0x1c0,uint64_t(0));refused(0x140dbc,9);
+    put(context,0x1c0,uint64_t(1));refused(0x140dbc,10);put(context,0x1c0,addr(scheduler));
+    put(scheduler,8,uint64_t(0));refused(0x140dbc,11);
+    put(scheduler,8,uint64_t(1));refused(0x140dbc,12);put(scheduler,8,addr(app));
+    put(app,0x256a0,uint64_t(0));refused(0x140dbc,13);put(app,0x256a0,addr(f.r));
+    assert(f.evidence.owner_event(0x140dbc,s,&predicate) && !predicate);
+    std::thread thread([&] {
+        s.x[30]=Fixture::base+FT_NATIVE_RUN_RETURN;
+        put(worker,0x10,uint32_t(syscall(SYS_gettid)));put(worker,0x14,uint32_t(0x80000000));
+        s.x[30]+=4;refused(0x14e5a8,3);s.x[30]-=4;
+        s.x[0]+=8;refused(0x14e5a8,2);s.x[0]-=8;
+        put(worker,0x10,uint32_t(0));refused(0x14e5a8,9);put(worker,0x10,uint32_t(syscall(SYS_gettid)));
+        put(worker,0x14,uint32_t(0));refused(0x14e5a8,11);put(worker,0x14,uint32_t(0x80000000));
+        put(app,0x256a0,uint64_t(0));refused(0x14e5a8,17);put(app,0x256a0,addr(f.r));
+        assert(f.evidence.owner_event(0x14e5a8,s,&predicate) && !predicate);
+        assert(f.evidence.graph_capable());
+    });thread.join();
+}
 int main() {
+    owner_predicates();
     classifier_scope();
     Fixture f;arena::Bridge bridge(f.evidence.bridge_memory());assert(f.bootstrap(true,&bridge));
     std::array<std::byte,0x200> context{},worker{},scheduler{};

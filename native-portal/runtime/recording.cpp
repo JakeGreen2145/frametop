@@ -6,50 +6,50 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
     // Pooled commands can begin BEFORE wrapper acquisition, so keep a bounded
     // pending ledger. Never infer a begin from the later wrapper publication.
     if(pc==0x301808) {
-        if(creation_ || s.x[0]!=s.x[20] || !s.x[0] || s.x[0]>UINT64_MAX-0x7b0 || s.sp<0x70) return fail();
+        if(creation_ || s.x[0]!=s.x[20] || !s.x[0] || s.x[0]>UINT64_MAX-0x7b0 || s.sp<0x70) return fail(pc);
         uint64_t D=0;
         if(!read_self(s.x[0]+8,&D,8) || D!=identity_.renderer+0x50) return false;
-        for(const auto &c:recordings_) if(c.command==s.x[0]) return fail();
+        for(const auto &c:recordings_) if(c.command==s.x[0]) return fail(pc);
         creation_=s.x[0];creation_sp_=s.sp;begin_success_=false;return true;
     }
     if(pc==0x300a08 && creation_) {
         if(begin_open_ || begin_success_ || s.x[0]!=creation_ || s.x[19]!=creation_ ||
            s.sp!=creation_sp_-0x40 || s.x[30]!=base_+0x300ae0 ||
-           !read_self(creation_+0x738,&begin_vk_,8) || !begin_vk_) return fail();
+           !read_self(creation_+0x738,&begin_vk_,8) || !begin_vk_) return fail(pc);
         begin_sp_=s.sp;begin_open_=true;return true;
     }
     if(pc==0x300a38 && creation_) {
         uint64_t lr=0,vk=0;
         if(!begin_open_ || s.sp!=begin_sp_-0x30 || s.x[19]!=creation_ ||
            !read_self(s.sp+8,&lr,8) || lr!=base_+0x300ae0 ||
-           !read_self(creation_+0x738,&vk,8) || vk!=begin_vk_) return fail();
+           !read_self(creation_+0x738,&vk,8) || vk!=begin_vk_) return fail(pc);
         begin_open_=false;begin_success_=static_cast<uint32_t>(s.x[0])==0;
         return begin_success_;
     }
     if(pc==0x30180c) {
-        if(!creation_ || begin_open_ || s.sp!=creation_sp_ || s.x[20]!=creation_) return fail();
+        if(!creation_ || begin_open_ || s.sp!=creation_sp_ || s.x[20]!=creation_) return fail(pc);
         const auto command=creation_;creation_=0;
         if(!begin_success_ || !(s.x[0]&255)) {begin_success_=false;return false;}
         begin_success_=false;
         for(auto &c:recordings_) if(!c.command) {
             c={command,begin_vk_,0,true};return true;
         }
-        return fail(); // bounded exhaustion cannot become partial tracking
+        return fail(pc); // bounded exhaustion cannot become partial tracking
     }
     if(pc==0x2a23f4) {
         if(!run_ || !ready_ || !transferred_ || s.x[19]!=identity_.renderer || command_wrapper_ || !s.x[0])return false;
         uint64_t C=0,D=0,vk=0;
         if(!read_self(s.x[0]+8,&C,8) || !read_self(C+8,&D,8) || D!=identity_.renderer+0x50 ||
-           !read_self(C+0x738,&vk,8) || !vk)return fail();
+           !read_self(C+0x738,&vk,8) || !vk)return fail(pc);
         for(auto &c:recordings_)if(c.command==C && c.vk==vk && c.begun) {
             if(lifecycle_ && spans_[6].begin==lifecycle_owner_.command && C!=spans_[6].begin)spans_[7]=spans_[6];
-            if(!add(2,s.x[0],0x10) || !add(6,C,0x7b0))return fail();
+            if(!add(2,s.x[0],0x10) || !add(6,C,0x7b0))return fail(pc);
             command_wrapper_=s.x[0];
             if(!c.generation)c.generation=generations_.issue();
-            if(!c.generation)return fail();
+            if(!c.generation)return fail(pc);
             recording_=c.generation;return true;
         }
-        return fail(); // publication is not proof of a successful native begin
+        return fail(pc); // publication is not proof of a successful native begin
     }
     if(pc==0x305260 || pc==0x2953a0) {
         if(s.x[0]!=command_wrapper_) return false;
@@ -60,14 +60,14 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
             // destructor; never read the relinquished wrapper again.
             spans_[2]={};command_wrapper_=0;return true;
         }
-        fail();return true; // any other release remains unsupported
+        fail(pc);return true; // any other release remains unsupported
     }
     if(pc==0x311648 || pc==0x4b3d0 || pc==0x3003d0) {
         const auto command=pc==0x311648?s.x[1]:s.x[0];
         if(!command) return false;
-        if(command==creation_) return fail();
+        if(command==creation_) return fail(pc);
         for(auto &c:recordings_) if(c.command==command) {
-            if(spans_[6].begin==command || spans_[7].begin==command) {fail();return true;}
+            if(spans_[6].begin==command || spans_[7].begin==command) {fail(pc);return true;}
             c={};return true;
         }
         return false;
@@ -78,18 +78,18 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
     if(run_ && (pc==0x300b20 || pc==0x300a08 || pc==0x300c54 || pc==0x300a38)) {
         const auto object=(pc==0x300b20 || pc==0x300a08)?s.x[0]:s.x[19];
         for(auto &c:recordings_)if(c.command==object) {
-            uint64_t vk=0;if(!read_self(c.command+0x738,&vk,8) || vk!=c.vk)return fail();
+            uint64_t vk=0;if(!read_self(c.command+0x738,&vk,8) || vk!=c.vk)return fail(pc);
             if(pc==0x300b20) {
                 if(c.generation==recording_)recording_=0;
                 c.generation=0;c.begun=false;c.reset_sp=s.sp;c.reset_lr=s.x[30];c.renewal=1;
             } else if(pc==0x300c54) {
-                if(c.renewal!=1 || s.sp+0x20!=c.reset_sp || uint32_t(s.x[0]))return fail();
+                if(c.renewal!=1 || s.sp+0x20!=c.reset_sp || uint32_t(s.x[0]))return fail(pc);
                 c.renewal=2;
             } else if(pc==0x300a08) {
-                if(c.renewal!=2 || s.sp!=c.reset_sp || s.x[30]!=c.reset_lr)return fail();
+                if(c.renewal!=2 || s.sp!=c.reset_sp || s.x[30]!=c.reset_lr)return fail(pc);
                 c.renewal=3;
             } else {
-                if(c.renewal!=3 || s.sp+0x30!=c.reset_sp || uint32_t(s.x[0]))return fail();
+                if(c.renewal!=3 || s.sp+0x30!=c.reset_sp || uint32_t(s.x[0]))return fail(pc);
                 c.renewal=0;c.begun=true;
             }
             break;
@@ -131,7 +131,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
             if(spans_[6].begin==c.command)recording_=c.generation;
             return true;
         }
-        return fail();
+        return fail(pc);
     }
     return true;
 }

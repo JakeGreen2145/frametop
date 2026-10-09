@@ -52,7 +52,8 @@ bool Evidence::read(uint64_t p,void *out,size_t n) const noexcept {
     }
     return false;
 }
-bool Evidence::fail() noexcept {
+bool Evidence::fail(uint64_t pc) noexcept {
+    if(!failed_)first_failure_pc_.store(pc);
     clear_staging();
     failed_=true;ready_=false;allocation_open_=false;call_=0;spans_={};recordings_={};recording_=0;return false;
 }
@@ -61,15 +62,15 @@ render::Identity Evidence::identity() const noexcept {return initialized()?ident
 bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
     if(!owner() || !pinned_ || failed_) return false;
     if(pc==0x7fda0) { // successful 0x16c0 constructor return; R is x24, not x0
-        if(constructed_ || !bounded(s.x[24],0x16c0)) return fail();
-        epoch_=issue();if(!epoch_) return fail();
+        if(constructed_ || !bounded(s.x[24],0x16c0)) return fail(pc);
+        epoch_=issue();if(!epoch_) return fail(pc);
         constructed_=true;identity_.renderer=s.x[24];identity_.renderer_generation=epoch_;
         // PID is a process-local discriminator only. Fork is separately rejected;
         // no evidence may be persisted or compared across process instances.
         identity_.process_instance=static_cast<uint64_t>(pid_);
-        if(!add(0,s.x[24],0x16c0)) return fail();
+        if(!add(0,s.x[24],0x16c0)) return fail(pc);
         uint64_t vtable=0;
-        if(!at(s.x[24],vtable) || vtable!=base_+0x599c38) return fail();
+        if(!at(s.x[24],vtable) || vtable!=base_+0x599c38) return fail(pc);
         return true;
     }
     if(!constructed_) return false;
@@ -80,21 +81,21 @@ bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
        pc==0x2a2320 || pc==0x2987d8 || pc==0x298840 || pc==0x2a23f4) return recording_event(pc,s);
     if(pc==0x29bd18 || pc==0x29c238) {
         if(s.x[0]!=R) return false;
-        fail();return true; // revoke before native teardown, never retire native objects
+        fail(pc);return true; // revoke before native teardown, never retire native objects
     }
     if(pc==0x2966a0 || pc==0x294678) {
         if(s.x[0]!=R) return false;
         uint64_t object=0;
-        if(!read_self(s.x[1],&object,8)) return fail();
+        if(!read_self(s.x[1],&object,8)) return fail(pc);
         if((pc==0x2966a0 && (object==wrapper_ || (staging_ticket_ && object==stock_))) ||
            (pc==0x294678 && object==marker_)) {
-            fail();return true; // revoke before native destruction, never read freed storage
+            fail(pc);return true; // revoke before native destruction, never read freed storage
         }
         return false;
     }
     if(pc==0x2fe090) {
         if(s.x[0]!=resource_) return false;
-        fail();return true; // this consumer does not authorize a later remap
+        fail(pc);return true; // this consumer does not authorize a later remap
     }
     if(pc==0x2987d4) {
         if(s.x[22]!=R || !ready_) return false;
@@ -104,7 +105,7 @@ bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
     if(pc==0x29a14c) {
         if(ready_ || resource_ || allocation_open_ || s.x[19]!=R || s.x[0]!=R+0xec0 ||
            (s.x[1]!=0x80000 && s.x[1]!=0x80080) || !bounded(s.sp,0x148) ||
-           s.x[8]!=s.sp+0x140) return fail();
+           s.x[8]!=s.sp+0x140) return fail(pc);
         requested_size_=static_cast<uint32_t>(s.x[1]);allocation_sp_=s.sp;
         allocation_slot_=s.x[8];allocation_open_=true;return true;
     }
@@ -112,34 +113,34 @@ bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
         // The output is live only in this paired suspended native frame. x0 is
         // not the resource return value; native consumes/clears the slot next.
         if(!allocation_open_ || s.sp!=allocation_sp_ || s.x[19]!=R ||
-           !read_self(allocation_slot_,&resource_,8) || !add(1,resource_,0x128)) return fail();
+           !read_self(allocation_slot_,&resource_,8) || !add(1,resource_,0x128)) return fail(pc);
         allocation_open_=false;allocation_slot_=allocation_sp_=0;return true;
     }
     if(pc==0x29a528) { // before STR x1,[R+1380]; newly returned 16-byte wrapper
-        if(ready_ || s.x[19]!=R || command_wrapper_ || !add(2,s.x[1],0x10)) return fail();
+        if(ready_ || s.x[19]!=R || command_wrapper_ || !add(2,s.x[1],0x10)) return fail(pc);
         command_wrapper_=s.x[1];
         uint64_t command=0;
-        if(!at(command_wrapper_+8,command)) return fail();
+        if(!at(command_wrapper_+8,command)) return fail(pc);
         for(auto &c:recordings_) if(c.command==command && c.begun) {
-            if(!add(6,command,0x7b0)) return fail();
+            if(!add(6,command,0x7b0)) return fail(pc);
             uint64_t vk=0,D=0;
-            if(!at(command+0x738,vk) || vk!=c.vk || !at(command+8,D) || D!=R+0x50) return fail();
+            if(!at(command+0x738,vk) || vk!=c.vk || !at(command+8,D) || D!=R+0x50) return fail(pc);
             // Issue only for the published owner, not the last-created pool member.
-            c.generation=generations_.issue();if(!c.generation) return fail();
+            c.generation=generations_.issue();if(!c.generation) return fail(pc);
             recording_=c.generation;break;
         }
         return true;
     }
     if(pc==0x7fdbc) {
-        if(ready_ || s.x[24]!=R || !(s.x[0]&255) || allocation_open_ || !resource_ || !command_wrapper_) return fail();
+        if(ready_ || s.x[24]!=R || !(s.x[0]&255) || allocation_open_ || !resource_ || !command_wrapper_) return fail(pc);
         uint64_t physical=0,context=0,vtable=0;render::Arena a{};
         if(!at(R,vtable) || vtable!=base_+0x599c38 || !at(R+0xa78,identity_.device) || !identity_.device ||
-           !at(R+0xb0,physical) || !physical || !at(R+0x78,context) || !context || !arena(a) || a.cursor) return fail();
+           !at(R+0xb0,physical) || !physical || !at(R+0x78,context) || !context || !arena(a) || a.cursor) return fail(pc);
         // Attach only the layer's actual device creation generation. Null weak
         // export leaves this fact unsupported; never substitute our renderer epoch.
         if(!at(resource_+0x50,backing_) || !at(resource_+0x58,type_index_) ||
            !at(resource_+0x60,allocation_bytes_) || !at(R+0xf00,type_count_) ||
-           !at(R+0xf04+8*type_index_,type_flags_)) return fail();
+           !at(R+0xf04+8*type_index_,type_flags_)) return fail(pc);
         map_=a.map;buffer_=a.buffer;
         if(ft_pipeline_generation) identity_.device_generation=ft_pipeline_generation(reinterpret_cast<void*>(identity_.device));
         ready_=true;return true;
@@ -151,13 +152,13 @@ bool Evidence::route(arena::Bridge &bridge,uint64_t pc,arena::Saved &s) noexcept
     if(pc==0x7fda0) {
         if(bridge_ || !event(pc,s)) return false;
         bridge_=&bridge;
-        if(!bridge.arm({identity_.renderer,epoch_,static_cast<uint64_t>(tid_),identity_.renderer+0xec0,base_},true)) return fail();
+        if(!bridge.arm({identity_.renderer,epoch_,static_cast<uint64_t>(tid_),identity_.renderer+0xec0,base_},true)) return fail(pc);
         return true;
     }
     if(bridge_!=&bridge) return false;
     if(pc==0x29a14c) {
         bridge.dispatch(s,arena::Allocate,epoch_,static_cast<uint64_t>(tid_));
-        if(s.x[1]!=arena::Capacity) return fail();
+        if(s.x[1]!=arena::Capacity) return fail(pc);
         return event(pc,s);
     }
     if(pc==0x29a150) {
@@ -210,7 +211,7 @@ bool Evidence::coherent(uint64_t resource) const noexcept {
 }
 bool Evidence::call_enter(const render::Registers &r) noexcept {
     if(!initialized()) return false;
-    if(call_) return fail();
+    if(call_) return fail(call_-base_); // the already authenticated native method
     if(r.x[0]!=identity_.renderer) return false;
     if(r.target==base_+0x296c00) {
         if(wrapper_ || r.x[1]!=592) return false;
@@ -223,18 +224,19 @@ bool Evidence::call_enter(const render::Registers &r) noexcept {
     call_=r.target;return true;
 }
 bool Evidence::call_return(const render::Registers &r) noexcept {
+    const auto pc=r.target-base_;
     if(!initialized() || !call_ || r.target!=call_) return false;
     const auto target=call_;call_=0;
     if(target==base_+0x296c00) {
-        if(!add(3,r.x[0],0x20)) return fail();
+        if(!add(3,r.x[0],0x20)) return fail(pc);
         wrapper_=r.x[0];uint32_t size=0,offset=0;uint64_t D=0;
         if(!at(wrapper_+8,wrapper_resource_) || !add(4,wrapper_resource_,0x128) || wrapper_resource_==resource_ ||
            !at(wrapper_resource_+8,D) || D!=identity_.renderer+0x50 ||
-           !at(wrapper_resource_+0xb8,size) || size!=592 || !at(wrapper_+0x18,offset) || offset!=UINT32_MAX) return fail();
+           !at(wrapper_resource_+0xb8,size) || size!=592 || !at(wrapper_+0x18,offset) || offset!=UINT32_MAX) return fail(pc);
     } else {
-        if(!add(5,r.x[0],0x28)) return fail();
+        if(!add(5,r.x[0],0x28)) return fail(pc);
         marker_=r.x[0];std::array<uint32_t,8> attachment{};
-        if(!read(marker_+8,attachment.data(),sizeof attachment) || attachment!=source_over) return fail();
+        if(!read(marker_+8,attachment.data(),sizeof attachment) || attachment!=source_over) return fail(pc);
     }
     return true;
 }

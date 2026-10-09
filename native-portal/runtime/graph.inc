@@ -1,34 +1,42 @@
 // SPDX-License-Identifier: MIT
 // Included by evidence.cpp to keep every existing Evidence consumer linked.
-bool Evidence::owner_event(uint64_t pc,const arena::Saved &s) noexcept {
-    if(getpid()!=pid_ || !pinned_)return false;
-    if(pc==0x14099c && owner() && !handoff_.load()) {
-        if(worker_ || !s.x[19] || !s.x[21])return false;
+bool Evidence::owner_event(uint64_t pc,const arena::Saved &s,uint16_t *rejection) noexcept {
+    if(rejection)*rejection=0;
+    // IDs are local to the relative PC. Record at the first failed predicate,
+    // with the original short-circuit order and no extra native reads.
+    auto check=[&](bool ok,uint16_t id) {if(!ok && rejection)*rejection=id;return ok;};
+    if(!check(getpid()==pid_,255) || !check(pinned_,254))return false;
+    if(pc==0x14099c) {
+        if(!check(owner(),1) || !check(!handoff_.load(),2) || !check(!worker_,3) ||
+           !check(s.x[19],4) || !check(s.x[21],5))return false;
         uint64_t vtable=0,context=0;
-        if(!read_self(s.x[19],&vtable,8) || vtable!=base_+0x5a1428 ||
-           !read_self(s.x[19]+0x48,&context,8) || context!=s.x[21])return false;
+        if(!check(read_self(s.x[19],&vtable,8),6) || !check(vtable==base_+0x5a1428,7) ||
+           !check(read_self(s.x[19]+0x48,&context,8),8) || !check(context==s.x[21],9))return false;
         worker_=s.x[19];context_=context;return true;
     }
-    if(pc==0x140dbc && owner() && worker_ && s.x[0]==worker_ && s.x[21]==context_) {
+    if(pc==0x140dbc) {
+        if(!check(owner(),1) || !check(worker_,2) || !check(s.x[0]==worker_,3) || !check(s.x[21]==context_,4))return false;
         uint64_t worker=0,R=0;
-        if(!initialized() || !read_self(context_+0x98,&worker,8) || worker!=worker_ ||
-           !read_self(context_+0x1c0,&scheduler_,8) || !scheduler_ ||
-           !read_self(scheduler_+8,&application_,8) || !application_ ||
-           !read_self(application_+0x256a0,&R,8) || R!=identity_.renderer ||
-           staging_ticket_ || call_ || lifecycle_)return false;
+        if(!check(initialized(),5) || !check(read_self(context_+0x98,&worker,8),6) || !check(worker==worker_,7) ||
+           !check(read_self(context_+0x1c0,&scheduler_,8),8) || !check(scheduler_,9) ||
+           !check(read_self(scheduler_+8,&application_,8),10) || !check(application_,11) ||
+           !check(read_self(application_+0x256a0,&R,8),12) || !check(R==identity_.renderer,13) ||
+           !check(!staging_ticket_,14) || !check(!call_,15) || !check(!lifecycle_,16))return false;
         handoff_.store(1,std::memory_order_release);return true;
     }
-    if(pc!=0x14e5a8 || handoff_.load(std::memory_order_acquire)!=1 || s.x[0]!=worker_ || s.x[30]!=base_+0x182aa8)return false;
+    if(pc!=0x14e5a8)return false;
+    if(!check(handoff_.load(std::memory_order_acquire)==1,1) || !check(s.x[0]==worker_,2) ||
+       !check(s.x[30]==base_+0x182aa8,3))return false;
     uint64_t context=0,worker=0,scheduler=0,app=0,R=0,device=0;uint32_t native_tid=0,status=0;
-    if(!read_self(worker_+0x48,&context,8) || context!=context_ ||
-       !read_self(context+0x98,&worker,8) || worker!=worker_ ||
-       !read_self(worker_+0x10,&native_tid,4) || native_tid!=uint32_t(syscall(SYS_gettid)) ||
-       !read_self(worker_+0x14,&status,4) || status!=0x80000000 ||
-       !read_self(context+0x1c0,&scheduler,8) || scheduler!=scheduler_ ||
-       !read_self(scheduler+8,&app,8) || app!=application_ ||
-       !read_self(app+0x256a0,&R,8) || R!=identity_.renderer ||
-       !read_self(R+0xa78,&device,8) || device!=identity_.device)return false;
-    unsigned expected=1;if(!handoff_.compare_exchange_strong(expected,2))return false;
+    if(!check(read_self(worker_+0x48,&context,8),4) || !check(context==context_,5) ||
+       !check(read_self(context+0x98,&worker,8),6) || !check(worker==worker_,7) ||
+       !check(read_self(worker_+0x10,&native_tid,4),8) || !check(native_tid==uint32_t(syscall(SYS_gettid)),9) ||
+       !check(read_self(worker_+0x14,&status,4),10) || !check(status==0x80000000,11) ||
+       !check(read_self(context+0x1c0,&scheduler,8),12) || !check(scheduler==scheduler_,13) ||
+       !check(read_self(scheduler+8,&app,8),14) || !check(app==application_,15) ||
+       !check(read_self(app+0x256a0,&R,8),16) || !check(R==identity_.renderer,17) ||
+       !check(read_self(R+0xa78,&device,8),18) || !check(device==identity_.device,19))return false;
+    unsigned expected=1;if(!check(handoff_.compare_exchange_strong(expected,2),20))return false;
     tid_=pid_t(native_tid);generations_.thread_=std::this_thread::get_id();
     if(bridge_)bridge_->scope_.thread=native_tid;
     run_=true;return true;
@@ -86,7 +94,7 @@ bool Evidence::graph_event(uint64_t pc,const arena::Saved &s) noexcept {
     if(!owner() || !run_)return false;
     if(pc==0x2a1e18) {
         if(s.x[0]!=identity_.renderer || uint32_t(s.x[1]) || s.x[30]!=base_+0x6caf0)return false;
-        if(dispatch_)return fail();
+        if(dispatch_)return fail(pc);
         if(!graph_capable() || !graph_capture(true))return false;
         dispatch_=true;dispatch_sp_=s.sp;transferred_=false;return true;
     }

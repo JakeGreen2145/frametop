@@ -44,7 +44,9 @@ class Evidence {
     uint64_t stage(render::Adapter &,uint64_t pc,arena::Saved &,const render::EyeInput &,
                    uint64_t invocation=0) noexcept;
     bool initialized() const noexcept;
-    bool owner_event(uint64_t,const arena::Saved &) noexcept;
+    // Optional predicate result is call-local, never authority or a second reader.
+    bool owner_event(uint64_t,const arena::Saved &,uint16_t *rejection=nullptr) noexcept;
+    uint64_t first_failure_pc() const noexcept {return first_failure_pc_.load();}
     bool graph_event(uint64_t,const arena::Saved &) noexcept;
     bool graph_capable() const noexcept;
     bool settled(const render::Binding &,const render::Provenance &,const render::Provenance &,const render::Completion &) const noexcept;
@@ -106,7 +108,8 @@ class Evidence {
     bool read(uint64_t,void *,size_t) const noexcept;
     template<class T> bool at(uint64_t p,T &v) const noexcept {return read(p,&v,sizeof v);}
     bool arena(render::Arena &) const noexcept;
-    bool fail() noexcept;
+    std::atomic<uint64_t> first_failure_pc_{0};
+    bool fail(uint64_t pc) noexcept;
     static bool read_callback(void *,uint64_t,void *,size_t) noexcept;
     static bool command_read_callback(void *,uint64_t,void *,size_t) noexcept;
     static bool write_callback(void *,uint64_t,const void *,size_t) noexcept;

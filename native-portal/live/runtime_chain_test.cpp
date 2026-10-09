@@ -326,6 +326,35 @@ int run_chain(Chain &f,const std::string &mode) {
 int main(int argc,char **argv) {
     const std::string mode=argc>1?argv[1]:"";
     Chain f;active=&f;f.bootstrap_router();
+    if(mode.rfind("--diagnostics-start-",0)==0 || mode=="--diagnostics-stop-unrelated" ||
+       mode=="--diagnostics-stop-waiting" || mode=="--diagnostics-run-lr") {
+        // Synthetic faults at the real router predicates, not a claimed replay
+        // of trial 06. Keep Run on a real second thread and never enter a frame.
+        if(mode=="--diagnostics-start-failed") {
+            f.s={};f.s.x[0]=addr(f.command);f.event(0x305260);
+        }
+        if(mode=="--diagnostics-start-renderer")put(f.app,0x256a0,uint64_t(0));
+        if(mode=="--diagnostics-start-unreadable")put(f.scheduler,8,uint64_t(1));
+        if(mode!="--diagnostics-stop-unrelated")f.publish_worker();
+        if(mode=="--diagnostics-run-lr") {
+            std::thread worker([&] {
+                f.s={};f.s.x[0]=addr(f.worker);f.s.x[30]=Chain::base+FT_NATIVE_RUN_RETURN+4;
+                f.event(0x14e5a8);
+            });worker.join();
+        } else if(mode=="--diagnostics-stop-waiting") {
+            f.s={};f.event(0x142620); // bootstrap early return must not lose this PC
+        } else if(mode=="--diagnostics-stop-unrelated") {
+            // Existing router stop is unconditional, Evidence revocation is not.
+            f.s={};f.s.x[0]=addr(f.worker);f.event(0x29bd18);
+        } else {
+            std::thread worker([&]{f.run_enter();});worker.join();
+            f.s={};f.s.x[0]=addr(f.r);f.event(0x29bd18);
+            f.event(0x29c238); // neither sticky diagnostic may be overwritten
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(600));
+        auto d=f.router.diagnostics();assert(!d.frames && !d.uploads[0] && !d.uploads[1] && !d.capable);
+        return 0;
+    }
     if(mode=="--bootstrap-stock") {f.stock_append();f.stock_classifier();f.geometry_classifier();return 0;}
     if(mode=="--bootstrap-geometry") {f.stock_append();f.geometry_classifier();return 0;}
     if(mode.rfind("--bad-stock-",0)==0 || mode.rfind("--bad-geometry-",0)==0) {

@@ -94,4 +94,28 @@ Bit positions in `phases`, low bit first, map to these relative PCs:
 
 The CPU runner verifies actual production collector output for capable and broken-association seals, 100 unchanged subsequent frames without repeated lines, preservation of the first refusal, the 64-line cap, journal-style socket output, and saturated-socket nonblocking teardown with unchanged stderr flags. These are modeled native boundaries, not an explanation of any particular live refusal.
 
+### First startup rejection and invalidation
+
+Trial 06's journal lines 209 and 257 show `owner_events=0x3` followed by `0x17`, with zero frames, seals and uploads. Publication was accepted; Start and Run were seen but not accepted. `graph-ownership` at `0x7fdbc` is expected before Run and cannot identify the later rejection. The sampled transition to `initialized=0 stopped=1` does not establish which event happened first.
+
+Offline inspection rechecked the pinned ELF digest above. At `0x140d98` the native caller passes context in x21 to `0x13c3e8`, loads context+0x1a8 for `0x80018`, then loads context+0x98 into x0 at `0x140db4`, zeroes w1 and calls `0x183c38` at `0x140dbc`. `0x80018` can tail-call `0x6d9a8` when application+0x60 is nonnull. The native renderer publication at `0x7fda0..0x7fdb8` duplicates x24 and stores it at application+0x25698 and +0x256a0 before calling initialization. `native_caller.py` separately executes the actual thread thunk and derives Run's incoming LR `0x182aa8`. None of these offline facts establish the live scheduler/application association or whether evidence was already invalidated at Start. The prior owner instruction fixture starts at `0x140db4`, so it does not model all intervening initialization and cleanup.
+
+The collector now adds only these sticky facts:
+
+- `first_owner_pc` and `first_owner_pred` identify the first rejected publication, Start or Run predicate. The PC and predicate occupy one atomic word, including refusals on a foreign thread. The actual short-circuit checks set the ID, without rereading native memory.
+- `first_evidence_pc` is set by the first `Evidence::fail`, including intentional lifetime revocation. It is not set for an ordinary false return or guessed from `initialized`. Event failures carry the exact relative callback PC. Direct constructor-call failures carry that method's relative target. Zero means no recorded evidence failure.
+- `first_stop_pc` records the first native callback that executes the existing stop latch. It also survives the bootstrap early return while waiting for Run. An explicit API stop has no native PC and does not populate this field.
+
+Each can independently trigger a line within the unchanged 64-line budget. These atomic facts and the owner mailbox are sampled independently, not a transaction or exhaustive timeline. No guard, teardown scope, saved register, native continuation or exported diagnostic ABI changes. In particular, renderer cleanup events still stop the router unconditionally on the owner thread, while Evidence revocation still requires its renderer identity. A stop PC alone does not prove that renderer matched.
+
+Predicate IDs are local to `first_owner_pc`. The first failed check wins. IDs 254 and 255 mean missing pin and wrong process; 253 is the router's existing pre-Evidence handoff/owner guard.
+
+| PC | Predicate IDs |
+|---|---|
+| `0x14099c` publication | 1 owner thread; 2 no prior handoff; 3 no published worker; 4 nonnull x19; 5 nonnull x21; 6 worker vtable read; 7 vtable match; 8 worker context read; 9 context matches x21 |
+| `0x140dbc` Start | 1 owner thread; 2 published worker; 3 x0 matches worker; 4 x21 matches context; 5 initialized; 6 context worker read; 7 worker match; 8 scheduler read; 9 nonnull scheduler; 10 application read; 11 nonnull application; 12 renderer read; 13 renderer match; 14 no staging ticket; 15 no open native call; 16 no lifecycle |
+| `0x14e5a8` Run | 1 pending handoff; 2 worker argument; 3 caller LR; 4 context read; 5 context match; 6 worker read; 7 worker match; 8 TID read; 9 TID match; 10 status read; 11 status match; 12 scheduler read; 13 scheduler match; 14 application read; 15 application match; 16 renderer read; 17 renderer match; 18 device read; 19 device match; 20 handoff compare/exchange |
+
+The diagnostic regression failed against the unmodified collector because `first_owner_pred` was absent. Normal and ASan/UBSan CPU router suites now pass, including exact predicate negatives, successful handoff after refusals, two-frame stereo and settlement, first-failure preservation across later teardown, rejected Run on a second thread, unrelated-renderer stop without evidence failure, and stop while bootstrap waits for Run. Synthetic faults distinguish unreadable renderer, wrong renderer and evidence already failed, without claiming any is trial 06's cause. Logs stay in ignored `native-portal/live/build/runtime/`. Live predicate facts are still required before changing the startup or teardown guards.
+
 ARM link, full loader reconciliation, actual headset rendering and live GPU completion are separate parent-side checks. This work does not install or activate anything on the device.

@@ -7,6 +7,8 @@ namespace native_portal::live {
 // Only scalar facts, relative image PCs and counters. No native pointers or pixels.
 struct LiveDiagnostics {
     uint64_t pc=0,first_pc=0,phases=0,seals=0,events=0,frames=0;
+    // Collector overlays independent atomic facts, including foreign Run refusal.
+    uint64_t first_owner_rejection=0,first_evidence_pc=0,first_stop_pc=0;
     uint64_t uploads[2]{},encoded[2]{},queue_success=0,submitted_frame=0;
     Refusal first_refusal=Refusal::None,refusal=Refusal::NativeInitialization;
     bool seal=false,graph=false,initialized=false,origin_ok=false,associated=false,idle=false;
@@ -39,7 +41,9 @@ public:
     size_t format(const LiveDiagnostics &d,uint64_t owners,char *out,size_t size) noexcept {
         const auto &a=last_;
         if(lines_>=limit)return 0;
-        if(lines_ && owners==owners_ && d.phases==a.phases && d.first_refusal==a.first_refusal &&
+        if(lines_ && owners==owners_ && d.first_owner_rejection==a.first_owner_rejection &&
+           d.first_evidence_pc==a.first_evidence_pc && d.first_stop_pc==a.first_stop_pc &&
+           d.phases==a.phases && d.first_refusal==a.first_refusal &&
            d.refusal==a.refusal && d.seal==a.seal && d.graph==a.graph && d.initialized==a.initialized &&
            d.origin_ok==a.origin_ok && d.associated==a.associated && d.idle==a.idle && d.demand==a.demand &&
            d.can_acquire==a.can_acquire && d.owned_debt==a.owned_debt && d.pipeline==a.pipeline &&
@@ -47,11 +51,14 @@ public:
            d.pending==a.pending && d.stopped==a.stopped)return 0;
         const int n=std::snprintf(out,size,
             "ft-native-live line=%u pc=0x%llx phases=0x%llx owner_events=0x%llx handoff=%u "
+            "first_owner_pc=0x%llx first_owner_pred=%u first_evidence_pc=0x%llx first_stop_pc=0x%llx "
             "first_refusal=%s first_pc=0x%llx refusal=%s seal=%u seal_pc=0x%llx seal_block=%s "
             "graph=%u initialized=%u origin_ok=%u associated=%u idle=%u demand=%u can_acquire=%u owned_debt=%u "
             "pipeline=%u adapter=%u tracking=%u policy=%u capable=%u pending=%u stopped=%u "
             "events=%llu frames=%llu seals=%llu uploads=%llu,%llu encoded=%llu,%llu queue_success=%llu submitted_frame=%llu remaining=%u\n",
             lines_+1,(unsigned long long)d.pc,(unsigned long long)d.phases,(unsigned long long)owners,unsigned(bool(owners&(1ull<<5))),
+            (unsigned long long)(d.first_owner_rejection>>16),unsigned(d.first_owner_rejection&0xffff),
+            (unsigned long long)d.first_evidence_pc,(unsigned long long)d.first_stop_pc,
             refusal_name(d.first_refusal),(unsigned long long)d.first_pc,refusal_name(d.refusal),d.seal,
             (unsigned long long)(d.seal?0x1480b8:0),seal_block(d),d.graph,d.initialized,d.origin_ok,d.associated,d.idle,
             d.demand,d.can_acquire,d.owned_debt,d.pipeline,d.adapter,d.tracking,d.policy,d.capable,d.pending,d.stopped,

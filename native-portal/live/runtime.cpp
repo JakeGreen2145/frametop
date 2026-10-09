@@ -96,7 +96,13 @@ struct Runtime::Impl {
     LiveDiagnostics live{};Mailbox<LiveDiagnostics> live_published;
     // Owner callbacks only write live. Foreign/handoff observations use atomics,
     // never a second writer to the owner's non-atomic snapshot.
-    std::atomic<uint64_t> owner_events{0};
+    std::atomic<uint64_t> owner_events{0},first_owner_rejection{0},first_stop_pc{0};
+    void owner_rejected(uint64_t pc,uint16_t predicate) noexcept {
+        uint64_t empty=0;first_owner_rejection.compare_exchange_strong(empty,(pc<<16)|predicate);
+    }
+    void stop_at(uint64_t pc) noexcept {
+        uint64_t empty=0;first_stop_pc.compare_exchange_strong(empty,pc);stopped=true;
+    }
     std::atomic<bool> collector_stop{false};std::thread collector;
     Impl(){published.publish(diag);live_published.publish(live);}
     ~Impl(){collector_stop=true;if(collector.joinable())collector.join();}
@@ -111,6 +117,9 @@ struct Runtime::Impl {
             while(!collector_stop.load()) {
                 LiveDiagnostics snapshot{};
                 if(live_published.read(snapshot)) {
+                    snapshot.first_owner_rejection=first_owner_rejection.load();
+                    snapshot.first_evidence_pc=evidence.first_failure_pc();
+                    snapshot.first_stop_pc=first_stop_pc.load();
                     const size_t n=log.format(snapshot,owner_events.load(),line,sizeof line);
                     if(n) {
                         if(fd>=0)(void)write(fd,line,n);
@@ -350,9 +359,9 @@ struct Runtime::Impl {
         // Shutdown guard is owned by the original initializer thread. It pairs
         // the real timed wait and actual pthread_join result before cleanup.
         if(tid()==bootstrap_tid) {
-            if(pc==0x142620) {stopped=true;backend.invalidate(Reason::Off);}
+            if(pc==0x142620) {stop_at(pc);backend.invalidate(Reason::Off);}
             if(pc==0x142704 && worker && s.x[0]==worker && s.x[20]==context) {
-                stopped=true;backend.invalidate(Reason::Off);wait_sp=s.sp;shutdown_wait=true;join_attempt=join_ok=false;
+                stop_at(pc);backend.invalidate(Reason::Off);wait_sp=s.sp;shutdown_wait=true;join_attempt=join_ok=false;
                 get(worker+8,native_handle);
             }
             if(pc==0x183f78 && shutdown_wait && s.x[20]==worker && s.sp+0x20==wait_sp && s.x[0]==native_handle && native_handle)join_attempt=true;
@@ -367,13 +376,14 @@ struct Runtime::Impl {
         if(pc==0x14099c || pc==0x140dbc || pc==0x14e5a8) {
             const unsigned owner_bit=pc==0x14099c?0:pc==0x140dbc?2:4;
             owner_events.fetch_or(1ull<<owner_bit);
-            if(pc!=0x14e5a8 && (handoff_wait || owner_tid!=bootstrap_tid))return;
-            if(evidence.owner_event(pc,s)) {
+            if(pc!=0x14e5a8 && (handoff_wait || owner_tid!=bootstrap_tid)) {owner_rejected(pc,253);return;}
+            uint16_t predicate=0;
+            if(evidence.owner_event(pc,s,&predicate)) {
                 owner_events.fetch_or(1ull<<(owner_bit+1));
                 if(pc==0x14099c){worker=s.x[19];context=s.x[21];}
                 if(pc==0x140dbc)handoff_wait=true;
                 if(pc==0x14e5a8){owner_tid=tid();handoff_wait=false;}
-            }
+            } else owner_rejected(pc,predicate);
             return;
         }
         if(handoff_wait && tid()==bootstrap_tid)return;
@@ -413,7 +423,7 @@ struct Runtime::Impl {
             evidence.arena_event(bridge,arena_site,s);
         }
         if(pc==0x142620 || pc==0x29bd18 || pc==0x29c238) {
-            stopped=true;backend.invalidate(Reason::Off);if(adapter)adapter->off();refuse(Refusal::Stopped);
+            stop_at(pc);backend.invalidate(Reason::Off);if(adapter)adapter->off();refuse(Refusal::Stopped);
         }
         if(pc==0x112e50 && uint8_t(s.x[1])) {
             backend.invalidate(Reason::External);owned=false;
