@@ -42,7 +42,9 @@ def main(output):
     if 'Shared library: [libft_portal_pipeline.so.1]' not in dynamic:
         raise RuntimeError('fixture did not retain the production dependency')
     executable = work / 'test-preload'
-    run(['c++', *FLAGS, HERE / 'test_preload.cpp', '-l:libvulkan.so.1', '-ldl', '-o', executable])
+    # Avoid canonical executable PLT addresses in ARM dlsym(RTLD_DEFAULT):
+    # the symbol-identity oracle must inspect the resolved DSO, not its PLT.
+    run(['c++', *FLAGS, '-fPIC', '-pie', HERE / 'test_preload.cpp', '-l:libvulkan.so.1', '-ldl', '-o', executable])
     dynamic_executable = work / 'test-preload-dynamic'
     run(['c++', *FLAGS, '-DFT_TEST_DYNAMIC_LOADER', HERE / 'test_preload.cpp',
          '-ldl', '-o', dynamic_executable])
