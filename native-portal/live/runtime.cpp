@@ -272,6 +272,14 @@ struct Runtime::Impl {
         // Native ownership alone does not authorize demand. Publish initial
         // capability only after the cold origin and real camera-idle checks.
         if(!origin_epoch) {refuse(Refusal::Origin);return false;}
+        // initialize() is intentionally one-shot and retains partial native
+        // resources on failure. Do not consume it while its reversible backend
+        // prerequisites are false, e.g. an unsupported startup policy sample.
+        // Re-read the effective status, including independent revocation/faults.
+        BackendStatus ready{};
+        if(!backend.status(ready) || !ready.capable || !ready.serialized || !ready.external_clear || ready.fault) {
+            refuse(Refusal::Policy);return false;
+        }
         if(!gate)gate.emplace(backend);
         if(!demand)demand.emplace(&backend);
         binding.identity=id;binding.upstream=&bridge;

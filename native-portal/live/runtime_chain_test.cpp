@@ -618,6 +618,7 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     std::puts("runtime chain: private lease, origin x8, native demand, stereo staging/preparation/encoding, exact queue/wait, disposal/reset, pending Release, real pool-publication turnover and second stereo queue PASS; native boundaries modeled");
     return 0;
 }
+#ifndef FT_ATTACHMENT_TEST
 int main(int argc,char **argv) {
     const std::string mode=argc>1?argv[1]:"";
     const bool bootstrap=mode=="--bootstrap-turnover" || mode.rfind("--bootstrap-bad-",0)==0;
@@ -774,3 +775,4 @@ int main(int argc,char **argv) {
     }
     return run_chain(f,mode);
 }
+#endif
