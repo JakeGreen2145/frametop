@@ -116,7 +116,70 @@ def bootstrap_native():
     put(stack+0x98,next_w);x(19,R);m.reg_write(A.UC_ARM64_REG_SP,stack)
     run(0x2a23e8,0x2a23f4);assert x(0)==next_w and get(stack+0x98)==0
     run(0x2a23f4,0x2a23f8);assert get(R+0x1380)==next_w
-    return {'release_lr':release_lr,'pool_lr':0x3052f0,'queue_lr':queue_lr,'dispatch_lrs':[lr for _,lr in callers]}
+    # Full no-sync command return/recycle/pop cycle. The same C and Vk handle
+    # survive the pool return. Real pool dispatch calls real Reset -> Begin and
+    # appends C to the ready deque. Only Vulkan, RTTI and debug annotation are
+    # synthetic external boundaries. This is not GPU completion evidence.
+    cycle_seen=[];raw_reset=0;raw_begin=0
+    allocate, begin, reset = region+0x61000, region+0x61004, region+0x61008
+    for got, target, cell in [(0x5ae348,allocate,region+0x62000),
+                              (0x5ae3e0,begin,region+0x62008),
+                              (0x5aeb60,reset,region+0x62010)]:
+        put(got,cell);put(cell,target)
+    def cycle_hook(uc,pc,size,user):
+        if pc in (0x301808,0x30180c,0x300a08,0x300a38,0x300b20,0x300c54,0x311648,0x2a23f4):
+            cycle_seen.append((pc,x(0),x(19),x(30),m.reg_read(A.UC_ARM64_REG_SP)))
+        if pc==allocate:
+            assert x(0)==0x1234 and x(2)==C+0x738
+            put(x(2),0xc001);x(0,0)
+        elif pc==begin:
+            assert x(0)==0xc001;x(0,raw_begin & 0xffffffff)
+        elif pc==reset:
+            assert x(0)==0xc001 and x(1)==0;x(0,raw_reset & 0xffffffff)
+        elif pc==0x4cb40: # __dynamic_cast on this constructed synthetic object
+            assert x(0)==C;x(0,C)
+        elif pc not in (0x30b5f8,0x1744b0):return
+        m.reg_write(A.UC_ARM64_REG_PC,x(30))
+    hook=m.hook_add(UC_HOOK_CODE,cycle_hook)
+    m.ctl_remove_cache(0,0x600000) # include already-translated pool/publication blocks
+    put(C,0x59f8f8);put(C+8,R+0x50);put(C+0x10,0);put(C+0x738,0)
+    put(R+0xa78,0x1234);put(pool+0x188,0xabc)
+    x(20,C);m.reg_write(A.UC_ARM64_REG_SP,stack);run(0x301804,0x301810)
+    assert [r[0] for r in cycle_seen]==[0x301808,0x300a08,0x300a38,0x30180c]
+    assert get(C+0x738)==0xc001 and x(0)==1
+    recycle=[]
+    for raw_reset,raw_begin in [(0,0),(-4,0),(0,-4)]:
+        cycle_seen.clear()
+        put(pool+0xd0+0x40,pool+0x300)
+        x(0,pool+0xd0);x(1,C);x(30,0x900ff000);m.reg_write(A.UC_ARM64_REG_SP,stack)
+        run(0x311648,0x900ff000)
+        assert get(pool+0x300)==C and get(C+0x738)==0xc001
+        assert bytes(m.mem_read(C+0x28,1))==b'\x01'
+        put(pool+0xd0,0x599c10);assert get(0x599c20)==0x2a9c88
+        put(pool+0x90,pool+0x400);put(pool+0xb0,pool+0x400)
+        put(pool+0xb8,pool+0x400);put(pool+0xc0,pool+0x600)
+        x(0,pool+0xd0);m.reg_write(A.UC_ARM64_REG_SP,stack)
+        run(0x311818,0x311898) # remaining sync-tree work is outside this witness
+        assert get(pool+0xd0+0x40)==pool+0x300 # real input vector cleared even on failure
+        reset_event=next(r for r in cycle_seen if r[0]==0x300b20)
+        assert reset_event[1]==C and reset_event[3]==0x2a9cdc
+        pcs=[r[0] for r in cycle_seen]
+        assert pcs==[0x311648,0x300b20,0x300c54]+([0x300a08,0x300a38] if raw_reset==0 else [])
+        assert get(C+0x738)==0xc001
+        good=raw_reset==raw_begin==0
+        assert get(pool+0xb0)==pool+0x400+(8 if good else 0)
+        if good:
+            assert get(pool+0x400)==C and get(C+0x738)==0xc001
+            x(0,pool);x(8,next_w+8);x(30,0x900ff000);m.reg_write(A.UC_ARM64_REG_SP,stack)
+            run(0x304e60,0x900ff000);assert get(next_w+8)==C
+            put(stack+0x98,next_w);x(19,R);m.reg_write(A.UC_ARM64_REG_SP,stack)
+            run(0x2a23e8,0x2a23f8);assert get(get(R+0x1380)+8)==C
+            assert bytes(m.mem_read(C+0x28,1))==b'\x00'
+            assert [r[0] for r in cycle_seen]==pcs+[0x2a23f4]
+        recycle.append({'reset':raw_reset,'begin':raw_begin,'ready':good,'sites':[hex(r[0]) for r in cycle_seen]})
+    m.hook_del(hook)
+    return {'release_lr':release_lr,'pool_lr':0x3052f0,'queue_lr':queue_lr,'dispatch_lrs':[lr for _,lr in callers],
+            'recycle_lr':0x2a9cdc,'pool_cycle':recycle}
 
 
 if __name__ == '__main__':

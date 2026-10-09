@@ -23,6 +23,24 @@ struct PublicationDiagnostic {
     uint64_t predicate=0,phase=0,flags=0,checked=0,passed=0;
     uint64_t caller=0,return_pc=0,recording=0,generation=0,renewal=0,entries=0,attempt=0;
 };
+// Private command-ledger observations. Scalars only; these never authorize reads.
+struct RecordingDiagnostic {
+    uint64_t member=0,vk=0,generation=0,renewal=0,begun=0,entries=0;
+    uint64_t recording=0,creation=0,phase=0,flags=0;
+};
+struct CommandDiagnostic {
+    uint64_t pc=0,command=0,native_vk=0,accepted=0,failure=0;
+    RecordingDiagnostic before{},after{};
+};
+inline bool command_trace_pc(uint64_t pc) noexcept {
+    switch(pc) {
+    case 0x301808:case 0x30180c:case 0x300a08:case 0x300a38:
+    case 0x300b20:case 0x300c54:case 0x3003d0:case 0x311648:case 0x4b3d0:
+    case 0x305260:case 0x2953a0:case 0x29a528:case 0x2a23f4:
+    case 0x2a1e18:case 0x2a2230:case 0x2a2320: return true;
+    default:return false;
+    }
+}
 class Evidence {
  public:
     Evidence() noexcept;
@@ -53,6 +71,7 @@ class Evidence {
     uint64_t first_failure_pc() const noexcept {return first_failure_pc_.load();}
     // Owner-only first invalidating publication, copied through the router mailbox.
     PublicationDiagnostic publication_diagnostic() const noexcept {return owner()?publication_:PublicationDiagnostic{};}
+    CommandDiagnostic command_diagnostic() const noexcept {return owner()?command_diagnostic_:CommandDiagnostic{};}
     bool graph_event(uint64_t,const arena::Saved &) noexcept;
     bool graph_capable() const noexcept;
     bool settled(const render::Binding &,const render::Provenance &,const render::Provenance &,const render::Completion &) const noexcept;
@@ -113,6 +132,10 @@ class Evidence {
     } turnover_;
     PublicationDiagnostic publication_{};
     uint64_t publication_attempts_=0;
+    CommandDiagnostic command_diagnostic_{};
+    RecordingDiagnostic recording_diagnostic(uint64_t) const noexcept;
+    void trace_command(uint64_t command,uint64_t vk=0) noexcept;
+    bool event_impl(uint64_t,const arena::Saved &) noexcept;
     bool recording_event(uint64_t,const arena::Saved &) noexcept;
     bool same_identity(const render::Identity &) const noexcept;
     bool pinned_=false,constructed_=false,ready_=false,failed_=false,allocation_open_=false;

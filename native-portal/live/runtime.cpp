@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "runtime.hpp"
 #include "diagnostics.hpp"
+#include "command_trace.hpp"
 #include <chrono>
 #include <fcntl.h>
 #include <sys/socket.h>
@@ -94,6 +95,7 @@ struct Runtime::Impl {
     std::array<uint64_t,14> policy_values{};uint64_t policy_seen=0;bool policy_conflict=false;
     std::atomic<bool> stopped{false};Diagnostics diag{};Mailbox<Diagnostics> published;
     LiveDiagnostics live{};Mailbox<LiveDiagnostics> live_published;
+    CommandTrace command_trace;
     // Owner callbacks only write live. Foreign/handoff observations use atomics,
     // never a second writer to the owner's non-atomic snapshot.
     std::atomic<uint64_t> owner_events{0},first_owner_rejection{0},first_stop{0};
@@ -116,12 +118,17 @@ struct Runtime::Impl {
     void collect() {
         collector=std::thread([this] {
             DiagnosticLog log;char line[1536];
+            size_t trace_next=0;uint64_t trace_lost=0,trace_last=UINT64_MAX;unsigned trace_summaries=0;
             // Reopen pipes/files with an independent nonblocking file description.
             // Journal stderr is a socket: send(MSG_DONTWAIT) leaves its flags alone.
             sigset_t blocked;sigemptyset(&blocked);sigaddset(&blocked,SIGPIPE);
             if(pthread_sigmask(SIG_BLOCK,&blocked,nullptr))return;
             const int fd=open("/proc/self/fd/2",O_WRONLY|O_APPEND|O_NONBLOCK|O_CLOEXEC);
-            while(!collector_stop.load()) {
+            auto emit=[&](size_t n) {
+                const auto written=fd>=0?write(fd,line,n):send(STDERR_FILENO,line,n,MSG_DONTWAIT|MSG_NOSIGNAL);
+                return written==static_cast<ssize_t>(n);
+            };
+            for(;;) {
                 LiveDiagnostics snapshot{};
                 if(live_published.read(snapshot)) {
                     snapshot.first_owner_rejection=first_owner_rejection.load();
@@ -134,6 +141,27 @@ struct Runtime::Impl {
                         else (void)send(STDERR_FILENO,line,n,MSG_DONTWAIT|MSG_NOSIGNAL);
                     }
                 }
+                CommandTrace::Row row{};
+                // Keep the existing capability/refusal line ahead of a trace
+                // burst, especially on small journal sockets. Preserve startup
+                // slots until a seal, invalidation, or collector shutdown.
+                const bool trace_flush=snapshot.seal || evidence.first_failure_pc() || collector_stop.load();
+                while(trace_flush && command_trace.read(trace_next,row)) {
+                    const auto n=CommandTrace::format(trace_next,row,line,sizeof line);
+                    if(!n || !emit(n))++trace_lost;
+                    ++trace_next;
+                }
+                const auto count=command_trace.count();
+                if(trace_summaries<64 && (count!=trace_last || collector_stop.load())) {
+                    const auto n=std::snprintf(line,sizeof line,
+                        "ft-native-command-summary attempted=%llu consumed=%zu capacity=%zu overflow=%llu identity_overflow=%llu sink_lost=%llu\n",
+                        (unsigned long long)count,trace_next,CommandTrace::capacity,
+                        (unsigned long long)(count>CommandTrace::capacity?count-CommandTrace::capacity:0),
+                        (unsigned long long)command_trace.identity_overflow(),(unsigned long long)trace_lost);
+                    if(n>0 && size_t(n)<sizeof line)(void)emit(size_t(n));
+                    trace_last=count;++trace_summaries;
+                }
+                if(collector_stop.load())break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
             }
             if(fd>=0)close(fd);
@@ -382,6 +410,7 @@ struct Runtime::Impl {
             if(pc==0x1381b8 && runtime_owned.load() && !joined.load())std::abort();
         }
         if(pc==0x14099c || pc==0x140dbc || pc==0x14e5a8) {
+            command_trace.push(pc,s,base,tid(),owner_tid.load(),CommandTrace::OwnerEvent);
             const unsigned owner_bit=pc==0x14099c?0:pc==0x140dbc?2:4;
             owner_events.fetch_or(1ull<<owner_bit);
             if(pc!=0x14e5a8 && (handoff_wait || owner_tid!=bootstrap_tid)) {owner_rejected(pc,253);return;}
@@ -394,8 +423,11 @@ struct Runtime::Impl {
             } else owner_rejected(pc,predicate);
             return;
         }
-        if(handoff_wait && tid()==bootstrap_tid)return;
+        if(handoff_wait && tid()==bootstrap_tid) {
+            command_trace.push(pc,s,base,tid(),owner_tid.load(),CommandTrace::HandoffWait);return;
+        }
         if(tid()!=owner_tid) {
+            command_trace.push(pc,s,base,tid(),owner_tid.load(),CommandTrace::Foreign);
             // Native external methods run on RPC/main threads too. They retain
             // the exact original continuation and result. Revoke immediately;
             // hand debt ownership off on the owner, never replay the call.
@@ -420,6 +452,10 @@ struct Runtime::Impl {
         const bool graph_boundary=pc==0x2a1e18 || pc==0x2a2230 || pc==0x2a2320 || pc==0x2987d8 || pc==0x298840;
         if(graph_boundary)evidence.graph_event(pc,s);
         evidence.event(pc,s);
+        if(runtime::command_trace_pc(pc)) {
+            const auto diagnostic=evidence.command_diagnostic();
+            command_trace.push(pc,s,base,tid(),owner_tid.load(),CommandTrace::Owner,&diagnostic);
+        }
         if(graph_boundary && pc!=0x2a1e18)evidence.graph_event(0,s);
         if(pc==0x3018b0 && adapter)native_queue_entry=s;
         unsigned arena_site=arena::SiteCount;

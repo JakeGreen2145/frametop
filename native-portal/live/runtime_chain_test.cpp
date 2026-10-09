@@ -403,7 +403,29 @@ int main(int argc,char **argv) {
     Chain f;active=&f;f.bootstrap_router(bootstrap || publication);
     if(publication) {
         f.publish_worker();
-        std::thread worker([&]{f.run_enter();f.bootstrap_turnover(mode,true);});worker.join();return 0;
+        std::thread worker([&]{
+            f.run_enter();
+            if(mode=="--publication-pool-drop") {
+                // Modeled peer-wrapper return followed by actual reset/Begin
+                // callback coordinates. The pinned CPU pool witness separately
+                // executes return and reacquisition without deleting C.
+                f.s={};f.s.x[0]=addr(f.bootstrap_pool)+0xd0;f.s.x[1]=addr(f.executable);
+                f.s.x[30]=Chain::base+0x3052f0;f.event(0x311648);
+                f.s={};f.s.x[0]=addr(f.executable);f.s.sp=addr(f.stack)+0x100;
+                f.s.x[30]=Chain::base+FT_RECYCLE_LR;f.event(0x300b20);
+                f.s.sp-=0x20;f.s.x[19]=addr(f.executable);f.s.x[0]=0;f.event(0x300c54);
+                f.s.sp+=0x20;f.s.x[0]=addr(f.executable);f.event(0x300a08);
+                f.s.sp-=0x30;f.s.x[0]=0;f.event(0x300a38);
+            }
+            f.bootstrap_turnover(mode,true);
+        });worker.join();return 0;
+    }
+    if(mode=="--command-trace-gap") {
+        f.publish_worker();
+        f.begin_command(addr(f.other)); // bootstrap events while handoff waits
+        std::thread foreign([&]{f.begin_command(addr(f.other));});foreign.join();
+        std::this_thread::sleep_for(std::chrono::milliseconds(600));
+        assert(!f.router.diagnostics().frames);return 0;
     }
     if(bootstrap) {
         f.bootstrap_turnover(mode);

@@ -59,7 +59,43 @@ bool Evidence::fail(uint64_t pc) noexcept {
 }
 bool Evidence::initialized() const noexcept {return owner() && ready_ && !failed_;}
 render::Identity Evidence::identity() const noexcept {return initialized()?identity_:render::Identity{};}
+RecordingDiagnostic Evidence::recording_diagnostic(uint64_t command) const noexcept {
+    RecordingDiagnostic d{};d.recording=recording_;d.creation=creation_;d.phase=turnover_.phase;
+    d.flags=uint64_t(pinned_) | uint64_t(constructed_)<<1 | uint64_t(ready_)<<2 |
+        uint64_t(failed_)<<3 | uint64_t(run_)<<4 | uint64_t(transferred_)<<5 |
+        uint64_t(bool(lifecycle_))<<6;
+    for(const auto &c:recordings_) {
+        d.entries+=bool(c.command);
+        if(command && c.command==command) {
+            d.member=1;d.vk=c.vk;d.generation=c.generation;d.renewal=c.renewal;d.begun=c.begun;
+        }
+    }
+    return d;
+}
+void Evidence::trace_command(uint64_t command,uint64_t vk) noexcept {
+    command_diagnostic_.command=command;command_diagnostic_.native_vk=vk;
+    command_diagnostic_.before=recording_diagnostic(command);
+}
 bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
+    if(!owner())return false; // no diagnostic access to a foreign owner's ledger
+    if(!command_trace_pc(pc))return event_impl(pc,s);
+    command_diagnostic_={};command_diagnostic_.pc=pc;
+    uint64_t command=0;
+    switch(pc) {
+    case 0x301808:case 0x300b20:case 0x300a08:case 0x3003d0:case 0x4b3d0:command=s.x[0];break;
+    case 0x30180c:command=s.x[20];break;
+    case 0x300a38:case 0x300c54:command=s.x[19];break;
+    case 0x311648:command=s.x[1];break;
+    case 0x305260:case 0x2953a0:case 0x2a2230:case 0x2a2320:command=turnover_.command;break;
+    default:break;
+    }
+    trace_command(command);
+    const bool result=event_impl(pc,s);
+    command_diagnostic_.accepted=result;command_diagnostic_.failure=first_failure_pc_.load();
+    command_diagnostic_.after=recording_diagnostic(command_diagnostic_.command);
+    return result;
+}
+bool Evidence::event_impl(uint64_t pc,const arena::Saved &s) noexcept {
     if(!owner() || !pinned_ || failed_) return false;
     if(pc==0x7fda0) { // successful 0x16c0 constructor return; R is x24, not x0
         if(constructed_ || !bounded(s.x[24],0x16c0)) return fail(pc);
@@ -122,6 +158,7 @@ bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
         command_wrapper_=s.x[1];
         uint64_t command=0;
         if(!at(command_wrapper_+8,command)) return fail(pc);
+        trace_command(command);
         for(auto &c:recordings_) if(c.command==command && c.begun) {
             if(!add(6,command,0x7b0)) return fail(pc);
             uint64_t vk=0,D=0;

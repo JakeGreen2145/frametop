@@ -22,9 +22,10 @@ def main():
     bootstrap=bootstrap_native();print('Pinned bootstrap continuations:',bootstrap)
     flags+=['-DFT_BOOT_DISPATCH_LR='+hex(bootstrap['dispatch_lrs'][0]),
             '-DFT_BOOT_RELEASE_LR='+hex(bootstrap['release_lr']),'-DFT_BOOT_POOL_LR='+hex(bootstrap['pool_lr']),
-            '-DFT_BOOT_QUEUE_LR='+hex(bootstrap['queue_lr'])]
+            '-DFT_BOOT_QUEUE_LR='+hex(bootstrap['queue_lr']),
+            '-DFT_RECYCLE_LR='+hex(bootstrap['recycle_lr'])]
     results=[]
-    for test in ['runtime_test','runtime_owner_test','runtime_chain_test']:
+    for test in ['runtime_test','runtime_owner_test','command_trace_test','runtime_chain_test']:
         binary=build/(test+('-asan' if args.sanitize else ''))
         cmd=flags+(['-DFT_NATIVE_PORTAL_TEST_CALL'] if test=='runtime_chain_test' else [])+[str(ROOT/s) for s in SOURCES]+[str(ROOT/'live'/f'{test}.cpp'),'-o',str(binary)]
         for call in [cmd,[str(binary)]]:
@@ -115,6 +116,8 @@ def main():
         assert fields['seal_block']==('none' if good else 'association')
         assert 'renderer=' not in sealed[0] and 'device=' not in sealed[0]
         results.append({'mode':mode,'code':result.returncode,'output':result.stdout+result.stderr})
+    from command_trace_test import verify as verify_command_trace
+    results.extend(verify_command_trace(binary))
     # Real journal-style socket output, plus saturated sink: neither changes
     # stderr flags nor blocks owner callbacks or collector teardown.
     for saturated in [False,True]:

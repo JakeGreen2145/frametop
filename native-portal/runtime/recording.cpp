@@ -14,6 +14,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
            (!run_ && (handoff_.load() || lifecycle_ || wrapper_ || marker_ || staging_ticket_ || call_)))return fail(pc);
         uint64_t pool=0;
         if(!at(o.command+0x50,pool) || !pool || pool>UINT64_MAX-0xd0)return fail(pc);
+        trace_command(o.command,o.vk_command);
         turnover_={s.sp-0xd0,o.command,command_wrapper_,o.vk_command,o.generation,pool,1};
         turnover_.caller=s.x[30]-base_;
         return true;
@@ -82,6 +83,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         if(!check(read_self(s.x[0]+8,&C,8),8) || !check(read_self(C+8,&D,8),9) ||
            !check(D==identity_.renderer+0x50,10) || !check(read_self(C+0x738,&vk,8),11) ||
            !check(vk,12))return fail(pc);
+        trace_command(C,vk);
         Recording *candidate=nullptr;
         for(auto &c:recordings_)if(c.command==C) {candidate=&c;break;}
         if(!check(candidate,13))return fail(pc);
