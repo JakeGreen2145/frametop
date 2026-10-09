@@ -318,7 +318,7 @@ struct Runtime::Impl {
         if(!adapter->initialize()){refuse(Refusal::Adapter);return false;}
         runtime_owned=true;diag.capable=true;diag.refusal=Refusal::None;return true;
     }
-    bool in_native_demand=false;
+    bool in_native_demand=false,transition_called=false;
     static bool acquire(void *u) noexcept {return static_cast<Impl*>(u)->camera_transition(true);}
     static bool release(void *u) noexcept {return static_cast<Impl*>(u)->camera_transition(false);}
     bool camera_transition(bool acquiring) noexcept {
@@ -326,7 +326,7 @@ struct Runtime::Impl {
         r.x={camera,2,0,0,0,0,0,0};
         if(external_call) {r.target=external_target;r.x=external_args;}
         in_native_demand=true;const bool called=call(r);in_native_demand=false;
-        transition_result=r.x[0];
+        transition_result=r.x[0];transition_called=called;
         uint8_t active=1,state=1;
         if(!called || !get(camera+0x34a,active) || !get(camera+0x360,state))return false;
         return acquiring?(uint8_t(r.x[0])!=0 && active!=0):(active==0 && state==0);
@@ -495,6 +495,8 @@ struct Runtime::Impl {
         if((pc==0x112e50 || pc==0x1130a8) && uint8_t(s.x[1])) {
             backend.invalidate(Reason::External);owned=false;
         }
+        if((pc==0x15f9e0 || pc==0x15fba8) && !in_native_demand)
+            command_trace.push(pc,s,base,tid(),owner_tid.load(),CommandTrace::Owner);
         if((pc==0x15f9e0 || pc==0x15fba8) && demand && s.x[0]==camera && !in_native_demand) {
             // Raw methods include all native callers, not merely the public
             // RoomView wrappers. Reenter the original through one guarded call,
@@ -502,6 +504,7 @@ struct Runtime::Impl {
             external_call=true;external_target=base+pc;
             for(unsigned i=0;i<8;++i)external_args[i]=s.x[i];
             const bool ok=demand->external(pc==0x15f9e0,pc==0x15f9e0?acquire:release,this);
+            command_trace.push(pc,s,base,tid(),owner_tid.load(),CommandTrace::Owner,nullptr,transition_called,transition_result);
             external_call=false;owned=false;s.x[0]=transition_result;s.pad=arena::SkipOwned;
             if(!ok)refuse(Refusal::Policy);
         }
@@ -614,10 +617,19 @@ struct Runtime::Impl {
                 association_check(15,get(renderer+0xa78,device)) && association_check(16,device==identity.device);
             if(associated)external_camera=camera;
             std::array<unsigned char,40> camera_state{};
-            bool idle=associated && cache==0 && runtime::read_self(camera+0x340,camera_state.data(),camera_state.size());
+            const bool camera_read=associated && cache==0 && runtime::read_self(camera+0x340,camera_state.data(),camera_state.size());
+            bool idle=camera_read;
             for(unsigned k:{9u,10u,32u})idle=idle && camera_state[k]==0;
             uint64_t h0=0,h1=0;std::memcpy(&h0,camera_state.data()+16,8);std::memcpy(&h1,camera_state.data()+24,8);
+            // Pinned release retains queue identifiers, so this cold-only
+            // predicate can reject a released camera. Do not relax it from these
+            // scalars alone: partial queue connection failure can alias that
+            // state. The bounded diagnostics distinguish the missing live facts.
             idle=idle && !h0 && !h1;
+            live.camera_read=camera_read;live.camera_cache=cache;
+            live.camera_flags=uint64_t(camera_state[9]) | uint64_t(camera_state[10])<<8 | uint64_t(camera_state[32])<<16;
+            live.camera_h0=h0;live.camera_h1=h1;
+            if(idle && !live.idle_first)live.idle_first=frame_number;
             if(!demand && evidence.graph_capable())demand.emplace(&backend);
             if(demand && idle && !backend.render_pending())demand->establish(true,true);
             BackendStatus status{};backend.status(status);
@@ -632,6 +644,10 @@ struct Runtime::Impl {
             if(!adapter && status.capable)attach();
             if(!adapter || !adapter->state().initialized) {status.capable=false;backend.publish(status);}
             diag.capable=status.capable;
+            if(status.capable && status.external_clear && !status.fault && tracking && backend.new_lease_ready()) {
+                live.ready_last_ns=boottime();
+                if(!live.ready_first_ns)live.ready_first_ns=live.ready_last_ns;
+            }
             // Capture exactly the existing seal predicates, after adapter attachment.
             // This is evidence only: no new admission, native read or gate changes.
             live.seal=true;++live.seals;live.graph=status.serialized;live.origin_ok=origin_ok && origin_epoch;
@@ -644,6 +660,7 @@ struct Runtime::Impl {
                runtime::read_self(s.sp+0x610,effective.data(),effective.size())) {
                 if(!gate)gate.emplace(backend);
                 frame=gate->begin(frame_number,policy,true,true,false,boottime());
+                if(frame.lease.epoch && !live.lease_first_ns)live.lease_first_ns=boottime();
                 owned=frame.policy.portal && demand->bind({frame.lease.epoch,frame.lease.origin,frame.id}) && adapter->latch(frame);
                 if(owned) {
                     diag.capable=true;diag.refusal=Refusal::None;

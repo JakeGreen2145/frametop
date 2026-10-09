@@ -13,7 +13,7 @@ public:
     enum Route : uint64_t { Owner=1, HandoffWait=2, Foreign=3, OwnerEvent=4 };
     struct Row {
         uint64_t pc=0,lr=0,sp=0,tid=0,owner_tid=0,route=0,ledger_sampled=0;
-        uint64_t x0=0,x1=0,x19=0,x20=0;
+        uint64_t x0=0,x1=0,x19=0,x20=0,result_valid=0,result=0;
         runtime::CommandDiagnostic ledger{};
     };
 private:
@@ -37,10 +37,10 @@ private:
     }
 public:
     static bool selected(uint64_t pc) noexcept {
-        return runtime::command_trace_pc(pc) || pc==0x14099c || pc==0x140dbc || pc==0x14e5a8;
+        return pc==0x15f9e0 || pc==0x15fba8 || runtime::command_trace_pc(pc) || pc==0x14099c || pc==0x140dbc || pc==0x14e5a8;
     }
     void push(uint64_t pc,const arena::Saved &s,uint64_t base,uint64_t thread,uint64_t owner,
-              Route route,const runtime::CommandDiagnostic *d=nullptr) noexcept {
+              Route route,const runtime::CommandDiagnostic *d=nullptr,bool result_valid=false,uint64_t result=0) noexcept {
         if(!selected(pc))return;
         uint64_t command=d?d->command:0;
         if(!d) switch(pc) {
@@ -61,6 +61,7 @@ public:
         r.pc=pc;r.lr=s.x[30]>=base && s.x[30]-base<0x600000?s.x[30]-base:0;
         r.sp=s.sp;r.tid=thread;r.owner_tid=owner;r.route=route;
         r.x0=s.x[0];r.x1=s.x[1];r.x19=s.x[19];r.x20=s.x[20];
+        r.result_valid=result_valid;r.result=result;
         r.ledger_sampled=d!=nullptr;
         if(d)r.ledger=*d;else r.ledger.command=command;
         slot.ready.store(true,std::memory_order_release);
@@ -79,7 +80,7 @@ public:
             "command=0x%llx native_vk=0x%llx sp=0x%llx x0=0x%llx x1=0x%llx x19=0x%llx x20=0x%llx "
             "before_member=%llu after_member=%llu before_vk=0x%llx after_vk=0x%llx "
             "generation=%llu,%llu renewal=%llu,%llu begun=%llu,%llu entries=%llu,%llu "
-            "recording=%llu,%llu creation=0x%llx,0x%llx phase=%llu,%llu flags=0x%llx,0x%llx accepted=%llu failure=0x%llx\n",
+            "recording=%llu,%llu creation=0x%llx,0x%llx phase=%llu,%llu flags=0x%llx,0x%llx accepted=%llu failure=0x%llx result_valid=%llu result=0x%llx\n",
             index+1,(unsigned long long)r.pc,(unsigned long long)r.lr,(unsigned long long)r.tid,
             (unsigned long long)r.owner_tid,route,(unsigned long long)r.ledger_sampled,
             (unsigned long long)d.command,(unsigned long long)d.native_vk,(unsigned long long)r.sp,
@@ -89,7 +90,7 @@ public:
             (unsigned long long)a.begun,(unsigned long long)b.begun,(unsigned long long)a.entries,(unsigned long long)b.entries,
             (unsigned long long)a.recording,(unsigned long long)b.recording,(unsigned long long)a.creation,(unsigned long long)b.creation,
             (unsigned long long)a.phase,(unsigned long long)b.phase,(unsigned long long)a.flags,(unsigned long long)b.flags,
-            (unsigned long long)d.accepted,(unsigned long long)d.failure);
+            (unsigned long long)d.accepted,(unsigned long long)d.failure,(unsigned long long)r.result_valid,(unsigned long long)r.result);
         return n>0 && size_t(n)<size?size_t(n):0;
     }
 };

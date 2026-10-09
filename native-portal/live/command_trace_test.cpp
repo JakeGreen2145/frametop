@@ -7,6 +7,7 @@
 using namespace native_portal;
 using native_portal::live::CommandTrace;
 int main() {
+    assert(CommandTrace::selected(0x15f9e0) && CommandTrace::selected(0x15fba8));
     auto storage=std::make_unique<CommandTrace>();auto &trace=*storage;
     assert(CommandTrace::capacity==8192);
     arena::Saved s{};s.x[0]=1;s.x[20]=1;s.x[30]=0x70001234;s.sp=2;
@@ -49,5 +50,11 @@ int main() {
         s.x[0]=i+1;identities.push(0x301808,s,0,10,10,CommandTrace::Owner);
     }
     assert(identities.identity_overflow()==1);
+    auto camera_storage=std::make_unique<CommandTrace>();auto &camera=*camera_storage;
+    camera.push(0x15f9e0,s,0x70000000,10,11,CommandTrace::Foreign);
+    camera.push(0x15fba8,s,0x70000000,11,11,CommandTrace::Owner,nullptr,true,1);
+    assert(camera.read(0,row) && !row.result_valid && row.tid==10 && row.x0==s.x[0]);
+    assert(camera.read(1,row) && row.result_valid && row.result==1 && row.tid==11);
+    assert(CommandTrace::format(1,row,text,sizeof text) && std::strstr(text,"result_valid=1 result=0x1"));
     std::puts("command trace: immutable first records, concurrent writers/reader, exact capacity/overflow, identity filter and format bounds PASS");
 }

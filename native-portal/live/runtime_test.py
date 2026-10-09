@@ -41,7 +41,9 @@ def main():
                 (build/'verification.json').write_text(json.dumps(results,indent=2));return result.returncode
     pool_faults=['lr','pool','device','handle','delete','clear','no-reset','no-begin',
                  'reset-failed','begin-failed','reset-lr']
-    modes=['--construct','--construct-setter','--construct-recover']+['--construct-fault-'+str(i) for i in range(1,20)]+['--policy-native-disabled','--policy-native-special','--application-direct','--application-fallback','--main-pump','--main-pump-owner','--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
+    from camera_idle_native import witness
+    results.append({'camera_native':witness()})
+    modes=['--camera-unknown-warm','--camera-busy-841','--camera-busy-842','--camera-busy-864','--construct','--construct-setter','--construct-recover']+['--construct-fault-'+str(i) for i in range(1,20)]+['--policy-native-disabled','--policy-native-special','--application-direct','--application-fallback','--main-pump','--main-pump-owner','--repeated-cycles','--repeated-reset-failed','--repeated-begin-failed',
            '--repeated-owned-reset-failed','--repeated-owned-begin-failed',
            '--repeated-owned-no-wait','--repeated-owned-no-disposal',
            '--publication-pool-live','--pool-owned-current','--pool-owned-retained']+['--publication-pool-'+s for s in pool_faults]+[
@@ -58,6 +60,15 @@ def main():
         result=subprocess.run([str(binary),mode],capture_output=True,text=True)
         print(mode,result.stdout+result.stderr,end='\n');assert result.returncode==expected,(mode,result.returncode,result.stderr)
         if expected==-signal.SIGABRT:assert 'cleanup-entry' in result.stderr and 'terminate called' not in result.stderr
+        if mode=='--camera-unknown-warm':
+            samples=[dict(w.split('=',1) for w in line.split()[1:]) for line in result.stderr.splitlines()
+                     if line.startswith('ft-native-live ') and 'seal=1 ' in line]
+            assert samples
+            sample=samples[-1]
+            assert sample['camera_read']=='1' and sample['camera_cache']=='0'
+            assert sample['camera_flags']=='0x0' and sample['camera_handles']=='0xa001,0xa002'
+            assert sample['idle']=='0' and sample['can_acquire']=='0' and sample['idle_first']=='0'
+            assert sample['ready_first_ns']=='0' and sample['lease_first_ns']=='0'
         if mode.startswith('--policy-native-'):
             lines=[line for line in result.stderr.splitlines() if line.startswith('ft-native-live ') and 'seal=1 ' in line]
             assert len(lines)==1,(mode,result.stderr)

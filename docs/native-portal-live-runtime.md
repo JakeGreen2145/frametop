@@ -82,6 +82,8 @@ The first runner links every production component into one DSO and tests real pr
 
 ### Bounded live diagnostics
 
+[Camera-idle lifecycle evidence and added diagnostics](native-camera-idle-evidence.md) documents retained queue identifiers, the partial-connection alias that prevents a scalar-only warm-idle relaxation, and the bounded camera/transition fields.
+
 After the production control server starts, a separate collector samples a private atomic-word mailbox every 250 ms. Stderr lines begin `ft-native-live`. No extra opt-in is required inside the already opted-in bounded loader trial. The collector attempts at most 64 lines per Runtime, only when sampled predicates, refusal, phase coverage or owner-event coverage change. Increasing event/frame/upload counters alone does not produce output. `remaining=0` marks the last permitted attempt. Output is nonblocking and best-effort: a full or failed journal/pipe can lose a line; logging never grants capability or retries native work. No formatting, file I/O or logging occurs on native callbacks.
 
 Each line includes the latest owner callback's relative `pc`, sticky `first_refusal` and its `first_pc`, latest refusal, phase coverage, native owner-handoff coverage, and the most recently sampled seal ingredients. `seal=1 seal_pc=0x1480b8` distinguishes a genuine seal sample from startup defaults. The ingredients are `graph`, `initialized`, `origin_ok`, `associated`, `idle`, `demand`, `can_acquire`, `owned_debt`, `pipeline`, `adapter`, `tracking`, and `policy`. `capable`, `pending`, `stopped`, per-eye uploads/encoding, queue-success count and submitted frame accompany them. No renderer/device addresses, camera pixels, tokens or credentials are logged.

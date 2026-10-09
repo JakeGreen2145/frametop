@@ -19,6 +19,10 @@ struct LiveDiagnostics {
     uint64_t assoc_checked=0,assoc_passed=0,assoc_failed=0,assoc_lr=0,assoc_frame=0;
     bool assoc_owner=false,assoc_fallback=false;
     PolicyDiagnostic policy_detail{};
+    uint64_t camera_cache=0,camera_flags=0,camera_h0=0,camera_h1=0;
+    uint64_t idle_first=0,ready_first_ns=0,ready_last_ns=0,lease_first_ns=0;
+    bool camera_read=false;
+
     uint64_t uploads[2]{},encoded[2]{},queue_success=0,submitted_frame=0;
     Refusal first_refusal=Refusal::None,refusal=Refusal::NativeInitialization;
     bool seal=false,graph=false,initialized=false,origin_ok=false,associated=false,idle=false;
@@ -48,7 +52,7 @@ class DiagnosticLog {
     LiveDiagnostics last_{};uint64_t owners_=0;unsigned lines_=0;
 public:
     static constexpr unsigned limit=64;
-    static constexpr size_t line_capacity=2048;
+    static constexpr size_t line_capacity=3072;
     size_t format(const LiveDiagnostics &d,uint64_t owners,char *out,size_t size) noexcept {
         const auto &a=last_;const auto &p=d.policy_detail;const auto &q=a.policy_detail;
         if(lines_>=limit)return 0;
@@ -60,6 +64,9 @@ public:
            p.checked==q.checked && p.passed==q.passed && p.failed==q.failed && p.seen==q.seen &&
            p.actual==q.actual && p.expected==q.expected && p.style==q.style && p.expected_style==q.expected_style &&
            p.alpha==q.alpha && p.expected_alpha==q.expected_alpha && p.sampled==q.sampled &&
+           d.camera_cache==a.camera_cache && d.camera_read==a.camera_read && d.camera_flags==a.camera_flags &&
+           d.camera_h0==a.camera_h0 && d.camera_h1==a.camera_h1 && d.idle_first==a.idle_first &&
+           d.ready_first_ns==a.ready_first_ns && d.lease_first_ns==a.lease_first_ns &&
            d.phases==a.phases && d.first_refusal==a.first_refusal &&
            d.refusal==a.refusal && d.seal==a.seal && d.graph==a.graph && d.initialized==a.initialized &&
            d.origin_ok==a.origin_ok && d.associated==a.associated && d.idle==a.idle && d.demand==a.demand &&
@@ -78,6 +85,8 @@ public:
             "pipeline=%u adapter=%u tracking=%u policy=%u capable=%u pending=%u stopped=%u "
             "policy_sampled=%u policy_failed=%llu policy_checked=0x%llx policy_passed=0x%llx policy_seen=0x%llx "
             "policy_actual=0x%llx policy_expected=0x%llx policy_style=%llu,%llu policy_alpha=0x%llx,0x%llx "
+            "camera_read=%u camera_cache=%llu camera_flags=0x%llx camera_handles=0x%llx,0x%llx "
+            "idle_first=%llu ready_first_ns=%llu ready_last_ns=%llu lease_first_ns=%llu "
             "events=%llu frames=%llu seals=%llu uploads=%llu,%llu encoded=%llu,%llu queue_success=%llu submitted_frame=%llu remaining=%u\n",
             lines_+1,(unsigned long long)d.pc,(unsigned long long)d.phases,(unsigned long long)owners,unsigned(bool(owners&(1ull<<5))),
             (unsigned long long)(d.first_owner_rejection>>16),unsigned(d.first_owner_rejection&0xffff),
@@ -99,6 +108,10 @@ public:
             (unsigned long long)p.seen,(unsigned long long)p.actual,(unsigned long long)p.expected,
             (unsigned long long)p.style,(unsigned long long)p.expected_style,
             (unsigned long long)p.alpha,(unsigned long long)p.expected_alpha,
+            d.camera_read,(unsigned long long)d.camera_cache,(unsigned long long)d.camera_flags,
+            (unsigned long long)d.camera_h0,(unsigned long long)d.camera_h1,
+            (unsigned long long)d.idle_first,(unsigned long long)d.ready_first_ns,
+            (unsigned long long)d.ready_last_ns,(unsigned long long)d.lease_first_ns,
             (unsigned long long)d.events,(unsigned long long)d.frames,(unsigned long long)d.seals,
             (unsigned long long)d.uploads[0],(unsigned long long)d.uploads[1],(unsigned long long)d.encoded[0],
             (unsigned long long)d.encoded[1],(unsigned long long)d.queue_success,(unsigned long long)d.submitted_frame,limit-lines_-1);

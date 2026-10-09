@@ -449,6 +449,21 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
             assert(!f.router.diagnostics().pending && !f.native_acquires);return 0;
         }
     }
+    if(mode=="--camera-unknown-warm") {
+        // Released handles and failed partial connection can alias these bytes.
+        // Without the live transition results, preserve unknown foreign demand.
+        put(f.camera,0x350,uint64_t(0xa001));put(f.camera,0x358,uint64_t(0xa002));
+        f.frame_start();f.frame_end();
+        assert(!f.router.diagnostics().capable && !f.native_acquires);
+        std::this_thread::sleep_for(std::chrono::milliseconds(600));return 0;
+    }
+    if(mode.rfind("--camera-busy-",0)==0) {
+        const unsigned offset=unsigned(std::stoul(mode.substr(14)));
+        assert(offset==0x349 || offset==0x34a || offset==0x360);
+        put(f.camera,offset,uint8_t(1));f.frame_start();f.frame_end();
+        assert(!f.router.diagnostics().capable && !f.native_acquires);
+        return 0;
+    }
     if(mode=="--application-fallback")put(f.context,0x1a8,uint64_t(0));
     if(mode=="--application-direct")put(f.context,0x1c0,uint64_t(1)); // native direct branch never reads scheduler
     if(mode=="--diagnostics-bad")put(f.app,0x25320,uint64_t(0));

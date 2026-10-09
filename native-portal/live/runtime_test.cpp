@@ -18,6 +18,13 @@ int main() {
     for(unsigned i=1;i<DiagnosticLog::limit;++i) {
         live.capable=!live.capable;assert(log.format(live,0,line,sizeof line));
     }
+    assert(std::strstr(line,"camera_read="));
+    assert(std::strstr(line,"camera_cache="));
+    assert(std::strstr(line,"camera_flags="));
+    assert(std::strstr(line,"camera_handles="));
+    assert(std::strstr(line,"idle_first="));
+    assert(std::strstr(line,"ready_first_ns="));
+    assert(std::strstr(line,"lease_first_ns="));
     assert(std::strstr(line,"remaining=0\n"));
     for(unsigned i=0;i<1000;++i) {
         live.capable=!live.capable;assert(!log.format(live,63,line,sizeof line));
@@ -54,6 +61,16 @@ int main() {
     policy_sample.policy_detail.sampled=true;assert(policy_log.format(policy_sample,0,line,sizeof line));
     policy_sample.frames=100;assert(!policy_log.format(policy_sample,0,line,sizeof line));
     policy_sample.assoc_fallback=true;assert(policy_log.format(policy_sample,0,line,sizeof line));
+    DiagnosticLog camera_log;LiveDiagnostics camera_sample{};
+    assert(camera_log.format(camera_sample,0,line,sizeof line));
+    for(auto field:{&LiveDiagnostics::camera_cache,&LiveDiagnostics::camera_flags,&LiveDiagnostics::camera_h0,
+                    &LiveDiagnostics::camera_h1,&LiveDiagnostics::idle_first,&LiveDiagnostics::ready_first_ns,
+                    &LiveDiagnostics::lease_first_ns}) {
+        camera_sample.*field=1;assert(camera_log.format(camera_sample,0,line,sizeof line));
+        assert(!camera_log.format(camera_sample,0,line,sizeof line));
+    }
+    camera_sample.camera_read=true;assert(camera_log.format(camera_sample,0,line,sizeof line));
+    camera_sample.ready_last_ns=100;assert(!camera_log.format(camera_sample,0,line,sizeof line));
     static_assert(sizeof(Diagnostics)==96); // exported mailbox ABI stays unchanged
     static_assert(sizeof(arena::Saved)==800);
     Runtime runtime;
