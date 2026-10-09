@@ -40,6 +40,16 @@ def bootstrap_native():
     def run(a, b, count=10000):
         m.emu_start(a,b,count=count)
         assert m.reg_read(A.UC_ARM64_REG_PC)==b, hex(m.reg_read(A.UC_ARM64_REG_PC))
+    # Both release methods explicitly accept a null slot and an empty slot.
+    # Execute their real branches; neither reaches a destructor or native call.
+    for entry in (0x2966a0, 0x294678):
+        for slot in (0, region+0x53000):
+            if slot: put(slot,0)
+            x(0,R);x(1,slot);x(19,0xabc);x(30,0x900ff000)
+            m.reg_write(A.UC_ARM64_REG_SP,stack)
+            run(entry,0x900ff000)
+            assert x(19)==0xabc and m.reg_read(A.UC_ARM64_REG_SP)==stack
+            if slot: assert get(slot)==0
     # Actual pre-Run branch, including the app+60 conditional tail. The large
     # configuration routine and provider are stopped at entry, not invented GPU
     # successes. Neither branch proves which caller produced the live release.

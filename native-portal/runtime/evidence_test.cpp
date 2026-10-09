@@ -222,7 +222,28 @@ static void unpaired_begin_revokes() {
 #include <sys/syscall.h>
 #include "staging_test.inc"
 #include "bootstrap_test.inc"
+static void empty_native_release() {
+    for(uint64_t pc:{0x2966a0u,0x294678u})for(bool owned:{false,true}) {
+        Fixture f;assert(f.bootstrap(true));if(owned)assert(f.objects());
+        f.s={};f.s.x[0]=addr(f.r);
+        // Both pinned native methods immediately return for a null slot.
+        assert(!f.evidence.event(pc,f.s));assert(f.evidence.initialized());
+        // An empty slot is not an owned wrapper/marker, even before creation.
+        uint64_t slot=0;f.s.x[1]=reinterpret_cast<uint64_t>(&slot);
+        assert(!f.evidence.event(pc,f.s));assert(f.evidence.initialized());
+        assert(!f.evidence.first_failure_pc());
+        if(owned) {
+            slot=pc==0x2966a0?addr(f.wrapper):addr(f.marker);
+            assert(f.evidence.event(pc,f.s));assert(!f.evidence.initialized());
+            assert(f.evidence.first_failure_pc()==pc);
+        } else {
+            f.s.x[1]=1;assert(!f.evidence.event(pc,f.s));
+            assert(!f.evidence.initialized());assert(f.evidence.first_failure_pc()==pc);
+        }
+    }
+}
 int main() {
+    empty_native_release();
     bootstrap_recording_turnover();
     for(unsigned fault=0;fault<=34;++fault)staging_self_process(fault);
     unpaired_begin_revokes();initial_failures();adapter_and_pass_refusal();

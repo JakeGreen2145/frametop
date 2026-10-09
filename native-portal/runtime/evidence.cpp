@@ -84,9 +84,10 @@ bool Evidence::event(uint64_t pc,const arena::Saved &s) noexcept {
         fail(pc);return true; // revoke before native teardown, never retire native objects
     }
     if(pc==0x2966a0 || pc==0x294678) {
-        if(s.x[0]!=R) return false;
+        if(s.x[0]!=R || !s.x[1]) return false; // native CBZ x1: no slot, no destruction
         uint64_t object=0;
         if(!read_self(s.x[1],&object,8)) return fail(pc);
+        if(!object) return false; // native empty-slot branch, not an uncreated owned object
         if((pc==0x2966a0 && (object==wrapper_ || (staging_ticket_ && object==stock_))) ||
            (pc==0x294678 && object==marker_)) {
             fail(pc);return true; // revoke before native destruction, never read freed storage
