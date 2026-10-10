@@ -80,7 +80,7 @@ private:
     };
     size_t find(uint64_t) const;
     size_t first_pending() const;
-    void finish(size_t);
+    bool finish(size_t);
     const uint64_t epoch_,generation_;
     const size_t capacity_;
     const Retention retention_;

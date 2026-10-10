@@ -78,7 +78,7 @@ Submission OwnerCoordinator::submit_scoped(uint64_t epoch,uint64_t generation,Sc
     else if(inline_now)pump(1);
     return {id,retained?Rejection::None:Rejection::Retention};
 }
-void OwnerCoordinator::finish(size_t i) {
+bool OwnerCoordinator::finish(size_t i) {
     uint64_t ticket;
     ScopedMutation retired;
     {
@@ -95,6 +95,7 @@ void OwnerCoordinator::finish(size_t i) {
         s.phase=released?Phase::Done:Phase::Quarantined;
         changed_.notify_all();
     }
+    return released;
 }
 size_t OwnerCoordinator::pump(size_t budget) {
     if(std::this_thread::get_id()!=owner_)return 0;
@@ -172,8 +173,9 @@ bool OwnerCoordinator::retry_release(uint64_t id) {
         if(i==capacity_||slots_[i].phase!=Phase::Quarantined)return false;
         slots_[i].phase=Phase::Releasing;
     }
-    finish(i);
-    std::lock_guard<std::mutex> lock(mutex_);return slots_[i].phase==Phase::Done;
+    // take() can reclaim/reuse the slot as soon as finish publishes Done.
+    // Return this release's result, never a later occupant's phase.
+    return finish(i);
 }
 bool OwnerCoordinator::drained() const {
     std::lock_guard<std::mutex> lock(mutex_);

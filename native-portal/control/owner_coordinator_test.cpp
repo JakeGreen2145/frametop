@@ -1,4 +1,5 @@
 #include "owner_coordinator.hpp"
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
@@ -312,7 +313,39 @@ void combined_threaded_positive() {
     std::cout<<"PASS modeled threaded positive: native_plans="<<ex.plans.size()
              <<" issued_gate_tickets="<<gate.next<<" live_gate_tickets="<<gate.size()<<'\n';
 }
+// Reproduce result consumption racing the return of a successful release retry.
+// The slot may be reclaimed immediately; the retry must return its own outcome.
+void queue_retry_take_race() {
+    Gate gate;OwnerCoordinator q(7,9,1,gate.callbacks());
+    std::atomic<uint64_t> published{0},taken{0};
+    std::atomic<bool> done{false};
+    std::thread consumer([&]{
+        uint64_t last=0;
+        while(!done.load()) {
+            const auto id=published.load();
+            if(id==last){std::this_thread::yield();continue;}
+            Result r;
+            while(!q.take(id,r))std::this_thread::yield();
+            assert(r.retention_released && r.native.value_valid && r.native.value==123);
+            last=id;taken.store(id);
+        }
+    });
+    unsigned false_after_success=0;
+    for(unsigned i=0;i<20000;++i) {
+        gate.fail_release=true;
+        const auto s=q.submit(7,9,[]{return native(123);});assert(s.id);
+        Result r;assert(q.wait(s.id,r)==Wait::Ready && !r.retention_released);
+        published=s.id;gate.fail_release=false;
+        if(!q.retry_release(s.id))++false_after_success;
+        while(taken.load()!=s.id)std::this_thread::yield();
+    }
+    done=true;consumer.join();
+    assert(q.drained() && gate.size()==0 && gate.next==20000);
+    std::cout<<"retry_release false after successful release: "<<false_after_success<<std::endl;
+    assert(false_after_success==0);
+}
 int main() {
+    queue_retry_take_race();
     rejected_capture_reentrancy();
     queue_fifo_and_retention();queue_cancel_close_reentrancy();queue_cancel_execution_race();queue_retaining_fifo_and_close();queue_gate_failure();
     demand_interleaving_and_debt();demand_failures_borrow_and_close();demand_restart_and_contradictory_receipt();demand_null_and_bounds();combined_threaded_positive();
