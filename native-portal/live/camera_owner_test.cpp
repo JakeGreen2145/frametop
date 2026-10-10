@@ -254,8 +254,7 @@ static void negative_alias_and_fork() {
         assert(cleanup(owner,b,calls)==Dispatch::Refused && calls==0);_exit(0);
     }
     int status=0;assert(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
-    // Bind creates a retained barrier even before demand. Unknown queues cannot
-    // be discarded. Establish real fixture transitions before ordinary teardown.
+    // An attempted integration transition must actually detach before teardown.
     ReceiptShim native{{co::Ownership::NewlyOwned,co::Ownership::NewlyOwned},{41,42}};
     owner.submit(owner.epoch(),7,[&](const auto&,auto& demand) {
         co::Caller c{co::CallerKind::Stock,1,1};assert(demand.register_caller(c)&&demand.set_level(c,true,false));
@@ -312,7 +311,23 @@ static void repeated_consumer_cycles() {
     assert(cleanup(owner,b,calls)==Dispatch::Completed && calls==1);
     std::puts("camera-owner: three On/commit/Off/settle/detach cycles share one camera and producer generation");
 }
+static void unused_cleanup() {
+    Combined f;live::CameraOwner owner;const auto b=camera_id(f);publication(owner,b);
+    const auto initial=owner.snapshot();
+    assert(!initial.native_idle && !initial.portal_ready && !initial.integration_obligations);
+    // Merely accepting intent or a retained call does not acquire a native queue.
+    result(owner,listener(owner,[&](const auto&,auto& demand) {
+        co::Caller c{co::CallerKind::Portal,1,1};assert(demand.register_caller(c));
+        const auto token=demand.portal_on(c);assert(token.id && !demand.frame_admissible(token));
+        return co::NativeReceipt{};
+    }));
+    assert(owner.begin_close() && owner.finish_close());
+    const auto closed=owner.snapshot();
+    assert(!closed.native_idle && !closed.portal_ready && !closed.integration_obligations);
+    unsigned calls=0;assert(cleanup(owner,b,calls)==Dispatch::Completed && calls==1);
+}
 int main() {
+    unused_cleanup();
     repeated_consumer_cycles();
     for(unsigned absent=0;absent<3;++absent)positive(absent);
     inflight_and_reentrant();real_ticket_release_quarantine();negative_alias_and_fork();

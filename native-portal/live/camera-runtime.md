@@ -7,7 +7,7 @@ production build links `camera_owner.cpp`, `camera.cpp`, `camera_gate.cpp` and
 `owner_coordinator.cpp`. `runtime_camera.inc` is part of the actual Runtime
 translation unit and build identity, not a separate demonstration owner.
 
-The merged `runtime-sites.json` installs these 18 boundaries:
+The base `runtime-sites.json` installs these 18 boundaries:
 
 - Completed publication `8dc1c`, using x26 camera and x19 application.
 - Precleanup/destruction `8b020`, `15e1c8`, `15df70`, and conservative rebind `162360`.
@@ -23,10 +23,14 @@ The saved-state AAPCS64 transport supplies x0-x8 and q0-q7 and captures integer
 and vector results. The original native return is never replaced with a queue
 acknowledgement or guessed success.
 
-`Runtime::camera_coverage()` reports the loader's actual installed mask. All 18
-bits are `0x3ffff`. Its `supported` result additionally requires current Runtime
-capability. Standalone `CameraOwner::coverage()` deliberately cannot claim loader
-installation. CPU fixtures do not install native executable bytes.
+Aggregate arbitration additionally requires decision hooks `15fbb8` and `15fb20`.
+The parent-owned loader/emitter merge must install them as coverage bits 18 and 19.
+See [the bounded repair and hook contract](camera-stock-preservation.md).
+`Runtime::camera_coverage()` and provider-backed portal admission require all 20
+bits, `0xfffff`. An old 18-entry loader cannot authorize the new aggregate path.
+Its `supported` result additionally requires current Runtime capability.
+Standalone `CameraOwner::coverage()` cannot claim loader installation. CPU fixtures
+model callback coverage; they do not install native executable bytes.
 
 ## Lifetime and queue behavior
 
@@ -52,11 +56,22 @@ original cleanup is withheld until the barrier can really release. Exact native
 join success is still required on bootstrap cleanup; timeout and failed join
 remain fail-stop even if native code cleared its handle and TID.
 
+A never-used integration does not need to prove global native idle to release its
+closing barrier. Admission must be closed and retained calls drained, with no
+committed debt, fault or attempted integration connection left unsettled. Unknown
+queues remain Unknown; this exception grants neither portal readiness nor detach
+authority. Null and unused providers now take ordinary full native cleanup.
+
 Logical stock and foreign demand are distinct from portal tokens. Connection
-handler return=1 is not acquisition success: the pinned handler updates its
-connection's request marker, which is read only after retained execution. That
-marker is logical intent, never a service ownership or detach certificate.
-Unclassified lost-pipe identity stays conservative. Native writer calls that
+handler return=1 is not acquisition success. Nested camera entry points update
+the exact outer caller's logical level, and the original handler still writes its
+request marker and response from the actual camera result. Neither logical levels
+nor markers are service ownership or detach certificates. The producer decision
+uses all surviving stock, foreign and portal needs. A nonfinal Release executes
+the native no-op return branch without Clear or Disconnect; direct Clear takes
+the native lock-unwind branch. The final Release executes the original service
+calls and records their actual provider receipt when integration owns them.
+Native writer calls that
 could invalidate already-recorded source work are withheld with fail-stop while
 render/source debt exists. General co-owned source mutation during that window
 is not claimed as supported.

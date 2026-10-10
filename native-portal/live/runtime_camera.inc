@@ -11,6 +11,47 @@
     uint64_t camera_debt=0;
     bool camera_closing=false,camera_closed=false,camera_active=false;
     bool camera_cleanup_active=false;
+    // One active retained mutation owns this decision scope. Nested app/handler
+    // calls inherit its caller; they are not additional independent demand.
+    coordination::DemandArbiter* camera_aggregate=nullptr;
+    coordination::Caller camera_caller{};
+    bool camera_method_active=false;
+    struct CameraAggregateScope {
+        Impl& self;
+        CameraAggregateScope(Impl& p,coordination::DemandArbiter& arbiter,coordination::Caller caller)
+            :self(p) {if(p.camera_aggregate)std::abort();p.camera_aggregate=&arbiter;p.camera_caller=caller;}
+        ~CameraAggregateScope(){self.camera_aggregate=nullptr;self.camera_caller={};}
+    };
+    bool camera_method(uint64_t pc,arena::Saved& s) noexcept {
+        auto& arbiter=*camera_aggregate;
+        const bool acquiring=pc==0x15f9e0;
+        if(camera_caller.kind!=coordination::CallerKind::Portal &&
+           (!arbiter.register_caller(camera_caller) || !arbiter.set_level(camera_caller,acquiring,acquiring)))return false;
+        if(arbiter.snapshot().fault)return false;
+        bool called=false,ok=false;
+        auto original=[&] {
+            if(called)std::abort();
+            called=true;
+            camera_method_active=true;ok=camera_original(pc,s);camera_method_active=false;
+            coordination::NativeReceipt r;
+            if(ok){r.execution=coordination::Execution::Executed;r.value_valid=true;r.value=s.x[0];}
+            return r;
+        };
+        // Stock-only native calls do not manufacture portal queue ownership.
+        // Once integration owns a connection, its final native disconnect must
+        // update that same per-queue journal, even if the last caller is stock.
+        if(source && source->ready(camera_binding) &&
+           (camera_caller.kind==coordination::CallerKind::Portal || arbiter.snapshot().integration_obligations)) {
+            arbiter.reconcile([&](const coordination::ActionPlan& plan) {
+                if((plan.action==coordination::Action::Connect)!=acquiring)return coordination::NativeReceipt{};
+                auto actual=original();if(!ok)return actual;
+                auto r=source->transition(camera_binding,plan,s.x[0]);
+                r.execution=actual.execution;r.value_valid=actual.value_valid;r.value=actual.value;return r;
+            });
+        }
+        if(!called)original();
+        return ok;
+    }
     static bool writer_pc(uint64_t pc) noexcept {
         switch(pc) {
         case 0x6d6e0:case 0x6d6f0:case 0x1366b0:case 0x136118:case 0x13a100:
@@ -32,7 +73,8 @@
     bool camera_ready() noexcept {
         CameraBinding held;
         const auto demand_state=camera_owner.snapshot();
-        return camera_bound.load() && !camera_closing && !demand_state.fault && !demand_state.stock_full_display &&
+        const uint64_t installed=ft_native_portal_camera_coverage?ft_native_portal_camera_coverage():0;
+        return (installed&0xfffff)==0xfffff && camera_bound.load() && !camera_closing && !demand_state.fault && !demand_state.stock_full_display &&
             camera_owner.retained_binding(held) && held==camera_binding && source && source->ready(held);
     }
     static bool camera_source_settled(void* p,uint64_t watermark) noexcept {
@@ -50,6 +92,16 @@
         camera_binding=b;camera=published_camera;camera_bound.store(true);
     }
     bool camera_route(uint64_t pc,arena::Saved& s) noexcept {
+        if(pc==0x15fbb8 || pc==0x15fb20) {
+            // Actual native decision boundaries. The emitter selects 15fbc8
+            // (Release's native no-op result) or 15fb74 (Clear's lock unwind).
+            // Never replace x0 with logical acceptance or a cached result.
+            if(!camera_bound.load())return true;
+            if((tid()==owner_tid || (tid()==bootstrap_tid && joined)) && camera_cleanup_active)return true;
+            if(tid()!=owner_tid || !camera_active || s.x[19]!=camera_binding.camera)std::abort();
+            if(camera_aggregate && camera_aggregate->snapshot().producer_demand)s.pad=arena::SkipOwned;
+            return true;
+        }
         if(pc==0x8dc1c) {
             if(tid()!=bootstrap_tid || handoff_wait || camera_bound.load() ||
                !camera_owner.observe_publication(pc,s))std::abort();
@@ -81,7 +133,13 @@
                (camera_entry && s.x[0]!=camera_binding.camera) ||
                (handler && s.x[0]!=camera_binding.context))std::abort();
         }
-        if(tid()==owner_tid && camera_active)return true; // complete original nested path, existing ticket
+        if(tid()==owner_tid && camera_active) {
+            if(camera_aggregate && !camera_method_active && (pc==0x15f9e0 || pc==0x15fba8)) {
+                if(!camera_method(pc,s))std::abort();
+                s.pad=arena::SkipOwned;
+            }
+            return true; // other nested operations stay in the original method
+        }
         // Before completed publication/binding only bootstrap initialization is
         // native stock. Listener entry before Run is unsupported, not unretained.
         if(!camera_bound.load()) {
@@ -96,32 +154,30 @@
             // Until that exact source-consumer scope is proved, withhold the
             // destructive operation and fail-stop, never forward over live debt.
             if(camera_debt || (adapter && adapter->state().pending))std::abort();
-            // Full stock/foreign methods keep their actual return and side effects.
-            // Their service ownership stays unadmitted. Do not replay them later
-            // or let a portal release clear uncertain independent demand.
             const bool camera_update=pc==0x15fcc0;
-            const bool handler=pc==0x1366b0 || pc==0x136118;
+            const bool handler=pc==0x1366b0 || pc==0x136118 || pc==0x13a100;
             const auto kind=(pc==0x15d730 || pc==0x15d198 || pc==0x15d248)?
                 coordination::CallerKind::Stock:coordination::CallerKind::Foreign;
             uint64_t caller_object=s.x[0];
-            // Pinned 1366c8/136130 dereference x1 as the connection reference.
-            // Read it only here, AFTER the FIFO's ticket lookup, never at ingress.
+            // Pinned handlers and connection loss dereference the connection
+            // reference only under this FIFO ticket, never at listener ingress.
             if(handler && !get(s.x[1],caller_object))return receipt;
             const coordination::Caller caller{kind,caller_object,held.association_generation};
+            CameraAggregateScope scope(*this,arbiter,caller);
             if(!camera_update) {
-                backend.invalidate(Reason::External);if(demand)demand->external_observed();owned=false;
-                if(arbiter.register_caller(caller))arbiter.set_level(caller,true,true);
+                // This is an arbitrated operation with an actual returned result,
+                // not the old unknown foreign-thread observation path.
+                backend.invalidate(Reason::External);owned=false;
             }
-            if(camera_original(pc,s)) {
+            const bool method=pc==0x15f9e0 || pc==0x15fba8;
+            if(!method && (pc==0x15f938 || pc==0x15faf8)) {
+                const bool on=pc==0x15f938;
+                if(!arbiter.register_caller(caller) || !arbiter.set_level(caller,on,on))return receipt;
+            }
+            if(method?camera_method(pc,s):camera_original(pc,s)) {
                 receipt.execution=coordination::Execution::Executed;receipt.value_valid=true;receipt.value=s.x[0];
-                if((pc==0x6d6f0 && uint8_t(s.x[0])) || pc==0x15d198 || pc==0x15d248)
-                    arbiter.set_level(caller,false,false);
-                if(handler && caller_object) {
-                    uint8_t requested=1;
-                    if(get(caller_object+0x86,requested))arbiter.set_level(caller,requested!=0,requested!=0);
-                }
-                // A handler's return=1 and a cleared request marker are logical
-                // intent only. Neither changes the native service queue journal.
+                // Actual nested camera entries own the level changes. Outer
+                // handlers still write their native response/request markers.
             }
             return receipt;
         };
@@ -149,21 +205,20 @@
         auto result=camera_owner.direct([&](const CameraBinding& held,coordination::DemandArbiter& arbiter) {
             coordination::Caller caller{coordination::CallerKind::Portal,1,held.association_generation};
             if(!source || !source->ready(held) || !arbiter.register_caller(caller))return coordination::NativeReceipt{};
-            if(acquiring)portal_token=arbiter.portal_on(caller);
-            else if(portal_token.id)arbiter.portal_off(portal_token);
-            auto actual=arbiter.reconcile([&](const coordination::ActionPlan& plan) {
-                if((plan.action==coordination::Action::Connect)!=acquiring)return coordination::NativeReceipt{};
-                arena::Saved r{};r.x[0]=held.camera;r.x[1]=2;
-                const uint64_t pc=acquiring?0x15f9e0:0x15fba8;
-                if(!camera_original(pc,r))return coordination::NativeReceipt{};
-                transition_called=true;transition_result=r.x[0];
-                auto receipt=source->transition(held,plan,r.x[0]);
-                // A provider may supply service facts, never rewrite native return.
-                receipt.execution=coordination::Execution::Executed;receipt.value_valid=true;receipt.value=r.x[0];
-                return receipt;
-            });
+            if(acquiring) {
+                portal_token=arbiter.portal_on(caller);
+                if(!portal_token.id)return coordination::NativeReceipt{};
+            } else if(!arbiter.portal_off(portal_token))return coordination::NativeReceipt{};
+            CameraAggregateScope scope(*this,arbiter,caller);
+            arena::Saved r{};r.x[0]=held.camera;r.x[1]=2;
+            const uint64_t pc=acquiring?0x15f9e0:0x15fba8;
+            coordination::NativeReceipt actual;
+            if(!camera_method(pc,r))return actual;
+            transition_called=true;transition_result=r.x[0];
+            actual.execution=coordination::Execution::Executed;actual.value_valid=true;actual.value=r.x[0];
             const auto snapshot=arbiter.snapshot();
-            accepted=!snapshot.fault && (acquiring?arbiter.frame_admissible(portal_token):snapshot.native_idle);
+            // Portal Off retires that token, not another caller's producer need.
+            accepted=!snapshot.fault && (acquiring?arbiter.frame_admissible(portal_token):!snapshot.committed_debts);
             return actual;
         });
         return accepted && result.execution==coordination::Execution::Executed && result.value_valid && result.value!=0;

@@ -119,6 +119,9 @@ struct DemandSnapshot {
     bool producer_demand=false,legacy_stock_full=false,foreign_full=false;
     bool stock_full_display=false,portal_ready=false,native_idle=false;
     bool closing=false,fault=false;
+    // Integration-native work was attempted and has not fully detached. This
+    // differs from global native idle: a never-used Unknown queue has no debt.
+    bool integration_obligations=false;
     size_t committed_debts=0;
 };
 // Owner-only logical arbitration. Existing renderer/CameraControl interfaces

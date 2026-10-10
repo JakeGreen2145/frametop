@@ -4,7 +4,7 @@
 import hashlib, json, os, struct
 from pathlib import Path
 
-def witness():
+def witness(aggregate=False):
     from elftools.elf.elffile import ELFFile
     from unicorn import Uc, UC_ARCH_ARM64, UC_MODE_ARM, UC_HOOK_CODE
     import unicorn.arm64_const as A
@@ -28,7 +28,14 @@ def witness():
     put(service,vtable);put(vtable+8,acquire);put(vtable+16,release)
     m.mem_write(shared+0x18,b'\1')
     calls=[];service_results=[];transitions=[];fail_release=False;fail_acquire=0
+    hold_release=False;decisions=[]
     def hook(uc,pc,size,user):
+        if pc==0x15fbb8:
+            decisions.append(hold_release)
+            if hold_release:m.reg_write(A.UC_ARM64_REG_PC,0x15fbc8)
+            return
+        if pc==0x15fb20 and hold_release:
+            m.reg_write(A.UC_ARM64_REG_PC,0x15fb74);return
         if pc in (0x186a38,0x186a40,0x174510):x(0,0)
         elif pc==0x186ab0:x(0,shared)
         elif pc==0x26a548:x(0,service)
@@ -48,9 +55,9 @@ def witness():
         else:return
         m.reg_write(A.UC_ARM64_REG_PC,x(30))
     m.hook_add(UC_HOOK_CODE,hook)
-    def run(pc):
+    def run(pc,obj=None,arg=2,response=0):
         before=state();start=len(calls)
-        x(0,camera);x(1,2);x(30,done);m.reg_write(A.UC_ARM64_REG_SP,stack)
+        x(0,camera if obj is None else obj);x(1,arg);x(3,response);x(30,done);m.reg_write(A.UC_ARM64_REG_SP,stack)
         m.emu_start(pc,done,count=10000)
         assert m.reg_read(A.UC_ARM64_REG_PC)==done
         if pc in (0x15f9e0,0x15fba8):
@@ -64,6 +71,38 @@ def witness():
     run(0x15ddc8) # actual constructor, not an assumed zeroed object
     rows=[['cold',state()]]
     assert state()==[0,0,0,0,0]
+    if aggregate:
+        # Select the actual no-op return BEFORE Clear, never synthesize w0.
+        assert run(0x15f9e0)==1
+        connected=state();service_count=len(calls)
+        hold_release=True
+        assert run(0x15fba8)==1 and state()==connected and len(calls)==service_count
+        run(0x15faf8) # Direct Clear must also preserve aggregate producer Set.
+        assert bytes(m.mem_read(shared+0x54,1))==b'\1'
+        # Actual public handlers, connection markers, reply objects, app tails.
+        app,context,ref,connection,reply=0x91000000,0x92000000,0x93000000,0x93001000,0x93002000
+        map_(app,0x26000);map_(context,0x1000);map_(ref,0x3000)
+        put(app+0x25320,camera);put(context+0x1a8,app);put(ref,connection)
+        assert run(0x1366b0,context,ref,reply)==1
+        assert bytes(m.mem_read(connection+0x86,1))==b'\1'
+        assert struct.unpack('<Q',m.mem_read(reply+0x30,8))[0]==connection
+        assert run(0x136118,context,ref,reply)==1
+        assert bytes(m.mem_read(connection+0x86,1))==b'\0'
+        assert bytes(m.mem_read(reply+0x30,1))==b'\1'
+        assert state()==connected and len(calls)==service_count
+        hold_release=False
+        fail_release=True
+        m.mem_write(connection+0x86,b'\1')
+        assert run(0x136118,context,ref,reply)==1
+        assert bytes(m.mem_read(connection+0x86,1))==b'\0'
+        assert bytes(m.mem_read(reply+0x30,1))==b'\0' # actual native failure, not success
+        assert state()[2]==1 and len(calls)==service_count+1
+        fail_release=False
+        assert run(0x15fba8)==1 and len(calls)==service_count+3
+        assert state()==[0,0,0,0xa001,0xa002]
+        assert bytes(m.mem_read(shared+0x54,1))==b'\0'
+        return {'decisions':decisions,'transitions':transitions,'service_calls':calls,
+                'boundary':'Pinned Release and public handler bytes. Explicit aggregate branch selection; modeled service and shared-lock boundaries.'}
     assert run(0x15f9e0)==1;rows.append(['acquired',state()])
     assert state()==[0,1,1,0xa001,0xa002]
     before=len(calls);assert run(0x15f9e0)==1 and len(calls)==before # no per-call refcount increment

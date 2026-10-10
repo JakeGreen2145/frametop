@@ -29,19 +29,23 @@ for name,key in [('BOOT_DISPATCH','dispatch_lrs'),('BOOT_RELEASE','release_lr'),
     value=boot[key];flags+=['-DFT_'+name+'_LR='+hex(value[0] if isinstance(value,list) else value)]
 (B/'pump.private.hpp').write_text('static constexpr uint64_t pump_events[][6] = {'+','.join('{'+','.join(hex(v) for v in row)+'}' for row in boot['pump'])+'};\n')
 rows=witness()
+(B/'aggregate-native.json').write_text(json.dumps(witness(aggregate=True),indent=2)+'\n')
 (B/'camera.private.hpp').write_text('struct CameraTransition {uint64_t pc,before[5],after[5],result;};\nstatic constexpr CameraTransition camera_transitions[] = {'+','.join('{'+hex(t['pc'])+',{'+','.join(map(str,t['before']))+'},{'+','.join(map(str,t['after']))+'},'+str(t['result'])+'}' for t in rows['transitions'])+'};\n')
 objects=[]
 for src in SOURCES+['live/camera_runtime_test.cpp']:
     obj=B/(src.replace('/','_')+'.o');objects.append(obj)
-    inputs=[ROOT/src,*ROOT.rglob('*.hpp'),ROOT/'live/runtime_camera.inc',ROOT/'live/runtime_chain_test.cpp']
+    inputs=[ROOT/src,*[p for p in ROOT.rglob('*.hpp') if 'build' not in p.relative_to(ROOT).parts]]
+    if src=='live/runtime.cpp':inputs += [ROOT/'live/runtime_camera.inc']
+    if src=='live/camera_runtime_test.cpp':inputs += [ROOT/'live/runtime_chain_test.cpp',B/'camera.private.hpp',B/'pump.private.hpp']
     if not obj.exists() or any(p.stat().st_mtime>obj.stat().st_mtime for p in inputs):
         run(['g++',*flags,'-c',ROOT/src,'-o',obj])
 exe=B/'camera-runtime'
 run(['g++',*flags,*objects,'-o',exe])
 if '--matrix' in sys.argv:
     results=[]
-    for mode,expected in [('--absent',0),('--no-source',0),('--positive',0)]+[(m,-signal.SIGABRT) for m in
-        ['--no-gpu','--no-cpu','--no-source-return','--foreign-debt','--partial-receipt','--timeout','--join-error']]:
+    for mode,expected in [(m,0) for m in ['--absent','--no-source','--no-source-cleanup','--provider-unused','--missing-arbitration',
+        '--overlap-release','--stock-only-multicaller','--aggregate-portal-first','--aggregate-portal-last','--aggregate-clear','--positive']]+[(m,-signal.SIGABRT) for m in
+        ['--no-gpu','--no-cpu','--no-source-return','--foreign-debt','--partial-receipt','--aggregate-failed-release','--timeout','--join-error']]:
         unit='camera-runtime-'+uuid.uuid4().hex+'.scope'
         result=subprocess.run(['systemd-run','--user','--scope','--quiet','--unit='+unit,
             '-p','MemoryMax=256M','-p','MemorySwapMax=0',str(exe),mode],capture_output=True,text=True,timeout=30)

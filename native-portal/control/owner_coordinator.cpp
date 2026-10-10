@@ -294,6 +294,7 @@ DemandSnapshot DemandArbiter::snapshot() const {
     DemandSnapshot s;
     if(!owner()){s.fault=true;return s;}
     s.closing=closing_;s.fault=fault_;s.native_idle=true;
+    s.integration_obligations=connect_attempted_;
     if(!closing_)for(const auto& c:callers_)if(c.used&&!c.revoked) {
         s.producer_demand|=c.producer;
         if(c.key.kind==CallerKind::Stock)s.legacy_stock_full|=c.full;

@@ -777,7 +777,7 @@ void Runtime::event(uint64_t pc,arena::Saved &r) noexcept {p_->event(pc,r);}
 Diagnostics Runtime::diagnostics() const noexcept {Diagnostics d{};p_->published.read(d);return d;}
 CameraCoverage Runtime::camera_coverage() const noexcept {
     const uint64_t mask=ft_native_portal_camera_coverage?ft_native_portal_camera_coverage():0;
-    const bool installed=mask==0x3ffff;
+    const bool installed=(mask&0xfffff)==0xfffff;
     return {installed && diagnostics().capable,mask,installed?
         "native entries installed; source/provider admission and rebind association remain separately checked":
         "loader camera boundary group not installed"};

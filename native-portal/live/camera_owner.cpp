@@ -92,7 +92,10 @@ co::NativeReceipt CameraOwner::drain(const NativeMutation& fn) {
 bool CameraOwner::finish_close() {
     if(!owner() || active_ || !closing_ || !barrier_ || !queue_->drained())return false;
     const auto s=demand_->snapshot();
-    if(s.fault || s.committed_debts || !s.native_idle || s.producer_demand)return false;
+    if(s.fault || s.committed_debts || s.producer_demand ||
+       (s.integration_obligations && !s.native_idle))return false;
+    // Relinquishing an unused closing barrier gives stock its cleanup back.
+    // It does not change Unknown queues or authorize portal readiness/detach.
     if(!gate_.release(barrier_))return false;
     barrier_=0;return true;
 }

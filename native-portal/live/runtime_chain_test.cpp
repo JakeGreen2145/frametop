@@ -36,7 +36,8 @@ struct Chain:Fixture {
     uint64_t system_interface=0,signal_pointer=0;
     struct {uint64_t serial=42;int8_t subserial=1;uint8_t padding[7]{};} signal_value;
     std::array<float,12> origin_matrix{1,0,0,0,0,1,0,1.6f,0,0,1,0};
-    unsigned enqueues=0,lookups=0,native_acquires=0,native_releases=0,policy_fault=0;
+    unsigned enqueues=0,lookups=0,native_acquires=0,native_releases=0,native_clears=0,policy_fault=0;
+    unsigned held_releases=0;bool fail_native_release=false;
     bool pinned_camera=false;size_t camera_step=0;
     std::array<uint64_t,5> camera_state() const {
         std::array<uint64_t,5> out{};
@@ -355,12 +356,54 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t x8) n
         uint64_t camera=0;assert(runtime::read_self(x[0]+0x25320,&camera,8));
         assert(camera==addr(f.camera));x[0]=camera;
         const auto pc=target-Chain::base==0x6d6e0?0x15f9e0:0x15fba8;
-        arena::Saved nested{};nested.x[0]=camera;f.router.event(pc,nested);assert(!nested.pad);
-        return ft_native_portal_call(Chain::base+pc,x,x8);
+        arena::Saved nested{};nested.x[0]=camera;f.router.event(pc,nested);
+        if(nested.pad==arena::SkipOwned){x[0]=nested.x[0];return true;}
+        assert(!nested.pad);return ft_native_portal_call(Chain::base+pc,x,x8);
+    }
+    case 0x1366b0:case 0x136118: {
+        // Pinned public handler branch, with original per-connection markers
+        // and response fields. Native camera result is not the handler return.
+        const bool acquiring=target-Chain::base==0x1366b0;
+        auto* connection=*reinterpret_cast<unsigned char**>(x[1]);
+        auto* reply=reinterpret_cast<unsigned char*>(x[3]);
+        uint32_t flags=0;std::memcpy(&flags,reply+0x28,4);flags|=1;std::memcpy(reply+0x28,&flags,4);
+        if(acquiring)std::memset(reply+0x30,0,8);else reply[0x30]=0;
+        if(connection) {
+            uint64_t args[9]{};args[0]=addr(f.app);
+            assert(ft_native_portal_call(Chain::base+(acquiring?0x6d6e0:0x6d6f0),args,0));
+            if(acquiring && uint8_t(args[0])) {
+                connection[0x86]=1;const auto address=uint64_t(connection);std::memcpy(reply+0x30,&address,8);
+            } else if(!acquiring) {reply[0x30]=uint8_t(args[0])!=0;connection[0x86]=0;}
+        }
+        x[0]=1;break;
+    }
+    case 0x15d730:case 0x15d198:case 0x15d248: {
+        const bool acquiring=target-Chain::base==0x15d730;
+        uint64_t args[9]{};args[0]=addr(f.app);args[1]=1;
+        assert(ft_native_portal_call(Chain::base+(acquiring?0x6d6e0:0x6d6f0),args,0));
+        x[0]=args[0];break; // explicit model of the stock caller's camera edge
+    }
+    case 0x15f938:x[0]=1;break; // shared producer Set boundary is modeled
+    case 0x15faf8: {
+        arena::Saved decision{};decision.x[19]=x[0];decision.sp=addr(f.camera_stack);
+        f.router.event(0x15fb20,decision);
+        if(decision.pad!=arena::SkipOwned)++f.native_clears;
+        break; // native Clear is void; preserve its modeled register result
     }
     case 0x8b020:case 0x15e1c8:case 0x15df70:x[0]=0xabcdef;break;
     case 0x15f9e0:++f.native_acquires;put(f.camera,0x34a,uint8_t(1));put(f.camera,0x360,uint8_t(1));x[0]=1;break;
-    case 0x15fba8:++f.native_releases;put(f.camera,0x34a,uint8_t(0));put(f.camera,0x360,uint8_t(0));x[0]=1;break;
+    case 0x15fba8: {
+        // Explicit native-method model of the pinned 15fbb8 decision and
+        // 15fbc8 no-op return, not a logical queue acknowledgement.
+        arena::Saved decision{};decision.x[0]=decision.x[19]=x[0];
+        decision.sp=addr(f.camera_stack);f.router.event(0x15fbb8,decision);
+        if(decision.pad==arena::SkipOwned) {
+            ++f.held_releases;put(f.camera,0x349,uint8_t(0));x[0]=1;break;
+        }
+        ++f.native_releases;++f.native_clears;put(f.camera,0x34a,uint8_t(0));
+        if(f.fail_native_release){x[0]=0;break;}
+        put(f.camera,0x360,uint8_t(0));x[0]=1;break;
+    }
     case 0x2988a8:{uint32_t offset=0;std::memcpy(&offset,f.wrapper.data()+0x18,4);render::Descriptor d{0x999,offset,592};std::memcpy(reinterpret_cast<void*>(x[1]),&d,24);break;}
     case 0x29b278:{const auto off=f.enqueues++*0x2b0;assert(f.enqueues<=2);
         std::memcpy(f.packets.data()+off,reinterpret_cast<void*>(x[1]),352);
@@ -589,7 +632,70 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     const bool no_wait=final && mode=="--repeated-owned-no-wait";
     const bool no_disposal=final && mode=="--repeated-owned-no-disposal";
     const bool no_source=final && mode=="--repeated-owned-no-source";
-    f.frame_start();f.record(0);f.record(1);f.frame_end();
+    f.frame_start();
+    if(mode=="--overlap-release") {
+        f.s={};f.s.sp=addr(f.outer_stack);f.s.x[0]=addr(f.app);f.s.x[1]=0;
+        f.s.x[2]=addr(f.outer_stack)+0xc70;f.s.x[3]=addr(f.outer_stack)+0x610;f.event(0x148244);
+        f.s.x[0]=1;f.event(0x9ee5c);f.s.x[27]=1;f.event(0x9ee98);
+        assert(f.native_acquires==1 && !f.native_releases && !f.router.diagnostics().pending);
+        arena::Saved request{};request.x[0]=addr(f.app);request.x[1]=2;
+        f.router.event(0x6d6e0,request);
+        assert(f.native_acquires==2 && request.x[0]==1);
+        request={};request.x[0]=addr(f.app);request.x[1]=2;
+        f.router.event(0x6d6f0,request);
+        std::fprintf(stderr,"review: portal acquired, no portal Off, foreign Acquire+Release; acquires=%u releases=%u active=%u pending=%u\n",f.native_acquires,f.native_releases,unsigned(uint8_t(f.camera[0x360])),f.router.diagnostics().pending);
+        assert(!f.native_releases);
+        assert(request.x[0]==1 && uint8_t(f.camera[0x34a]) && uint8_t(f.camera[0x360]));
+        // External full-display intent revokes this frame, independently of
+        // aggregate producer retention. Do not attempt a newly owned draw here.
+        f.frame_end();return 0;
+    }
+    if(mode.rfind("--aggregate-",0)==0) {
+        f.s={};f.s.sp=addr(f.outer_stack);f.s.x[0]=addr(f.app);f.s.x[1]=0;
+        f.s.x[2]=addr(f.outer_stack)+0xc70;f.s.x[3]=addr(f.outer_stack)+0x610;f.event(0x148244);
+        f.s.x[0]=1;f.event(0x9ee5c);f.s.x[27]=1;f.event(0x9ee98);
+        assert(f.native_acquires==1 && !f.native_releases && !f.router.diagnostics().pending);
+        std::array<std::byte,0x100> a{},b{},stock{};std::array<std::byte,0x40> response{};
+        auto handler=[&](auto& object,bool on) {
+            uint64_t ref=addr(object);arena::Saved r{};r.x[0]=addr(f.context);r.x[1]=reinterpret_cast<uint64_t>(&ref);r.x[3]=addr(response);
+            f.router.event(on?0x1366b0:0x136118,r);assert(r.pad==arena::SkipOwned && r.x[0]==1);
+            assert(uint8_t(object[0x86])==unsigned(on));
+            if(on){uint64_t result=0;std::memcpy(&result,response.data()+0x30,8);assert(result==addr(object));}
+            else assert(uint8_t(response[0x30])==unsigned(!f.fail_native_release));
+        };
+        auto stock_call=[&](bool on) {
+            arena::Saved r{};r.x[0]=addr(stock);r.x[1]=1;f.router.event(on?0x15d730:0x15d198,r);
+            assert(r.pad==arena::SkipOwned && r.x[0]==unsigned(!f.fail_native_release));
+        };
+        handler(a,true);handler(b,true);stock_call(true);
+        assert(f.native_acquires==4 && !f.native_releases);
+        if(mode=="--aggregate-clear") {
+            arena::Saved r{};r.x[0]=addr(f.camera);f.router.event(0x15f938,r);assert(r.x[0]==1);
+            r={};r.x[0]=addr(f.camera);f.router.event(0x15faf8,r);
+            assert(!f.native_clears && !f.native_releases && uint8_t(f.camera[0x360]));
+        }
+        if(mode=="--aggregate-portal-last") {
+            handler(a,false);handler(b,false);stock_call(false);
+            assert(!f.native_releases && f.held_releases==3);
+            f.event(0x9ee98); // owned=false, native policy releases only portal demand
+        } else {
+            f.event(0x9ee98); // actual portal Release, while three callers survive
+            assert(!f.native_releases && f.held_releases==1 && uint8_t(f.camera[0x360]));
+            handler(b,false);stock_call(false);
+            assert(!f.native_releases && f.held_releases==3 && uint8_t(f.camera[0x360]));
+            f.fail_native_release=mode=="--aggregate-failed-release";
+            handler(a,false);
+        }
+        assert(f.native_acquires==4 && f.native_releases==1 && f.native_clears==1);
+        assert(unsigned(uint8_t(f.camera[0x360]))==unsigned(f.fail_native_release));
+        assert(!f.router.diagnostics().pending);
+        if(f.fail_native_release) {
+            std::fprintf(stderr,"camera-cleanup-guard: actual failed final native release retains source obligations\n");
+            f.s={};f.s.x[0]=addr(f.app);f.event(0x8b020);assert(false);
+        }
+        f.frame_end();std::puts("aggregate Runtime: native handler results, three surviving callers, last-demand disconnect PASS");return 0;
+    }
+    f.record(0);f.record(1);f.frame_end();
     if(mode=="--foreign-debt") {
         std::fprintf(stderr,"camera-cleanup-guard: writer cannot invalidate recorded source debt\n");
         arena::Saved request{};request.x[0]=addr(f.app);request.x[1]=2;
