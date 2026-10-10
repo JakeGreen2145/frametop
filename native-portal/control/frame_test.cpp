@@ -3,6 +3,31 @@
 #include <thread>
 using namespace native_portal;
 int main() {
+    // Transparent portals must not enter native recording/commit at all;
+    // source-over color alone would not exclude depth/stencil side effects.
+    for(bool special:{false,true})for(float opacity:{0.f,-0.f,.25f,1.f}) {
+        Backend b;BackendStatus s;s.capable=s.serialized=s.external_clear=true;s.origin=4;assert(b.publish(s));
+        Lease l;l.epoch=8;l.origin=4;l.generation=2;l.deadline_ns=100;l.flags=1;l.geometry.opacity=opacity;assert(b.publish_lease(l));
+        FrameGate gate(b);PolicyInput p;p.enabled=true;p.special=special;p.normal_construct=special;
+        auto f=gate.begin(1,p,true,true,false,10);
+        assert(f.policy.portal==(opacity>0));
+        if(opacity==0) {
+            assert(f.policy.effective.construct==f.policy.stock.construct && f.policy.effective.demand==f.policy.stock.demand);
+            assert(!gate.eye(f,0,4) && !gate.commit(f,11));
+        }
+    }
+    {
+        Backend b;BackendStatus s;s.capable=s.serialized=s.external_clear=true;s.origin=4;assert(b.publish(s));
+        Lease l;l.epoch=8;l.origin=4;l.generation=2;l.deadline_ns=100;l.flags=1;assert(b.publish_lease(l));
+        FrameGate gate(b);PolicyInput p;p.enabled=true;
+        const auto committed=gate.begin(1,p,true,true,false,10);
+        assert(gate.eye(committed,0,4) && gate.eye(committed,1,4) && gate.commit(committed,11));
+        l.geometry.opacity=0;++l.generation;assert(b.publish_lease(l));
+        assert(gate.committed(committed) && committed.lease.geometry.opacity==1);
+        assert(!gate.begin(2,p,true,true,false,12).id);
+        gate.settle(committed);
+        assert(!gate.begin(2,p,true,true,false,13).policy.portal);
+    }
     // Construct mode is native policy, not external ownership. Only an
     // authenticated normal publisher admits its owned-demand counterfactual.
     PolicyInput construct;construct.enabled=construct.special=true;

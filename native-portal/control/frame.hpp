@@ -32,7 +32,10 @@ public:
         if(!id||id<=last_) { backend_.refuse(); leave(); return f; }
         last_=active_=id; eyes_=0; invalid_=false; f.id=id;
         bool lease=backend_.lease(f.lease,now);
-        f.policy=frame_policy(inputs,lease,tracking,safety,stock_active);
+        // Zero opacity is no owned draw, not a transparent color write with
+        // possible native depth/stencil effects. Already committed frames retain
+        // their original snapshot and are settled through the existing path.
+        f.policy=frame_policy(inputs,lease&&f.lease.geometry.opacity>0,tracking,safety,stock_active);
         leave(); return f;
     }
     bool eye(const Frame& f,unsigned eye,uint64_t observed_origin) {
