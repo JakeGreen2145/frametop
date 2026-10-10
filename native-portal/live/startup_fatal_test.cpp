@@ -33,7 +33,9 @@ int main(int argc,char** argv) {
         std::fflush(stdout);
         if(output<0)close(STDERR_FILENO);else assert(dup2(output,STDERR_FILENO)==STDERR_FILENO);
         f->router.event(event,r);
-        assert(r.pad==0);
+        assert(r.pad==(event==0 || event==0x8dc1c?arena::Original:arena::SkipOwned));
+        if(event==0x15fba8)assert(r.x[0]==1);
+        if(event==0x8b020)assert(r.x[0]==0xabcdef);
         std::puts("returned");
     };
     if(mode=="bootstrap-release")attempt();

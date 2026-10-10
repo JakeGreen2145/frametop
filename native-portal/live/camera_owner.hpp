@@ -4,6 +4,7 @@
 #include "../control/owner_coordinator.hpp"
 #include "../render/adapter.hpp"
 #include <optional>
+#include <atomic>
 #include <unistd.h>
 
 namespace native_portal::live {
@@ -24,6 +25,10 @@ public:
     ~CameraOwner();
     CameraOwner(const CameraOwner&)=delete;
     CameraOwner& operator=(const CameraOwner&)=delete;
+    enum class BindStage : uint8_t { Unattempted, CleanRefused, Published, Retained, Closed };
+    BindStage bind_stage() const noexcept {return bind_stage_.load();}
+    binding::CameraNativeBinding::Candidate candidate() const {return native_.candidate();}
+    void invalidate_publication(uint64_t pc) {native_.invalidate_publication(pc);}
     bool observe_publication(uint64_t pc,const arena::Saved&);
     bool bind(const CameraBinding&,uint64_t generation,size_t capacity=8);
     // Runtime calls ONLY after Evidence authenticates the actual Run handoff.
@@ -57,7 +62,7 @@ public:
     coordination::NativeReceipt drain(const NativeMutation&);
     bool finish_close(); // only after debt release AND proven native disconnect
     binding::CameraNativeBinding::Dispatch cleanup(uint64_t pc,arena::Saved&,
-        CameraAccessGate::Cleanup,void*,std::chrono::milliseconds timeout);
+        CameraAccessGate::Cleanup,void*,std::chrono::milliseconds timeout,bool initial_caller=false);
 private:
     bool owner() const noexcept;
     coordination::Retention retention() noexcept;
@@ -70,6 +75,7 @@ private:
     std::optional<coordination::DemandArbiter> demand_;
     uint64_t epoch_=0,barrier_=0,generation_=0,current_ticket_=0;
     bool bound_=false,active_=false,closing_=false;
+    std::atomic<BindStage> bind_stage_{BindStage::Unattempted};
 };
 
 struct SourceSettlement {

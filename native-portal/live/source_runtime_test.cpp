@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Actual Runtime + retained CameraOwner. Native calls below replay fresh pinned
-// instruction observations, with explicit host relocation of modeled storage.
+// Actual Runtime + retained CameraOwner. Native calls below replay supplied
+// private fixture observations with explicit host relocation of modeled storage.
+// The source-only runner uses saved headers, not native executable inputs.
 #include "source_admission.hpp"
 #define FT_ATTACHMENT_TEST
 #define ft_native_portal_call fixture_native_call
@@ -72,7 +73,7 @@ int main(int argc,char** argv) {
     auto* client=mmap(nullptr,0x700000,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);assert(client!=MAP_FAILED);client_base=uint64_t(client);
     Observed source;auto* f=new Chain(&source);active=f;
     auto saved=f->s;f->s={};f->s.sp=addr(f->stack);f->s.x[19]=addr(f->app);f->s.x[20]=addr(f->app)+0x20000;f->s.x[26]=addr(f->camera);f->event(0x8dc1c);f->s=saved;
-    f->bootstrap_router();f->publish_worker();f->run_enter();
+    f->initial_camera_resources();f->bootstrap_router();f->publish_worker();f->run_enter();
     for(unsigned i=0;i<std::size(source_calls);++i) {
         if(i==3 && mode=="provider-rebind")rebind=true;
         f->s={};f->s.x[0]=addr(f->camera);f->s.x[30]=0x123456;f->s.x[8]=0xabcdef;

@@ -158,6 +158,7 @@ struct Runtime::Impl {
     void collect() {
         collector=std::thread([this] {
             DiagnosticLog log;char line[DiagnosticLog::line_capacity];
+            CameraBindingDiagnostic last_camera{};unsigned camera_lines=0;
             size_t trace_next=0;uint64_t trace_lost=0,trace_last=UINT64_MAX;unsigned trace_summaries=0;
             // Reopen pipes/files with an independent nonblocking file description.
             // Journal stderr is a socket: send(MSG_DONTWAIT) leaves its flags alone.
@@ -180,6 +181,13 @@ struct Runtime::Impl {
                         if(fd>=0)(void)write(fd,line,n);
                         else (void)send(STDERR_FILENO,line,n,MSG_DONTWAIT|MSG_NOSIGNAL);
                     }
+                }
+                CameraBindingDiagnostic camera_snapshot{};
+                if(camera_lines<32 && camera_published.read(camera_snapshot) &&
+                   std::memcmp(&camera_snapshot,&last_camera,sizeof camera_snapshot)) {
+                    const auto n=format_camera_binding(camera_snapshot,line,sizeof line);
+                    if(n)(void)emit(n);
+                    last_camera=camera_snapshot;++camera_lines;
                 }
                 CommandTrace::Row row{};
                 // Keep the existing capability/refusal line ahead of a trace
@@ -428,6 +436,7 @@ struct Runtime::Impl {
         if(!pinned || getpid()!=pid)return;
         if(source_route(pc,s))return;
         if(camera_route(pc,s))return;
+        if(tid()==owner_tid && !camera_bound.load() && (pc==0 || pc==0x147a48 || pc==0x1480b8))camera_handoff();
         // Shutdown guard is owned by the original initializer thread. It pairs
         // the real timed wait and actual pthread_join result before cleanup.
         const bool shutdown_store=pc==0x1426d4 && tid()==bootstrap_tid && context &&
@@ -456,9 +465,27 @@ struct Runtime::Impl {
             if(evidence.owner_event(pc,s,&predicate)) {
                 owner_events.fetch_or(1ull<<(owner_bit+1));
                 if(pc==0x14099c){worker=s.x[19];context=s.x[21];}
-                if(pc==0x140dbc)handoff_wait=true;
-                if(pc==0x14e5a8){owner_tid=tid();handoff_wait=false;camera_handoff();}
-            } else owner_rejected(pc,predicate);
+                if(pc==0x140dbc){
+                    handoff_wait=true;
+                    std::lock_guard<std::mutex> lock(camera_join_mutex);
+                    run_invalidations=camera_owner.candidate().invalidations;
+                    camera_diagnostic.start_scope=evidence.identity().renderer_generation;
+                    camera_snapshot_locked();
+                }
+                if(pc==0x14e5a8){
+                    owner_tid=tid();handoff_wait=false;
+                    {std::lock_guard<std::mutex> lock(camera_join_mutex);
+                     run_authenticated=true;
+                     camera_diagnostic.run_seen=1;camera_diagnostic.run_authenticated=1;camera_diagnostic.run_rejection=0;
+                     camera_diagnostic.start_scope=evidence.identity().renderer_generation;
+                     camera_snapshot_locked();}
+                    camera_handoff();
+                }
+            } else {
+                owner_rejected(pc,predicate);
+                if(pc==0x14e5a8){std::lock_guard<std::mutex> lock(camera_join_mutex);
+                    camera_diagnostic.run_seen=1;camera_diagnostic.run_rejection=predicate;camera_snapshot_locked();}
+            }
             return;
         }
         if(handoff_wait && tid()==bootstrap_tid) {
@@ -795,6 +822,7 @@ bool Runtime::start_server(const char *path) {
 }
 void Runtime::event(uint64_t pc,arena::Saved &r) noexcept {p_->event(pc,r);}
 Diagnostics Runtime::diagnostics() const noexcept {Diagnostics d{};p_->published.read(d);return d;}
+CameraBindingDiagnostic Runtime::camera_binding_diagnostics() const noexcept {CameraBindingDiagnostic d{};p_->camera_published.read(d);return d;}
 CameraCoverage Runtime::camera_coverage() const noexcept {
     const uint64_t mask=ft_native_portal_camera_coverage?ft_native_portal_camera_coverage():0;
     const bool installed=(mask&0xfffff)==0xfffff;

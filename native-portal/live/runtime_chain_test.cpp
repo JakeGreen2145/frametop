@@ -214,6 +214,11 @@ struct Chain:Fixture {
         }
         if(fault.empty())std::puts("12 complete published stock pool cycles PASS; native boundaries modeled");
     }
+    void initial_camera_resources() {
+        arena::Saved init{};init.sp=addr(camera_stack);init.x[0]=addr(camera);
+        init.x[1]=addr(app);init.x[30]=base+0x92fdc;
+        router.event(0x162360,init);assert(init.pad==arena::SkipOwned && init.x[0]==1);
+    }
     void publish_worker() {
         s.x[19]=addr(worker);s.x[21]=addr(context);event(0x14099c);s.x[0]=addr(worker);event(0x140dbc);
     }
@@ -414,6 +419,7 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t x8) n
         break; // native Clear is void; preserve its modeled register result
 
     }
+    case 0x162360:x[0]=1;break; // explicit modeled first resource Init, not publication
     case 0x8b020:case 0x15e1c8:case 0x15df70:x[0]=0xabcdef;break;
     case 0x15f9e0:++f.native_acquires;put(f.camera,0x34a,uint8_t(1));put(f.camera,0x360,uint8_t(1));x[0]=1;break;
     case 0x15fba8: {

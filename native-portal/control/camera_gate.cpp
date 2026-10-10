@@ -21,6 +21,12 @@ bool valid(const CameraBinding& b) noexcept {
         b.association && b.renderer_generation && b.device_generation && b.association_generation;
 }
 }
+#ifdef FT_NATIVE_PORTAL_TEST_CALL
+// Source-fixture fault injection only. Saturates, never erases/reuses an ID.
+void exhaust_camera_gate_for_test(bool epoch) noexcept {
+    (epoch?epochs:tickets).store(UINT64_MAX);
+}
+#endif
 CameraAccessGate::CameraAccessGate() noexcept:process_(getpid()) {}
 bool CameraAccessGate::same_process() const noexcept {return process_==getpid();}
 bool CameraAccessGate::valid_epoch(uint64_t e) const noexcept {return e && e==epoch_;}
@@ -30,12 +36,15 @@ CameraAccessGate::~CameraAccessGate() {
     std::lock_guard<std::mutex> lock(mutex_);
     if(active_ || cleaning_)std::terminate();
 }
-bool CameraAccessGate::publish(const CameraBinding& b,std::thread::id owner,uint64_t& out) {
-    out=0;
-    if(!same_process() || !valid(b) || owner==std::thread::id{})return false;
+bool CameraAccessGate::publish(const CameraBinding& b,std::thread::id owner,uint64_t& out,PublishFailure* failure) {
+    out=0;if(failure)*failure=PublishFailure::None;
+    auto reject=[&](PublishFailure f){if(failure)*failure=f;return false;};
+    if(!same_process())return reject(PublishFailure::Process);
+    if(!valid(b))return reject(PublishFailure::Fields);
+    if(owner==std::thread::id{})return reject(PublishFailure::Owner);
     std::lock_guard<std::mutex> lock(mutex_);
-    if(epoch_ || active_ || cleaning_)return false;
-    const auto e=issue(epochs);if(!e)return false;
+    if(epoch_ || active_ || cleaning_)return reject(PublishFailure::State);
+    const auto e=issue(epochs);if(!e)return reject(PublishFailure::Exhausted);
     binding_=b;owner_=owner;epoch_=e;closing_=false;out=e;return true;
 }
 bool CameraAccessGate::retain(uint64_t e,uint64_t& out) {

@@ -3,6 +3,7 @@
 #include "../runtime/evidence.hpp"
 #include "../binding/pass_gate.hpp"
 #include "camera_owner.hpp"
+#include "camera_binding_diagnostic.hpp"
 #include <memory>
 namespace native_portal::live {
 // Exact 64-bit Vulkan submit layouts for bounded self-reads. The production
@@ -46,6 +47,7 @@ public:
     void event(uint64_t relative_pc,arena::Saved &) noexcept;
     Diagnostics diagnostics() const noexcept;
     CameraCoverage camera_coverage() const noexcept;
+    CameraBindingDiagnostic camera_binding_diagnostics() const noexcept;
     void stop() noexcept; // stop new commits, not native lifetime settlement
 };
 }

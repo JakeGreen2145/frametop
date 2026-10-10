@@ -155,7 +155,7 @@ def main():
     rows = []
     failures = []
     cases = [('bootstrap-release', None), ('foreign-noncamera', None),
-             ('foreign-release', 8), ('foreign-cleanup', 3), ('foreign-publication', 2)]
+             ('foreign-release', None), ('foreign-cleanup', None), ('foreign-publication', None)]
     for mode, reason in cases:
         for sink in (['socket'] if reason is None else
                      ['socket', 'saturated', 'closed-peer', 'missing', 'pipe', 'full-pipe', 'file']):

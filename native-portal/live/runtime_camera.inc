@@ -5,7 +5,36 @@
     NativeSourceAdmission native_source{this,source_authenticate};
     SourceAdmission* source=nullptr;
     std::atomic<bool> camera_bound{false};
-    uint64_t published_camera=0,published_application=0;
+    // Serializes only owned decisions. Never held across original/native calls.
+    std::mutex camera_join_mutex;
+    uint64_t unbound_invocations=0,run_invalidations=0,join_version=0;
+    bool run_authenticated=false;
+    CameraBindingDiagnostic camera_diagnostic{};
+    Mailbox<CameraBindingDiagnostic> camera_published;
+    enum class JoinRefusal : uint8_t { None, NoRun, NoPublication, Inflight, Invalidated,
+        Resource, App, Worker, Context, Dirty, Exhausted, NativeBind, Barrier, Stopped };
+    void camera_snapshot_locked() noexcept {
+        const auto c=camera_owner.candidate();
+        auto& d=camera_diagnostic;
+        d.publication_pc=c.seen_pc;d.publication_accepted=c.accepted;
+        d.publication_sequence=c.sequence;d.version=c.version;
+        d.pending=d.native_pending=c.camera!=0;d.invalidate_pc=c.last_invalidate_pc;
+        d.invalidate_class=uint64_t(c.classification);d.invalidations=c.invalidations;d.invalidation_sequence=c.invalidation_sequence;
+        d.resource_ready=c.resource_ready;d.native_rejection=uint64_t(c.rejection);d.gate_rejection=uint64_t(c.gate_rejection);
+        const auto stage=camera_owner.bind_stage();
+        d.epoch_published=c.epoch_published;d.barrier_retained=stage==CameraOwner::BindStage::Retained;
+        d.internal_bound=stage>=CameraOwner::BindStage::Published;
+        d.partial=stage==CameraOwner::BindStage::Published;
+        d.runtime_bound=camera_bound.load();d.inflight=unbound_invocations;
+        camera_published.publish(d);
+    }
+    void camera_join_refused(JoinRefusal why) noexcept {
+        camera_diagnostic.join_rejection=uint64_t(why);
+        if(!camera_diagnostic.first_failure && why!=JoinRefusal::NoRun && why!=JoinRefusal::NoPublication &&
+           why!=JoinRefusal::Inflight && why!=JoinRefusal::Resource)
+            camera_diagnostic.first_failure=uint64_t(why);
+        camera_snapshot_locked();
+    }
     CameraBinding camera_binding{};
     coordination::PortalToken portal_token{};
     std::optional<RenderDebt> render_debt;
@@ -117,13 +146,36 @@
             self.source_command_settled(watermark) && self.source->settled(held,watermark);
     }
     void camera_handoff() noexcept {
-        if(!published_camera || !published_application || camera_bound.load())return;
+        if(tid()!=owner_tid || camera_bound.load())return;
+        std::lock_guard<std::mutex> lock(camera_join_mutex);
+        auto& d=camera_diagnostic;
+        d.app_match=d.worker_match=d.context_match=0;
+        if(!run_authenticated){camera_join_refused(JoinRefusal::NoRun);return;}
+        if(stopped.load()){camera_join_refused(JoinRefusal::Stopped);return;}
+        if(camera_owner.bind_stage()>=CameraOwner::BindStage::Published){camera_join_refused(JoinRefusal::Dirty);return;}
+        const auto c=camera_owner.candidate();
+        if(unbound_invocations || c.inflight){camera_join_refused(JoinRefusal::Inflight);return;}
+        if(c.invalidations!=run_invalidations){camera_join_refused(JoinRefusal::Invalidated);return;}
+        if(!c.camera){camera_join_refused(JoinRefusal::NoPublication);return;}
+        if(!c.resource_ready){camera_join_refused(JoinRefusal::Resource);return;}
         const auto app=evidence.application_owner();const auto id=evidence.identity();
-        if(app.application!=published_application || app.worker!=worker || app.context!=context)return;
-        CameraBinding b{context,published_application,published_camera,id.renderer,id.device,
+        d.app_match=1+(app.application==c.application);
+        if(d.app_match!=2){camera_join_refused(JoinRefusal::App);return;}
+        d.worker_match=1+(app.worker==worker);
+        if(d.worker_match!=2){camera_join_refused(JoinRefusal::Worker);return;}
+        d.context_match=1+(app.context==context);
+        if(d.context_match!=2){camera_join_refused(JoinRefusal::Context);return;}
+        // At most one attempt per immutable version and four per Runtime. A
+        // published/closing epoch is never reset or retried, even without a barrier.
+        if(join_version==c.version || d.join_attempts==4){camera_join_refused(JoinRefusal::Exhausted);return;}
+        join_version=c.version;++d.join_attempts;
+        CameraBinding b{context,c.application,c.camera,id.renderer,id.device,
             app.scheduler,id.renderer_generation,id.device_generation,id.renderer_generation};
-        if(!camera_owner.bind_handoff(b,id.renderer_generation))return;
-        camera_binding=b;camera=published_camera;camera_bound.store(true);
+        if(!camera_owner.bind_handoff(b,id.renderer_generation)) {
+            camera_join_refused(camera_owner.bind_stage()==CameraOwner::BindStage::Published?JoinRefusal::Barrier:JoinRefusal::NativeBind);return;
+        }
+        camera_binding=b;camera=c.camera;camera_bound.store(true);
+        d.join_rejection=0;camera_snapshot_locked();
     }
     [[noreturn]] void camera_route_abort(CameraFatalReason reason,uint64_t pc) noexcept {
         // Foreign callers must not sample owner-only state. These atomics are
@@ -131,9 +183,49 @@
         // loads are failure coordinates, not an authoritative state snapshot.
         static_assert(std::atomic<uint64_t>::is_always_lock_free);
         static_assert(std::atomic<bool>::is_always_lock_free);
-        abort_camera_failure({reason,pc,tid(),owner_tid.load(std::memory_order_relaxed),bootstrap_tid,
+        emit_camera_failure({reason,pc,tid(),owner_tid.load(std::memory_order_relaxed),bootstrap_tid,
             camera_bound.load(std::memory_order_relaxed),handoff_wait.load(std::memory_order_relaxed),
             stopped.load(std::memory_order_relaxed),joined.load(std::memory_order_relaxed)});
+        // Keep the small primary reason ahead of the optional discriminator on
+        // a constrained journal socket. Both are best-effort, never authority.
+        CameraBindingDiagnostic snapshot{};
+        if(camera_published.read(snapshot))emit_camera_binding(snapshot);
+        std::abort();
+    }
+    bool camera_unbound_original(uint64_t pc,arena::Saved& s) noexcept {
+        {
+            std::lock_guard<std::mutex> lock(camera_join_mutex);
+            if(camera_bound.load())return false;
+            // Runtime camera_bound is monotonic. Before its first true value,
+            // only a clean pre-bind state has zero integration obligations.
+            // A partially published epoch MUST NOT take this path.
+            if(camera_owner.bind_stage()>=CameraOwner::BindStage::Published || unbound_invocations==64)
+                camera_route_abort(CameraFatalReason::WriterBeforeHandoff,pc);
+            ++unbound_invocations;camera_snapshot_locked();
+        }
+        struct Original {Impl* self;uint64_t pc;arena::Saved* saved;};
+        Original call{this,pc,&s};
+        auto original=[](void* p) noexcept {
+            auto& c=*static_cast<Original*>(p);
+            {std::lock_guard<std::mutex> lock(c.self->camera_join_mutex);c.self->camera_snapshot_locked();}
+            const auto target=ft_native_portal_original?ft_native_portal_original(c.pc):0;
+            // No source observer, arbiter, replay, owner-only fields, fabricated
+            // native success, or lock spans this complete original invocation.
+            if(!target || !ft_native_portal_call_saved(target,c.saved))
+                c.self->camera_route_abort(CameraFatalReason::CleanupOriginal,c.pc);
+        };
+        if(cleanup_pc(pc)) {
+            const bool initial=pc==0x162360 && tid()==bootstrap_tid && s.sp && s.x[30]==base+0x92fdc;
+            const auto result=camera_owner.cleanup(pc,s,original,&call,std::chrono::milliseconds(0),initial);
+            if(result==binding::CameraNativeBinding::Dispatch::Refused)
+                camera_route_abort(CameraFatalReason::CleanupRefused,pc);
+        } else {original(&call);s.pad=arena::SkipOwned;}
+        {
+            std::lock_guard<std::mutex> lock(camera_join_mutex);
+            --unbound_invocations;camera_snapshot_locked();
+        }
+        // The suspended original has returned before eligibility is reconsidered.
+        camera_handoff();return true;
     }
     bool camera_route(uint64_t pc,arena::Saved& s) noexcept {
         if(pc==0x15fbb8 || pc==0x15fb20) {
@@ -151,10 +243,29 @@
             return true;
         }
         if(pc==0x8dc1c) {
-            if(tid()!=bootstrap_tid || handoff_wait || camera_bound.load() ||
-               !camera_owner.observe_publication(pc,s))camera_route_abort(CameraFatalReason::Publication,pc);
-            published_camera=s.x[26];published_application=s.x[19];return true;
+            {
+                std::lock_guard<std::mutex> lock(camera_join_mutex);
+                if(camera_bound.load() || camera_owner.bind_stage()>=CameraOwner::BindStage::Published) {
+                    camera_snapshot_locked();
+                    camera_diagnostic.publication_pc=pc;camera_diagnostic.publication_accepted=0;
+                    camera_diagnostic.publication_rejection=uint64_t(binding::CameraNativeBinding::Rejection::Epoch);
+                    if(camera_diagnostic.publication_sequence!=UINT64_MAX)++camera_diagnostic.publication_sequence;
+                    camera_published.publish(camera_diagnostic);
+                    camera_route_abort(CameraFatalReason::Publication,pc);
+                }
+                const bool publisher=tid()==bootstrap_tid;
+                if(!publisher)camera_owner.invalidate_publication(pc);
+                const bool accepted=publisher && camera_owner.observe_publication(pc,s);
+                camera_diagnostic.publication_rejection=publisher?uint64_t(camera_owner.candidate().rejection):253;
+                camera_snapshot_locked();
+                camera_diagnostic.publication_pc=pc;camera_diagnostic.publication_accepted=accepted;
+                camera_published.publish(camera_diagnostic);
+            }
+            // Publication may be observed after R in a modeled schedule. Only
+            // the actual authenticated render owner can consume this candidate.
+            camera_handoff();return true;
         }
+        if((cleanup_pc(pc) || writer_pc(pc)) && camera_unbound_original(pc,s))return true;
         if(cleanup_pc(pc)) {
             // Nested resource cleanup is within the already quiescent outer
             // application cleanup. Do not reacquire or self-wait in that call.
@@ -169,6 +280,7 @@
                 if(!c.ok)c.p->camera_route_abort(CameraFatalReason::CleanupOriginal,c.pc);
             };
             const auto result=camera_owner.cleanup(pc,s,original,&c,std::chrono::milliseconds(0));
+            {std::lock_guard<std::mutex> lock(camera_join_mutex);camera_snapshot_locked();}
             if(result==binding::CameraNativeBinding::Dispatch::Refused)camera_route_abort(CameraFatalReason::CleanupRefused,pc);
             return true;
         }
@@ -190,12 +302,6 @@
                 s.pad=arena::SkipOwned;
             }
             return true; // other nested operations stay in the original method
-        }
-        // Before completed publication/binding only bootstrap initialization is
-        // native stock. Listener entry before Run is unsupported, not unretained.
-        if(!camera_bound.load()) {
-            if(tid()!=bootstrap_tid || handoff_wait)camera_route_abort(CameraFatalReason::WriterBeforeHandoff,pc);
-            return true;
         }
         auto mutation=[&](const CameraBinding& held,coordination::DemandArbiter& arbiter) {
             coordination::NativeReceipt receipt;
@@ -323,5 +429,6 @@
                 });
             });
             camera_closed=camera_owner.finish_close();
+            {std::lock_guard<std::mutex> lock(camera_join_mutex);camera_snapshot_locked();}
         }
     }

@@ -42,7 +42,8 @@ public:
     // Only after completed native publication and independently authenticated
     // backend/association binding. No replacement, even if closing is quiescent,
     // until Destroy callback has returned. owner must never wait on this barrier.
-    bool publish(const CameraBinding&,std::thread::id owner,uint64_t& epoch_out);
+    enum class PublishFailure : uint8_t { None, Process, Fields, Owner, State, Exhausted };
+    bool publish(const CameraBinding&,std::thread::id owner,uint64_t& epoch_out,PublishFailure* failure=nullptr);
     bool retain(uint64_t epoch,uint64_t& ticket_out);
     bool release(uint64_t ticket);
     // Only a live ticket yields identities; remains valid after begin_close.

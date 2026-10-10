@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Production Runtime() and provider. Only native call/memory and driver storage
-// are fixture boundaries. Queue events come from freshly executed pinned ELF.
+// are fixture boundaries. Queue events are supplied by private fixture headers;
+// the source-only runner consumes saved inputs without executing native binaries.
 #include "source_admission.hpp"
 #include "selection.private.hpp"
 #define FT_ATTACHMENT_TEST
@@ -74,6 +75,10 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t* x,uint64_t x8) n
         put(active->camera,0x34a,uint8_t(on));put(active->camera,0x360,uint8_t(on));
         x[0]=1;return true;
     }
+    if(target==Chain::base+0x162360) {
+        assert(x[0]==addr(active->camera) && x[1]==addr(active->app));
+        x[0]=1;return true; // modeled resource Init return, not object publication
+    }
     if(target==Chain::base+0x15fcc0){++native_updates;replay(1);x[0]=1;return true;}
     return fixture_native_call(target,x,x8);
 }
@@ -89,6 +94,9 @@ static int scenario(int argc,char** argv) {
     auto f=std::make_unique<Chain>();active=f.get();
     auto saved=f->s;f->s={};f->s.sp=addr(f->stack);f->s.x[19]=addr(f->app);
     f->s.x[20]=addr(f->app)+0x20000;f->s.x[26]=addr(f->camera);f->event(0x8dc1c);f->s=saved;
+    arena::Saved init{};init.sp=addr(f->camera_stack);init.x[0]=addr(f->camera);
+    init.x[1]=addr(f->app);init.x[30]=Chain::base+0x92fdc;
+    f->router.event(0x162360,init);assert(init.pad==arena::SkipOwned && init.x[0]==1);
     f->bootstrap_router();f->publish_worker();f->run_enter();
     f->borrowed_fixture=mode=="warm" || mode=="dedup";
     if(mode=="warm") {

@@ -1,0 +1,293 @@
+{
+  "source_only": true,
+  "base": "e54f6ed00552fd72aaa4fd98924700ecb74354c2",
+  "memory_max": 268435456,
+  "swap_max": 0,
+  "sanitizers": [
+    "address",
+    "undefined"
+  ],
+  "runtime_suites": {
+    "initial_binding_test": [
+      {
+        "mode": "initial-success",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "init-failure",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "foreign-stock",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "worker-stock",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "late",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "mismatch",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "nested-cleanup",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "cleanup-between",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "concurrent-cleanup",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "blocked-stock",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "aba",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "start-aba",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "exhausted",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "partial-bind",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "active-rebind",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "unclassified-init",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "repeated-init",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "bad-publication",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "rejected-run",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "replacement-malformed",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "bound-publication",
+        "exit": -6,
+        "passed": true
+      }
+    ],
+    "production_admission_test": [
+      {
+        "mode": "cold",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "warm",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "dedup",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "sustained-on",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "partial-connect",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "partial-alias",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "missing-event",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "provider-migration",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "provider-loss",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "association-migration",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "bad-selection",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "bad-selection-joined",
+        "exit": -6,
+        "passed": true
+      }
+    ],
+    "camera_runtime_test": [
+      {
+        "mode": "--absent",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "--no-source",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "--no-source-cleanup",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "--provider-unused",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "--missing-arbitration",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "--stock-only-multicaller",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "--positive",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "--no-gpu",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "--no-cpu",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "--no-source-return",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "--foreign-debt",
+        "exit": -6,
+        "passed": true
+      },
+      {
+        "mode": "--partial-receipt",
+        "exit": -6,
+        "passed": true
+      }
+    ],
+    "source_runtime_test": [
+      {
+        "mode": "positive",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "nested",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "foreign",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "mode": "missing-nested-return",
+        "exit": 0,
+        "passed": true
+      }
+    ]
+  },
+  "runtime_mode_count": 49,
+  "default_runtime_completed_instances": 8,
+  "default_runtime_completed_source_cycles": 64,
+  "legacy_startup_and_fatal_sink_cases": 19,
+  "standalone_source_tests": {
+    "binding_camera_test": "PASS under ASan/UBSan",
+    "binding_diagnostic_test": "PASS under ASan/UBSan, 1024-byte record, full/closed sockets and errno"
+  },
+  "limitations": [
+    "Native call/register/memory/service boundaries are modeled, not vendor binary execution.",
+    "Source observer regression fixture retains its pre-existing process-lifetime _Exit; ordinary teardown is verified by the other Runtime matrices.",
+    "No device, SSH, service restart, native executable inspection or emulation.",
+    "ARM build and independent delta review are parent-owned and not claimed here."
+  ],
+  "saved_source_inputs": {
+    "/home/jakeg/.hermes/cache/scratch/camera-abort-488/derived-native-coordinates.json": "9430f3c011ceb21c8b9a5ada5f0963a9251518324537590dd500e708596a7a5f",
+    "/home/jakeg/.hermes/work/frametop-native-live-integration/native-portal/build/camera-runtime-asan/admission.private.hpp": "0de89b192a94761a454931e8832b753a8620e36fac65cd92f9f51922d8ecdd95",
+    "/home/jakeg/.hermes/work/frametop-native-live-integration/native-portal/build/camera-runtime-asan/camera.private.hpp": "4a48132b19672f429e6584552fa5712bd05aa8d54cc86f9bf3b3815d02b3763d",
+    "/home/jakeg/.hermes/work/frametop-native-live-integration/native-portal/build/camera-runtime-asan/pump.private.hpp": "2619b907e95b98af18a1367aaf38b0a9463510ce63483cd5541c2d579e03d1c0",
+    "/home/jakeg/.hermes/work/frametop-native-live-integration/native-portal/build/camera-runtime-asan/selection.private.hpp": "4d70ee508d6741fa75c04c021f1272f4f1e0eba8228954fcf76b1cba305f2e60",
+    "/home/jakeg/.hermes/work/frametop-native-live-integration/native-portal/build/camera-runtime-asan/source.private.hpp": "bccdd5d50ff2737eef8b92f06fc23e2a87675ae58093c1ec3e4d08e94cec2375"
+  },
+  "static_added_line_scan": {
+    "os\\.system\\(": false,
+    "shell=True": false,
+    "\\beval\\(": false,
+    "pickle\\.loads?\\(": false
+  }
+}

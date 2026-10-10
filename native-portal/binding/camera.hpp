@@ -10,11 +10,27 @@ namespace native_portal::binding {
 class CameraNativeBinding final {
 public:
     enum class Dispatch { Completed, ForwardedUnrelated, Refused };
+    enum class Invalidation : uint8_t { None, InitialInit, ResourceRebind, ObjectCleanup, Replacement };
+    enum class Rejection : uint8_t { None, Process, Site, Stack, Application, Camera, Relation,
+        Existing, Inflight, Missing, CameraMismatch, AppMismatch, Epoch, Gate };
+    // Immutable copy under mutex, never an unretained native read permission.
+    struct Candidate {
+        uint64_t camera=0,application=0,sequence=0,version=0,invalidations=0;
+        uint64_t seen_pc=0,last_invalidate_pc=0,invalidation_sequence=0,inflight=0;
+        bool accepted=false,init_seen=false,resource_ready=false,epoch_published=false;
+        Invalidation classification=Invalidation::None;
+        Rejection rejection=Rejection::None;
+        CameraAccessGate::PublishFailure gate_rejection=CameraAccessGate::PublishFailure::None;
+    };
     explicit CameraNativeBinding(CameraAccessGate&) noexcept;
+    Candidate candidate() const;
+    void invalidate_publication(uint64_t pc);
     // Graphics initialization follows camera publication. Save only register
     // facts now, without an epoch/read scope, and bind later under independently
-    // retained backend/association ownership. Any intervening cleanup revokes
-    // these pending facts. No native pointer lookup is done by either method.
+    // retained backend/association ownership. Destructive/unclassified cleanup
+    // revokes pending facts; the authenticated first same-object resource Init
+    // preserves P and separately records its actual returned resource readiness.
+    // No native pointer lookup is done by either method.
     bool observe_publication(uint64_t pc,const arena::Saved&);
     bool bind(const CameraBinding& full,std::thread::id owner,uint64_t& epoch_out);
     // Call only from the validated 8dc1c site, after the 8dc18 publication store.
@@ -32,11 +48,13 @@ public:
     // (the method-return route). Refusal therefore traps, never falls through.
     // Unrelated cameras are forwarded unchanged through the same original call.
     Dispatch cleanup(uint64_t pc,arena::Saved&,CameraAccessGate::Cleanup original,
-                     void* argument,std::chrono::milliseconds timeout);
+                     void* argument,std::chrono::milliseconds timeout,bool initial_caller=false);
 private:
+    void invalidate_locked(uint64_t pc,Invalidation);
     CameraAccessGate& gate_;
     const int process_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
+    Candidate candidate_{};
     uint64_t epoch_=0,camera_=0,application_=0,unrelated_inflight_=0;
 };
 } // namespace native_portal::binding

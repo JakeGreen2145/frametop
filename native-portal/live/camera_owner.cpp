@@ -25,7 +25,8 @@ bool CameraOwner::bind_handoff(const CameraBinding& binding,uint64_t generation,
     if(process_!=getpid() || bound_ || active_)return false;
     const auto prior=owner_;owner_=std::this_thread::get_id();
     if(bind(binding,generation,capacity))return true;
-    owner_=prior;return false;
+    if(!bound_)owner_=prior; // a published epoch is dirty even if retain failed
+    return false;
 }
 bool CameraOwner::retained_binding(CameraBinding& b) const {
     return owner() && barrier_ && gate_.lookup(barrier_,b);
@@ -52,13 +53,15 @@ co::NativeReceipt CameraOwner::direct(const NativeMutation& fn) {
 }
 bool CameraOwner::bind(const CameraBinding& binding,uint64_t generation,size_t capacity) {
     if(!owner() || bound_ || !generation || !capacity || capacity>co::OwnerCoordinator::MaxSlots)return false;
-    if(!native_.bind(binding,owner_,epoch_))return false;
+    uint64_t issued=0;
+    if(!native_.bind(binding,owner_,issued)){bind_stage_=BindStage::CleanRefused;return false;}
+    epoch_=issued;bind_stage_=BindStage::Published;
     // This ticket is acquired BEFORE close, never manufactured by drain. A
     // concurrent precleanup can instead win and make this generation unusable.
     bound_=true;generation_=generation;
     if(!gate_.retain(epoch_,barrier_))return false;
     queue_.emplace(epoch_,generation,capacity,retention());
-    demand_.emplace(epoch_,generation,retention());return true;
+    demand_.emplace(epoch_,generation,retention());bind_stage_=BindStage::Retained;return true;
 }
 co::NativeReceipt CameraOwner::invoke(uint64_t ticket,const NativeMutation& fn) {
     if(!owner() || active_ || !fn || !demand_)return {};
@@ -103,11 +106,11 @@ bool CameraOwner::finish_close() {
     // Relinquishing an unused closing barrier gives stock its cleanup back.
     // It does not change Unknown queues or authorize portal readiness/detach.
     if(!gate_.release(barrier_))return false;
-    barrier_=0;return true;
+    barrier_=0;bind_stage_=BindStage::Closed;return true;
 }
 binding::CameraNativeBinding::Dispatch CameraOwner::cleanup(uint64_t pc,arena::Saved& saved,
-    CameraAccessGate::Cleanup original,void* argument,std::chrono::milliseconds timeout) {
-    return native_.cleanup(pc,saved,original,argument,timeout);
+    CameraAccessGate::Cleanup original,void* argument,std::chrono::milliseconds timeout,bool initial_caller) {
+    return native_.cleanup(pc,saved,original,argument,timeout,initial_caller);
 }
 
 RenderDebt::RenderDebt(render::Adapter& adapter,uint64_t watermark,SourceSettlement source) noexcept

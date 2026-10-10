@@ -46,6 +46,7 @@ int main(int argc,char** argv) {
     auto saved=f->s;f->s={};f->s.sp=addr(f->stack);f->s.x[19]=addr(f->app);
     f->s.x[20]=addr(f->app)+0x20000;f->s.x[26]=addr(f->camera);
     f->event(0x8dc1c);f->s=saved; // actual bootstrap publication BEFORE graphics/Run
+    f->initial_camera_resources();
     f->bootstrap_router();f->publish_worker();
     std::atomic<unsigned> stage{0};
     std::thread worker([&] {
