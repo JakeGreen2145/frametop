@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "base_commit": "39b2efd0a80d9dfe8211dc09d0aa9d668b14f5f1",
+  "construction_path": "Runtime() -> owned NativeSourceAdmission; ft_native_portal_start uses Runtime()",
+  "normal_and_asan_ubsan_each": {
+    "production_runtime_instances": 14,
+    "production_source_cycles": 64,
+    "production_positive_modes": ["cold", "warm", "dedup", "sustained-on", "--aggregate-portal-first", "--aggregate-portal-last", "--aggregate-clear"],
+    "production_negative_modes": ["partial-connect", "partial-alias", "missing-event", "provider-migration", "provider-loss", "association-migration", "bad-selection"],
+    "camera_runtime_cases": 19,
+    "source_runtime_cases": 7,
+    "source_command_negative_cases": 15,
+    "source_command_extra_positive_cases": 3,
+    "provider_unit": "passed",
+    "control_suite": "owner_test, test, adversarial_test, frame_test passed",
+    "sanitizer_errors": 0
+  },
+  "additional_verified": {
+    "source_native_pinned_instructions_and_merged_islands": {"callbacks": 16, "barrier_calls": 2, "source_resource_entries": 1},
+    "default_runtime_pinned_source_replay_normal": "cold and warm, two instances per mode, eight cycles each, normal joined cleanup",
+    "default_runtime_pinned_source_replay_asan_ubsan": "cold and warm, two instances per mode, eight cycles each, normal joined cleanup",
+    "owner_coordinator": "passed",
+    "render_adapter": "passed, including 20000 issued tickets and zero hot allocations",
+    "git_diff_check": "passed"
+  },
+  "red_regressions_observed": [
+    "Default Runtime could not become Connect-capable without a source publication",
+    "Second Runtime retained debt because source-command seal compared global ticket IDs to the Adapter watermark",
+    "Provider settlement acknowledgment was not idempotent after its first successful proof",
+    "Provider discarded actual partial queue results when refusing use authority",
+    "Camera-to-application migration did not revoke connection eligibility",
+    "Held aggregate Release was mistaken for an unobserved detach at closing",
+    "Reusing native-idle establishment across an active connection prevented the next frame from borrowing",
+    "A retired borrowed USE permission incorrectly admitted another On before its new native receipt"
+  ],
+  "resource_limits": {"serial": true, "MemoryMax": "256M", "MemorySwapMax": 0},
+  "evidence_boundaries": [
+    "Native service storage/allocation, command publication/disposal/reset and Vulkan return values remain explicit CPU fixtures",
+    "Production provider decodes actual pinned native queue/metadata event vectors and final-selection coordinates",
+    "Default provider is not ModeledProvider or an injected ready=true callback",
+    "Producer/ICP visibility and native ring reuse remain inherited assumptions, not new hardware proof"
+  ],
+  "remaining": [
+    "Parent independent delta review; this subagent has no direct reviewer tool and Codex CLI is not installed",
+    "Parent sealed ARM64 production build",
+    "Parent-authorized live cold/warm On/Off, visible output, hook reachability and joined shutdown acceptance"
+  ]
+}

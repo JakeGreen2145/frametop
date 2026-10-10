@@ -1,6 +1,6 @@
 # Installed source observations
 
-The production loader and Runtime now route the known source observations. This is not a complete source-admission provider. `Runtime()` still has `SourceAdmission == nullptr`, so portal frames remain unsupported. No readiness setter, alternate source queue, independent camera read, extra DMA fence, or source-command replacement was added.
+The production loader and Runtime now route the known source observations. This is not a complete source-admission provider. Production `Runtime()` now installs the separate provider described in [native-source-admission.md](native-source-admission.md); this document covers its observation hooks. No readiness setter, alternate source queue, independent camera read, extra DMA fence, or source-command replacement was added.
 
 ## Loader and ABI
 
@@ -18,7 +18,7 @@ The existing emitter preserves the complete 800-byte Saved ABI, including all GP
 
 `CameraOwner::observe_scope` is additive. The existing mutation signature is unchanged. The owner sets its original invocation ticket with RAII, then permits synchronous observation callbacks only on the owner thread while that invocation is active. The callback receives the same gate, original ticket and checked binding. Drain uses the barrier retained before closing; it never attempts another retain after close. Outside-scope, foreign-thread and post-unwind calls cannot obtain a scope.
 
-`source_router.inc` creates one `ClientSourceBinding` on the authenticated owner thread and retains it for the camera owner's lifetime. Provider identity and failure history therefore survive successive native calls. The default-null admission provider does not prevent collection of useful stock observations.
+`source_router.inc` creates one `ClientSourceBinding` on the authenticated owner thread and retains it for the camera owner's lifetime. Provider identity and failure history therefore survive successive native calls. An explicitly null fixture admission provider does not prevent collection of useful stock observations.
 
 Direct original Acquire, Release and Update calls start observation before invoking the loader-issued bypass. Nested original Acquire/Release entries start under the enclosing invocation's ticket. Real RET hooks finish nested calls. A missing nested return cannot use an outer application's x0 as the camera return. Original direct-bypass returns remain an independent actual return boundary. Bootstrap calls without a retained owner are forwarded and stay unadmitted.
 

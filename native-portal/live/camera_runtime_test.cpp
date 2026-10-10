@@ -7,7 +7,10 @@
 #include <future>
 struct ModeledProvider final:SourceAdmission {
     bool returned=true,partial=false;
-    bool ready(const CameraBinding& b) noexcept override {return b.camera && b.application;}
+    bool connect_eligible(const CameraBinding& b) noexcept override {return b.camera && b.application;}
+    bool transition_eligible(const CameraBinding& b,coordination::Action) noexcept override {return connect_eligible(b);}
+    bool borrow_ready(const CameraBinding& b,render::NativeBorrow) noexcept override {return connect_eligible(b);}
+    bool backend(const CameraBinding& b,uint64_t,const render::Recorded&,uint64_t,uint64_t) noexcept override {return connect_eligible(b);}
     coordination::NativeReceipt transition(const CameraBinding&,const coordination::ActionPlan& p,uint64_t actual) noexcept override {
         coordination::NativeReceipt r;assert(actual<=1);
         if(!actual)return r; // a native failure never becomes queue authority

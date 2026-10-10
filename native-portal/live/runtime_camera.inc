@@ -2,6 +2,7 @@
 // Included inside Runtime::Impl. All original method calls use loader-generated
 // bypasses. No owner queue lock is held over native execution or listener waits.
     CameraOwner camera_owner;
+    NativeSourceAdmission native_source{this,source_authenticate};
     SourceAdmission* source=nullptr;
     std::atomic<bool> camera_bound{false};
     uint64_t published_camera=0,published_application=0;
@@ -40,7 +41,8 @@
         // Stock-only native calls do not manufacture portal queue ownership.
         // Once integration owns a connection, its final native disconnect must
         // update that same per-queue journal, even if the last caller is stock.
-        if(source && source_integrity() && source->ready(camera_binding) &&
+        if(source && source_integrity() && source->transition_eligible(camera_binding,
+           acquiring?coordination::Action::Connect:coordination::Action::Disconnect) &&
            (camera_caller.kind==coordination::CallerKind::Portal || arbiter.snapshot().integration_obligations)) {
             arbiter.reconcile([&](const coordination::ActionPlan& plan) {
                 if((plan.action==coordination::Action::Connect)!=acquiring)return coordination::NativeReceipt{};
@@ -75,12 +77,39 @@
         camera_active=prior;
         return ok;
     }
+    static bool source_authenticate(void* p,const CameraBinding& b,NativeSourceAdmission::State& out) noexcept {
+        auto& self=*static_cast<Impl*>(p);CameraBinding held;uint64_t comp=0,client=0;
+        if(getpid()!=self.pid || tid()!=self.owner_tid || !self.camera_bound.load() ||
+           !self.camera_owner.retained_binding(held) || !(held==b) || !(b==self.camera_binding) ||
+           !self.source_integrity() || !ft_native_portal_source_modules(&comp,&client) || comp!=self.base)return false;
+        uint64_t camera=0,renderer=0,device=0,application=0;
+        if(!get(b.application+0x25320,camera) || camera!=b.camera ||
+           !get(b.camera,application) || application!=b.application ||
+           !get(b.camera+8,renderer) || renderer!=b.renderer ||
+           !get(b.application+0x256a0,renderer) || renderer!=b.renderer ||
+           !get(b.renderer+0xa78,device) || device!=b.device ||
+           !get(b.camera+0x349,out.external) || !get(b.camera+0x34a,out.active) ||
+           !get(b.camera+0x360,out.connected) || !get(b.camera+0x350,out.ids[0]) ||
+           !get(b.camera+0x358,out.ids[1]))return false;
+        out.client=client;return true;
+    }
+    static bool camera_borrow(void* p,render::NativeBorrow borrow) noexcept {
+        auto& self=*static_cast<Impl*>(p);CameraBinding held;binding::Owner now{};
+        auto& c=self.source_command;const unsigned eye=borrow.provenance.eye;
+        if(eye>1 || c.tickets[eye] || (c.watermark && c.watermark!=borrow.watermark) ||
+           !self.source || !self.source_integrity() || !self.camera_owner.retained_binding(held) ||
+           !(held==self.camera_binding) || !self.evidence.command_owner(now) ||
+           now.command!=borrow.command || now.recording!=borrow.provenance.recording_generation ||
+           !same(now.identity,borrow.provenance.identity) || !self.source->borrow_ready(held,borrow))return false;
+        c.tickets[eye]=borrow.provenance.ticket;c.watermark=borrow.watermark;c.owner=now;
+        return true;
+    }
     bool camera_ready() noexcept {
         CameraBinding held;
         const auto demand_state=camera_owner.snapshot();
         const uint64_t installed=ft_native_portal_camera_coverage?ft_native_portal_camera_coverage():0;
         return (installed&0xfffff)==0xfffff && camera_bound.load() && !camera_closing && !demand_state.fault && !demand_state.stock_full_display &&
-            camera_owner.retained_binding(held) && held==camera_binding && source && source_integrity() && source->ready(held);
+            camera_owner.retained_binding(held) && held==camera_binding && source && source_integrity() && source->connect_eligible(held);
     }
     static bool camera_source_settled(void* p,uint64_t watermark) noexcept {
         auto& self=*static_cast<Impl*>(p);CameraBinding held;
@@ -104,7 +133,11 @@
             if(!camera_bound.load())return true;
             if((tid()==owner_tid || (tid()==bootstrap_tid && joined)) && camera_cleanup_active)return true;
             if(tid()!=owner_tid || !camera_active || s.x[19]!=camera_binding.camera)std::abort();
-            if(camera_aggregate && camera_aggregate->snapshot().producer_demand)s.pad=arena::SkipOwned;
+            if(camera_aggregate && camera_aggregate->snapshot().producer_demand) {
+                if(pc==0x15fbb8 && source && source_observing && source_method==0x15fba8)
+                    source->held_disconnect(camera_binding);
+                s.pad=arena::SkipOwned;
+            }
             return true;
         }
         if(pc==0x8dc1c) {
@@ -209,14 +242,22 @@
     }
     bool camera_owned_transition(bool acquiring) noexcept {
         transition_called=false;transition_result=0;
-        bool accepted=false;
+        bool accepted=false,borrowed_retirement=false;
         auto result=camera_owner.direct([&](const CameraBinding& held,coordination::DemandArbiter& arbiter) {
             coordination::Caller caller{coordination::CallerKind::Portal,1,held.association_generation};
-            if(!source || !source_integrity() || !source->ready(held) || !arbiter.register_caller(caller))return coordination::NativeReceipt{};
+            if(!source || !source_integrity() || !source->transition_eligible(held,
+               acquiring?coordination::Action::Connect:coordination::Action::None) || !arbiter.register_caller(caller))return coordination::NativeReceipt{};
+            const bool borrowed_use=arbiter.snapshot().use==coordination::UseDisposition::AuthenticatedBorrowedUse;
             if(acquiring) {
                 portal_token=arbiter.portal_on(caller);
                 if(!portal_token.id)return coordination::NativeReceipt{};
             } else if(!arbiter.portal_off(portal_token))return coordination::NativeReceipt{};
+            if(!acquiring && borrowed_use) {
+                const auto snapshot=arbiter.snapshot();
+                accepted=!snapshot.fault && !snapshot.committed_debts;
+                borrowed_retirement=true;
+                return coordination::NativeReceipt{}; // no native call or invented native return
+            }
             CameraAggregateScope scope(*this,arbiter,caller);
             arena::Saved r{};r.x[0]=held.camera;r.x[1]=2;
             const uint64_t pc=acquiring?0x15f9e0:0x15fba8;
@@ -230,7 +271,8 @@
             accepted=!snapshot.fault && (acquiring?arbiter.frame_admissible(portal_token):!snapshot.committed_debts);
             return actual;
         });
-        return accepted && result.execution==coordination::Execution::Executed && result.value_valid && result.value!=0;
+        return accepted && (borrowed_retirement ||
+            (result.execution==coordination::Execution::Executed && result.value_valid && result.value!=0));
     }
     void camera_commit_debt() noexcept {
         if(camera_debt || !adapter || !portal_token.id || adapter->state().tickets_used!=2)return;
@@ -254,9 +296,11 @@
         if(camera_closing)camera_owner.drain(poll);else camera_owner.direct(poll);
         if(camera_closing) {
             camera_owner.drain([&](const CameraBinding& held,coordination::DemandArbiter& arbiter) {
-                if(camera_debt || !source || !source->ready(held))return coordination::NativeReceipt{};
+                if(camera_debt || !source || !source_integrity() ||
+                   !source->transition_eligible(held,coordination::Action::None))return coordination::NativeReceipt{};
                 return arbiter.reconcile([&](const coordination::ActionPlan& plan) {
-                    if(plan.action!=coordination::Action::Disconnect)return coordination::NativeReceipt{};
+                    if(plan.action!=coordination::Action::Disconnect ||
+                       !source->transition_eligible(held,plan.action))return coordination::NativeReceipt{};
                     arena::Saved r{};r.x[0]=held.camera;r.x[1]=2;
                     if(!camera_original(0x15fba8,r))return coordination::NativeReceipt{};
                     auto receipt=source_receipt(held,plan,r.x[0]);

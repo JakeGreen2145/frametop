@@ -91,6 +91,20 @@ int main() {
     }
     assert(background_permission(false,true,false,1.f,1.f,false,false)==false);
     assert(background_permission(false,true,false,0.f,1.f,false,true)==true);
+    {
+        DemandAdapter native_path;
+        native_path.establish_native_path(true,false);assert(!native_path.can_acquire());
+        native_path.establish_native_path(true,true);assert(native_path.can_acquire());
+        assert(native_path.bind({1,7,11}));
+        assert(native_path.layer(false,true,native_call,native_call,nullptr));
+        native_path.establish_native_path(true,true);
+        assert(native_path.can_acquire() && native_path.owned_debt() && calls==1);
+        assert(native_path.bind({1,7,12})); // next frame under the same native demand
+        assert(native_path.layer(false,true,native_call,native_call,nullptr) && calls==1);
+        native_path.external_observed();native_path.establish_native_path(true,true);
+        assert(!native_path.can_acquire() && native_path.owned_debt()); // never fake idle recovery
+        calls=0;
+    }
     DemandAdapter demand; assert(!demand.can_acquire());
     demand.establish(true,true); assert(demand.can_acquire());
     assert(demand.bind({1,7,11}));

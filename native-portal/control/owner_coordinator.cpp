@@ -243,7 +243,16 @@ PortalToken DemandArbiter::portal_on(Caller key) {
     auto& t=tokens_[free];t.token={epoch_,generation_,++issued_tokens_};t.caller=caller;t.active=true;
     return t.token;
 }
-void DemandArbiter::retire_token(size_t i) {if(!tokens_[i].active&&!tokens_[i].debts)tokens_[i]=TokenSlot{};}
+void DemandArbiter::retire_token(size_t i) {
+    if(!tokens_[i].active&&!tokens_[i].debts)tokens_[i]=TokenSlot{};
+    if(use_==UseDisposition::AuthenticatedBorrowedUse) {
+        for(const auto& token:tokens_)if(token.token.id)return;
+        // End only this local permission. The next On needs its own authentic
+        // native receipt, possibly a different disposition after stock detached.
+        // Keep queue observations and never assert global native idle.
+        use_=UseDisposition::None;connect_attempted_=false;
+    }
+}
 bool DemandArbiter::portal_off(PortalToken token) {
     if(!mutable_now())return false;
     const auto i=token_index(token);if(i==MaxTokens)return false;
@@ -294,7 +303,7 @@ DemandSnapshot DemandArbiter::snapshot() const {
     DemandSnapshot s;
     if(!owner()){s.fault=true;return s;}
     s.closing=closing_;s.fault=fault_;s.native_idle=true;
-    s.integration_obligations=connect_attempted_;
+    s.integration_obligations=connect_attempted_;s.use=use_;
     if(!closing_)for(const auto& c:callers_)if(c.used&&!c.revoked) {
         s.producer_demand|=c.producer;
         if(c.key.kind==CallerKind::Stock)s.legacy_stock_full|=c.full;
@@ -305,9 +314,13 @@ DemandSnapshot DemandArbiter::snapshot() const {
     s.stock_full_display=s.legacy_stock_full||s.foreign_full;
     s.portal_ready=!closing_&&!fault_&&retention_.retain&&retention_.release;
     for(const auto& q:queues_) {
-        s.native_idle&=q.state==QueueState::Disconnected;
-        s.portal_ready&=q.state==QueueState::Connected&&q.ownership==Ownership::NewlyOwned;
+        s.native_idle&=q.state==QueueState::Disconnected && q.ownership!=Ownership::NativeConnection;
+        s.portal_ready&=use_==UseDisposition::AuthenticatedBorrowedUse ||
+            (q.state==QueueState::Connected && (q.ownership==Ownership::NewlyOwned ||
+             (use_==UseDisposition::NativeConnection && q.ownership==Ownership::NativeConnection)));
     }
+    if(use_==UseDisposition::AuthenticatedBorrowedUse && !s.producer_demand && !s.committed_debts)
+        s.integration_obligations=false; // relinquish only local use, never global idle
     return s;
 }
 std::array<QueueJournal,2> DemandArbiter::queues() const {
@@ -321,7 +334,7 @@ ActionPlan DemandArbiter::plan() {
     if(s.producer_demand&&!closing_&&!connect_attempted_) {
         p.action=Action::Connect;p.selected={true,true};p.reattach=reattach_;
     } else if(!s.producer_demand) {
-        for(size_t i=0;i<2;++i)if(queues_[i].state==QueueState::Connected&&queues_[i].ownership==Ownership::NewlyOwned) {
+        for(size_t i=0;i<2;++i)if(queues_[i].state==QueueState::Connected&&(queues_[i].ownership==Ownership::NewlyOwned || queues_[i].ownership==Ownership::NativeConnection)) {
             p.action=Action::Disconnect;p.selected[i]=true;
         }
     }
@@ -343,8 +356,22 @@ void DemandArbiter::apply(const ActionPlan& p,const NativeReceipt& r) {
         return;
     }
     if(p.action==Action::Connect)connect_attempted_=true;
+    if(p.action==Action::Connect && r.use==UseDisposition::AuthenticatedBorrowedUse) {
+        // An empty native warm Acquire is not two observed queue calls. Preserve
+        // exactly the observations; this permission carries no detach ownership.
+        if(r.execution!=Execution::Executed || !r.value_valid || r.value!=1) {fault_=true;return;}
+        for(size_t i=0;i<2;++i) {
+            const auto& v=r.queues[i];
+            if(v.observed && (!v.value_valid || v.value!=0 || !v.id || v.ownership!=Ownership::Borrowed))fault_=true;
+            queues_[i].connect=v;queues_[i].ownership=Ownership::Borrowed;
+            if(v.observed){queues_[i].id=v.id;queues_[i].state=v.state;}
+        }
+        if(!fault_)use_=r.use;
+        return;
+    }
+    if(p.action==Action::Connect && r.use==UseDisposition::NativeConnection)use_=r.use;
     if(r.execution!=Execution::Executed||!r.value_valid)fault_=true;
-    if(p.reattach&&!r.producer_revalidated)fault_=true;
+    if(p.reattach && r.use!=UseDisposition::NativeConnection && !r.producer_revalidated)fault_=true;
     for(size_t i=0;i<2;++i) {
         const auto& v=r.queues[i];auto& q=queues_[i];
         if(!p.selected[i]) {if(v.observed)fault_=true;continue;}
@@ -352,8 +379,9 @@ void DemandArbiter::apply(const ActionPlan& p,const NativeReceipt& r) {
         if(!v.observed) {q.state=QueueState::Unknown;fault_=true;continue;}
         if(p.action==Action::Connect) {
             q.id=v.id;q.header_generation=v.header_generation;q.ownership=v.ownership;q.state=v.state;
-            if(!v.value_valid||v.state!=QueueState::Connected||!v.id||!v.header_generation||
-               (v.ownership!=Ownership::NewlyOwned&&v.ownership!=Ownership::Borrowed))fault_=true;
+            if(!v.value_valid||v.state!=QueueState::Connected||!v.id||
+               ((!v.header_generation || (v.ownership!=Ownership::NewlyOwned && v.ownership!=Ownership::Borrowed)) &&
+                !(r.use==UseDisposition::NativeConnection && v.ownership==Ownership::NativeConnection)))fault_=true;
         } else {
             // Preserve old obligations on missing/mismatched release evidence.
             if(!v.value_valid||v.id!=q.id||v.header_generation!=q.header_generation||
@@ -368,7 +396,8 @@ void DemandArbiter::apply(const ActionPlan& p,const NativeReceipt& r) {
     if(p.action==Action::Disconnect&&!fault_&&!snapshot().committed_debts) {
         bool detached=true;
         for(const auto& q:queues_)
-            detached&=q.state==QueueState::Disconnected&&q.ownership==Ownership::NewlyOwned;
+            detached&=q.state==QueueState::Disconnected && (q.ownership==Ownership::NewlyOwned ||
+                (use_==UseDisposition::NativeConnection && q.ownership==Ownership::NativeConnection));
         if(detached){connect_attempted_=false;reattach_=true;}
     }
 }

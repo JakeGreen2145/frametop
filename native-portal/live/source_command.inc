@@ -10,7 +10,7 @@
         std::array<SourceRead,32> reads{};
         std::array<uint16_t,2> slots{};
         std::array<uint16_t,2> expected{};
-        std::array<uint64_t,2> packets{};
+        std::array<uint64_t,2> packets{},tickets{};
         binding::Owner owner{};
         uint64_t watermark=0,sample_sp=0,sample_texture=0,barrier_sp=0;
         unsigned count=0,sample_eye=0,sample_slot=0,barrier_index=0,barrier_phase=0;
@@ -140,14 +140,15 @@
         if(c.attempted)return false;
         c.attempted=true;
         if(c.bad || c.sample || c.barrier || !c.watermark || !source_command_live() || !source_command_identity())return false;
-        if(std::max(provenance[0].ticket,provenance[1].ticket)!=c.watermark)return false;
+        if(!c.tickets[0] || !c.tickets[1] || c.tickets[0]==c.tickets[1] ||
+           provenance[0].ticket!=c.tickets[0] || provenance[1].ticket!=c.tickets[1])return false;
         // The existing authenticated two-skip transaction encoded no source
         // read. Its uploads still need the SAME queue/wait/disposal/reset proof.
         if(rejected_pair && !c.count && !c.slots[0] && !c.slots[1] &&
            !encoded_returns[0] && !encoded_returns[1]) {c.sealed=true;return true;}
         for(unsigned eye=0;eye<2;++eye) {
             if(!c.expected[eye] || c.expected[eye]!=c.slots[eye] || !encoded_returns[eye] ||
-               !provenance[eye].ticket || provenance[eye].ticket>c.watermark)return false;
+               !provenance[eye].ticket || provenance[eye].ticket!=c.tickets[eye])return false;
         }
         if(!c.count)return false;
         for(unsigned i=0;i<c.count;++i)if(!c.reads[i].acquired || !c.reads[i].released)return false;

@@ -47,6 +47,16 @@ void DemandAdapter::establish(bool ordering_proven,bool native_idle) {
     else { ready_=false; if(bridge_)bridge_->new_lease_ready(false); }
     leave();
 }
+void DemandAdapter::establish_native_path(bool ordering_proven,bool connection_eligible) {
+    if(!enter())return;
+    const bool eligible=ordering_proven && connection_eligible && !unsafe_ && !failed_ && !revoked_ && !handed_;
+    ready_=eligible;
+    if(bridge_) {
+        if(eligible && !effective_ && !debt_)bridge_->settled();
+        bridge_->new_lease_ready(eligible && !effective_ && !debt_);
+    }
+    leave();
+}
 bool DemandAdapter::bind(DemandTag tag) {
     if(!enter())return false;
     bool ok=can_acquire()&&tag.epoch&&tag.origin&&tag.frame&&

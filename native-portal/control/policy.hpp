@@ -30,6 +30,9 @@ public:
     using Call=bool(*)(void*);
     explicit DemandAdapter(Backend* bridge=nullptr);
     void establish(bool ordering_proven,bool native_idle);
+    // Narrow original-native-path capability, NOT a native-idle assertion.
+    // Never recovers an unknown handoff/failure or clears existing demand debt.
+    void establish_native_path(bool ordering_proven,bool connection_eligible);
     bool can_acquire() const { return ready_.load()&&!revoked_.load()&&!failed_.load()&&!unsafe_.load(); }
     bool bind(DemandTag);
     DemandTag debt_tag() const { return debt_tag_; }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "runtime.hpp"
-#include "source_admission.hpp"
+#include "native_source_admission.hpp"
 extern "C" uint64_t ft_native_portal_original(uint64_t) noexcept __attribute__((weak));
 extern "C" uint64_t ft_native_portal_camera_coverage() noexcept __attribute__((weak));
 extern "C" bool ft_native_portal_source_modules(uint64_t*,uint64_t*) noexcept __attribute__((weak));
@@ -152,7 +152,7 @@ struct Runtime::Impl {
     #include "runtime_camera.inc"
     #include "source_router.inc"
     #include "source_command.inc"
-    explicit Impl(SourceAdmission* admission):source(admission){published.publish(diag);live_published.publish(live);}
+    explicit Impl(SourceAdmission* admission,bool production=false):source(production?&native_source:admission){published.publish(diag);live_published.publish(live);}
     ~Impl(){collector_stop=true;if(collector.joinable())collector.join();}
     void collect() {
         collector=std::thread([this] {
@@ -328,7 +328,7 @@ struct Runtime::Impl {
         binding.identity=id;binding.upstream=&bridge;
         binding.targets={base+0x296c00,base+0x2993f8,base+0x2988a8,base+0x29b278,base+0x2966a0,base+0x294358};
         Callbacks cb{};cb.clock=boottime;cb.user=this;cb.validate=validate;cb.call=native;cb.observe=observe;cb.stock_blend=stock;
-        cb.pipeline=pipeline;cb.submission=submission;cb.completed=completed;cb.settled=settled;cb.rejected=rejected;
+        cb.pipeline=pipeline;cb.submission=submission;cb.completed=completed;cb.settled=settled;cb.rejected=rejected;cb.borrow=camera_borrow;
         adapter.emplace(backend,*gate,binding,cb,2);
         if(!adapter->initialize()){refuse(Refusal::Adapter);return false;}
         runtime_owned=true;diag.capable=true;diag.refusal=Refusal::None;return true;
@@ -626,17 +626,16 @@ struct Runtime::Impl {
             bool idle=camera_read;
             for(unsigned k:{9u,10u,32u})idle=idle && camera_state[k]==0;
             uint64_t h0=0,h1=0;std::memcpy(&h0,camera_state.data()+16,8);std::memcpy(&h1,camera_state.data()+24,8);
-            // Pinned release retains queue identifiers, so this cold-only
-            // predicate can reject a released camera. Do not relax it from these
-            // scalars alone: partial queue connection failure can alias that
-            // state. The bounded diagnostics distinguish the missing live facts.
+            // Cold-idle remains a diagnostic, not warm admission. Production
+            // SourceAdmission authenticates the retained transition journal;
+            // native flags/IDs alone cannot distinguish a partial Connect alias.
             idle=idle && !h0 && !h1;
             live.camera_read=camera_read;live.camera_cache=cache;
             live.camera_flags=uint64_t(camera_state[9]) | uint64_t(camera_state[10])<<8 | uint64_t(camera_state[32])<<16;
             live.camera_h0=h0;live.camera_h1=h1;
             if(idle && !live.idle_first)live.idle_first=frame_number;
             if(!demand && evidence.graph_capable())demand.emplace(&backend);
-            if(demand && camera_ready() && idle && !backend.render_pending())demand->establish(true,true);
+            if(demand && associated && camera_ready() && !backend.render_pending())demand->establish_native_path(true,true);
             BackendStatus status{};backend.status(status);
             status.origin=origin_epoch;status.serialized=evidence.graph_capable();
             const bool pipeline_abi=ft_pipeline_begin && ft_pipeline_end && ft_pipeline_approved && evidence.identity().device_generation;
@@ -744,7 +743,11 @@ struct Runtime::Impl {
                 uint64_t ticket=0;decode_ticket(e.record.label,e.record.label_size,ticket);
                 unsigned eye_index=provenance[0].ticket==ticket?0:1;
                 backend_eye=eye_index;backend_preparation=i;
-                auto result=adapter->backend(e.record,e.context,lookup);backend_admitted=result.decision==Decision::Portal;
+                const bool source_match=source && source_integrity() && source->backend(camera_binding,ticket,e.record,
+                    command_owner.command,command_owner.recording);
+                if(!source_match)adapter->off();
+                auto result=adapter->backend(e.record,e.context,lookup);backend_admitted=source_match && result.decision==Decision::Portal;
+                if(!source_match)result={Decision::Drop,0};
                 if(backend_admitted) {
                     ++diag.encoded[eye_index];encoded_scopes[eye_index]=backend_scope;
                     source_command.packets[eye_index]=e.lookup.x[1];
@@ -774,6 +777,7 @@ struct Runtime::Impl {
     }
     uint64_t backend_pipeline=0;
 };
+Runtime::Runtime():p_(new Impl(nullptr,true)){}
 Runtime::Runtime(SourceAdmission* source):p_(new Impl(source)){}
 Runtime::~Runtime()=default;
 bool Runtime::pin(uint64_t b,const char *sha) noexcept {

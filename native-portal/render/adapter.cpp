@@ -603,6 +603,9 @@ bool Adapter::enqueue(uint64_t number,const EyeInput &in) noexcept {
     auth.vs=vs;auth.ps=ps;auth.descriptors=u.descriptors;
     ticket.prefix=in.prefix;store(ticket.prefix,8,auth.marker);
     store(ticket.prefix,0x38,p.wrapper);store(ticket.prefix,0x58,p.wrapper);
+    if(p.cb.borrow && (!p.cb.borrow(p.cb.user,NativeBorrow{auth,p.status.tickets_issued,
+        current.arena.command,in.invocation_sp,in.camera,in.resource_index,in.slot,
+        in.selected_texture,in.prefix,ticket.prefix}) || !p.live()))return finish(false);
     const auto label=encode_ticket(number);
     Registers r{p.binding.targets.enqueue,{p.binding.identity.renderer,
         reinterpret_cast<Address>(ticket.prefix.data()),reinterpret_cast<Address>(label.data()),0,p.binding.targets.enqueue}};

@@ -92,14 +92,15 @@ Backend has a separate pending hold for this retained camera debt so Adapter
 CPU/GPU reclamation cannot briefly report completed Off while source debt remains.
 
 `SourceAdmission` is the one explicit, construction-time provider interface.
-The default production Runtime passes null and stays unadmitted. There is no
-exported source-ready setter. A provider must authenticate readiness, actual
+The default production Runtime now installs `NativeSourceAdmission`; see
+[native-source-admission.md](native-source-admission.md). There is no exported
+source-ready setter. The provider authenticates connection and borrow eligibility, actual
 per-queue outcomes/ownership and reattach revalidation. Partial service outcomes
 and aggregate Release=1 without real disconnect evidence do not gain authority.
 
 The source callback does **not** demand a new DMA fence. B4's current replacement
-keeps the original sampled resources, renderer and native command. The missing
-production binding must prove that preserved native source-consumer path and
+keeps the original sampled resources, renderer and native command. The installed
+production binding authenticates that preserved native source-consumer path and
 provider facts, not invent stronger producer guarantees or treat app+25668 VSYNC
 as a GPU fence. The fixture's source return and provider/header facts are clearly
 modeled inputs, not native evidence.

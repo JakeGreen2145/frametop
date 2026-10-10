@@ -91,6 +91,15 @@ struct Completion {
     uint64_t frame = 0, command = 0, synchronization = 0, serial = 0;
     int8_t subserial = 0;
 };
+// By-value original caller selection. This is a synchronous native borrow, not
+// an import lease, source generation or authority to add another reader.
+struct NativeBorrow {
+    Provenance provenance{};
+    uint64_t watermark=0,command=0,invocation_sp=0,camera=0;
+    uint32_t resource_index=UINT32_MAX,slot=UINT32_MAX;
+    Address selected_texture=0;
+    Prefix original{},replacement{};
+};
 struct Callbacks {
     void *user = nullptr;
     bool (*validate)(void *, const Binding &, Phase) noexcept = nullptr;
@@ -126,6 +135,7 @@ struct Callbacks {
     // Register the immutable pair on its actual upload command, NOT GPU completion.
     bool (*rejected)(void *, Address command, const Provenance &,
                      const Provenance &) noexcept = nullptr;
+    bool (*borrow)(void *, NativeBorrow) noexcept = nullptr;
 };
 struct EyeInput {
     unsigned eye = 0;
@@ -133,6 +143,9 @@ struct EyeInput {
     Prefix prefix{};
     ft::portal::NativeConstants constants{};
     ft::portal::Mat4 raw_to_standing{};
+    uint64_t invocation_sp=0,camera=0;
+    uint32_t resource_index=UINT32_MAX,slot=UINT32_MAX;
+    Address selected_texture=0;
 };
 enum class Decision { Stock, Drop, Portal };
 struct BackendResult {

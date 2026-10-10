@@ -11,7 +11,8 @@ args = parser.parse_args()
 out = root / "build/native-owner-coordinator"
 out.mkdir(parents=True, exist_ok=True)
 scope = ["systemd-run", "--user", "--scope", "-p", "MemoryMax=256M", "-p", "MemorySwapMax=0"]
-flags = ["-std=c++17", "-g", "-O1", "-Wall", "-Wextra", "-Werror", "-pthread"]
+flags = ["-std=c++17", "-g", "-O1", "-Wall", "-Wextra", "-Werror", "-pthread",
+         "--param=ggc-min-expand=10", "--param=ggc-min-heapsize=4096"]
 if args.sanitize:
     flags += ["-O0", "-g1", "-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-no-pie"]
 objects = []

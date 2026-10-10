@@ -17,7 +17,10 @@ struct Retention {
 };
 enum class Execution { NotExecuted, Executed, Failed };
 enum class QueueState { Disconnected, Connected, Unknown };
-enum class Ownership { None, NewlyOwned, Borrowed, Unknown };
+enum class Ownership { None, NewlyOwned, Borrowed, Unknown, NativeConnection };
+// NativeConnection owns only the exact original camera Connect/Disconnect pair,
+// not the manager, producer generation or independent consumers.
+enum class UseDisposition { None, AuthenticatedBorrowedUse, NativeConnection };
 struct QueueOutcome {
     bool observed=false,value_valid=false;
     int64_t value=0;
@@ -33,6 +36,7 @@ struct NativeReceipt {
     // Reattach only: executor revalidated the intact producer, provider, name /
     // alias and exact headers BEFORE executing Connect. Never infer from pointers.
     bool producer_revalidated=false;
+    UseDisposition use=UseDisposition::None;
 };
 enum class Rejection { None, Full, Stale, Closing, Retention, Invalid, Exhausted, Cancelled };
 struct Submission { uint64_t id=0; Rejection rejection=Rejection::None; };
@@ -122,6 +126,7 @@ struct DemandSnapshot {
     // Integration-native work was attempted and has not fully detached. This
     // differs from global native idle: a never-used Unknown queue has no debt.
     bool integration_obligations=false;
+    UseDisposition use=UseDisposition::None;
     size_t committed_debts=0;
 };
 // Owner-only logical arbitration. Existing renderer/CameraControl interfaces
@@ -169,5 +174,6 @@ private:
     std::array<QueueJournal,2> queues_{};
     uint64_t issued_tokens_=0,issued_debts_=0,issued_plans_=0;
     bool closing_=false,fault_=false,busy_=false,connect_attempted_=false,reattach_=false;
+    UseDisposition use_=UseDisposition::None;
 };
 }

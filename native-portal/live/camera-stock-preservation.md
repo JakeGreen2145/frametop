@@ -2,7 +2,7 @@
 
 ## Scope and integration dependency
 
-This repair changes Runtime, CameraOwner and DemandArbiter. SourceAdmission stays a separate default-null interface. The test provider remains explicitly modeled. CPU, GPU and original source-consumer debt still prevent destructive native calls and cleanup.
+This repair changes Runtime, CameraOwner and DemandArbiter. SourceAdmission stays a separate interface. Production now installs the native-path provider described in [native-source-admission.md](native-source-admission.md); this earlier repair used a default-null boundary. The test provider remains explicitly modeled. CPU, GPU and original source-consumer debt still prevent destructive native calls and cleanup.
 
 The parent/source-hook worker owns the loader, manifest, emitter and build integration. This commit requires the two decision hooks below. It is not a deployable aggregate-wiring result without their installation and emitted-instruction tests. Runtime requires their coverage bits before admitting provider-backed portal work. This is an installation guard, not a replacement for coexistence arbitration.
 

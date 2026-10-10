@@ -17,7 +17,10 @@ extern "C" bool ft_native_portal_source_modules(uint64_t* comp,uint64_t* client)
 }
 struct Observed final:SourceAdmission {
     unsigned begins=0,events=0,ends=0;ClientSourceBinding::Observation last{};
-    bool ready(const CameraBinding&) noexcept override {return false;} // no producer proof in this fixture
+    bool connect_eligible(const CameraBinding&) noexcept override {return false;} // no producer proof in this fixture
+    bool transition_eligible(const CameraBinding& b,coordination::Action) noexcept override {return connect_eligible(b);}
+    bool borrow_ready(const CameraBinding& b,render::NativeBorrow) noexcept override {return connect_eligible(b);}
+    bool backend(const CameraBinding& b,uint64_t,const render::Recorded&,uint64_t,uint64_t) noexcept override {return connect_eligible(b);}
     coordination::NativeReceipt transition(const CameraBinding&,const coordination::ActionPlan&,uint64_t) noexcept override {std::abort();}
     bool settled(const CameraBinding&,uint64_t) noexcept override {return false;}
     void before(const CameraBinding&,coordination::Action) noexcept override {++begins;}

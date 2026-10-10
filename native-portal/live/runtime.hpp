@@ -36,7 +36,9 @@ struct SourceAdmission;
 class Runtime {
     struct Impl;std::unique_ptr<Impl> p_;
 public:
-    explicit Runtime(SourceAdmission* source=nullptr);~Runtime();
+    Runtime(); // installs NativeSourceAdmission; production start uses this path
+    explicit Runtime(SourceAdmission* source); // explicit fixture boundary, nullptr disables
+    ~Runtime();
     Runtime(const Runtime&)=delete;Runtime& operator=(const Runtime&)=delete;
     bool pin(uint64_t image_base,const char *sha256) noexcept;
     // Called by launch installer before native callbacks, never from a draw.

@@ -88,6 +88,18 @@ uint64_t Evidence::stage(render::Adapter &adapter,uint64_t pc,arena::Saved &s,
         if(!staging_returned_ || s.x[0]!=identity_.renderer || s.x[1]!=s.sp+0x300 ||
            s.x[22]!=s.x[1] || s.x[2]!=base_+0x450650 || s.x[4]!=base_+0x29b278 ||
            !read_self(s.x[1],staging_input_.prefix.data(),352))return refuse();
+        // Pinned 161bc0/161c74 selects resource camera and ring slot, not HMD
+        // eye. At 161ed8 x21 and x24 both contain 3*slot. Read only this
+        // invocation's current scalar and selected wrapper; no retained reads.
+        staging_input_.invocation_sp=s.sp;staging_input_.camera=camera_;
+        if(s.x[28]<2 && s.x[21]==s.x[24] && s.x[24]<48 && s.x[24]%3==0) {
+            uint32_t selected=UINT32_MAX;uint64_t texture=0;
+            if(read_self(camera_+0x820+4*s.x[28],&selected,4) && selected==s.x[24]/3 &&
+               read_self(camera_+0x520+384*s.x[28]+24*selected,&texture,8)) {
+                staging_input_.resource_index=uint32_t(s.x[28]);staging_input_.slot=selected;
+                staging_input_.selected_texture=texture;
+            }
+        }
         const auto final=staging_input_;
         clear_staging(); // no camera/native stack read authority survives enqueue
         if(!adapter.enqueue(invocation,final))return refuse();

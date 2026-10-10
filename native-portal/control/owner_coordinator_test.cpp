@@ -222,6 +222,27 @@ void demand_failures_borrow_and_close() {
     assert(borrowed.reconcile([&](const ActionPlan& p){return bx(p);}).execution==Execution::NotExecuted);
     assert(bx.plans.size()==1&&!borrowed.snapshot().portal_ready&&!borrowed.snapshot().native_idle);
 
+    DemandArbiter use(7,12,gate.callbacks());assert(use.register_caller(portal));
+    auto use_token=use.portal_on(portal);unsigned use_plans=0;
+    use.reconcile([&](const ActionPlan& p){assert(p.action==Action::Connect);++use_plans;
+        auto receipt=native(1);receipt.use=UseDisposition::AuthenticatedBorrowedUse;return receipt;});
+    assert(use.frame_admissible(use_token) && !use.queues()[0].connect.observed);
+    assert(use.portal_off(use_token));
+    assert(!use.snapshot().native_idle && !use.snapshot().integration_obligations);
+    use_token=use.portal_on(portal);
+    assert(!use.frame_admissible(use_token)); // old borrowed USE is not a new On receipt
+    use.reconcile([&](const ActionPlan& p){assert(p.action==Action::Connect);++use_plans;
+        auto receipt=native(1);receipt.use=UseDisposition::NativeConnection;
+        for(unsigned i=0;i<2;++i)receipt.queues[i]={true,true,0,QueueState::Connected,Ownership::NativeConnection,101+i,0};
+        return receipt;});
+    assert(use_plans==2 && use.frame_admissible(use_token));
+    assert(use.portal_off(use_token));
+    use.reconcile([&](const ActionPlan& p){assert(p.action==Action::Disconnect);++use_plans;
+        auto receipt=native(1);receipt.use=UseDisposition::NativeConnection;
+        for(unsigned i=0;i<2;++i)receipt.queues[i]={true,true,0,QueueState::Disconnected,Ownership::NativeConnection,p.queues[i].id,0};
+        return receipt;});
+    assert(use_plans==3 && !use.snapshot().fault && !use.snapshot().native_idle && !use.snapshot().integration_obligations);
+
     DemandArbiter closing(7,11,gate.callbacks());NativeExecutor cx;
     assert(closing.register_caller(portal));auto ct=closing.portal_on(portal);
     closing.reconcile([&](const ActionPlan& p){return cx(p);});
