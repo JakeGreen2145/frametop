@@ -13,7 +13,8 @@ assert (cg/'memory.max').read_text().strip()=='681574400'
 assert (cg/'memory.swap.max').read_text().strip()=='0'
 os.environ['TMPDIR']=str(Path.home()/'.hermes/cache/scratch')
 # Reuse only the upstream test fixture, not its synthetic settlement tests/main.
-fixture=(r/'render/upstream_test.cpp').read_text().split('int main(int argc,char** argv) {')[0]
+fixture,fixture_guard,_=(r/'render/upstream_test.cpp').read_text().partition('#ifndef FT_UPSTREAM_FIXTURE_ONLY')
+assert fixture_guard, 'upstream fixture boundary missing'
 assert 'struct UpstreamNative' in fixture and 'struct UpstreamFixture' in fixture
 (b/'upstream_fixture.hpp').write_text(fixture)
 flags=['-std=c++17','-Wall','-Wextra','-Werror','-g','-pthread','-I'+str(r/'render'),'-I'+str(r/'include')]

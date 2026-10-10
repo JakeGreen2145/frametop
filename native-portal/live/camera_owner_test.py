@@ -28,7 +28,8 @@ def run(cmd, **kw):
 
 # Reuse the production-chain fixture's real Adapter/Command/Lifecycle, not its
 # unrelated test main or a second settlement ledger. Generated files stay ignored.
-upstream = (r/'render/upstream_test.cpp').read_text().split('int main(int argc,char** argv) {')[0]
+upstream, fixture_guard, _ = (r/'render/upstream_test.cpp').read_text().partition('#ifndef FT_UPSTREAM_FIXTURE_ONLY')
+assert fixture_guard, 'upstream fixture boundary missing'
 combined = (r/'integration/combined_test.cpp').read_text().split('struct ControlWire {')[0]
 assert 'struct UpstreamNative' in upstream and 'struct Combined {' in combined
 render = (r/'render/test.cpp').read_text().split('static void initialization() {')[0]
