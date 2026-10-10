@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "elf_sha256": "9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265",
+  "enabled_in_live_manifest": false,
+  "contract": "Synchronous complete-method bypass under CameraNativeBinding, never observer-only teardown. Parent must add all selected entry and destructive coverage before admission.",
+  "sites": [
+    {
+      "pc": "0x8dc1c",
+      "guard": "00c00c9163800d9142400e91df0213b8",
+      "guard_sha256": "689a629230888bcf07519782038d96e5247ea496be4e477b4d6f042095f4495e",
+      "word": "0x910cc000",
+      "continuation": "0x8dc20",
+      "registers": "x26=camera; x19=application; x20=application+0x20000; x0 is temporary",
+      "selectors": {"0": "relocated-original", "2": "fail-stop", "3": "fail-stop"}
+    },
+    {
+      "pc": "0x15e1c8",
+      "guard": "fd7bbea9fd030091f30b00f9f30300aa",
+      "guard_sha256": "4432b33610cd02037de8ec297a5c7869dd481e525be969df8785448e0b1530a9",
+      "word": "0xa9be7bfd",
+      "continuation": "0x15e1cc",
+      "registers": "x0=camera before resource cleanup",
+      "selectors": {"0": "relocated-original", "2": "return-after-interlocked-native-call", "3": "fail-stop"}
+    },
+    {
+      "pc": "0x15df70",
+      "guard": "fd7bbea9fd030091f35301a9f30300aa",
+      "guard_sha256": "c78839b12416f74faed6950681b61beed966588b2195c3c5c15953e89c270bde",
+      "word": "0xa9be7bfd",
+      "continuation": "0x15df74",
+      "registers": "x0=camera before object destruction",
+      "selectors": {"0": "relocated-original", "2": "return-after-interlocked-native-call", "3": "fail-stop"}
+    }
+  ]
+}

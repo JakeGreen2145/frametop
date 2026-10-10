@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: MIT
- * Eight pinned call/return/ADRP islands used ONLY by the live runtime. Not a generic
+ * Pinned call/return/ADRP islands. Camera lifetime sites are tested but remain
+ * absent from the live loader manifest until full entry coverage is integrated.
+ * Not a generic
  * skip emitter: BL replacement resumes PC+4, method replacement returns native
  * x30. The loader must validate runtime-sites.json's complete original guard.
  */
@@ -22,7 +24,7 @@ static void restore(uint32_t *o,size_t *n) {
     o[(*n)++]=0xf94003fe|(30<<10);o[(*n)++]=0x910003ff|(800<<10);
 }
 size_t ft_emit_runtime_island(uint32_t *out,uint64_t at,uint64_t base,uint64_t pc,uint64_t callback) {
-    uint32_t word=0;int method=0,adrp=0;
+    uint32_t word=0;int method=0,adrp=0,plain=0;
     switch(pc) {
     /* The exact instruction words are validated against the pinned ELF in tests. */
     case 0x9eeb0:word=0x9403033e;break;
@@ -33,6 +35,9 @@ size_t ft_emit_runtime_island(uint32_t *out,uint64_t at,uint64_t base,uint64_t p
     case 0x15fba8:word=0xa9be7bfd;method=1;break;
     case 0x4b3d0:word=0x90002b30;adrp=1;break;
     case 0x142708:word=0xf0001821;adrp=1;break;
+    case 0x8dc1c:word=0x910cc000;plain=1;break;
+    case 0x15e1c8:word=0xa9be7bfd;method=1;break;
+    case 0x15df70:word=0xa9be7bfd;method=1;break;
     default:return 0;
     }
     if(!out || !callback || (at&3) || (base&3))return 0;
@@ -49,14 +54,14 @@ size_t ft_emit_runtime_island(uint32_t *out,uint64_t at,uint64_t base,uint64_t p
     out[n++]=0xf94003e9|(99<<10);const size_t original=n++; /* cbz x9 */
     out[n++]=0xf100093f;const size_t invalid=n++; /* cmp x9,2 ; b.ne */
     restore(out,&n);
-    if(adrp)out[n++]=0xd4200000;else if(method)out[n++]=0xd65f03c0;else if(!branch(out,&n,at,base+pc+4))return 0;
+    if(adrp || plain)out[n++]=0xd4200000;else if(method)out[n++]=0xd65f03c0;else if(!branch(out,&n,at,base+pc+4))return 0;
     const size_t stock=n;restore(out,&n);
     if(adrp) {
         int64_t page=((word>>29)&3)|(((word>>5)&0x7ffff)<<2);
         if(page&(INT64_C(1)<<20))page-=INT64_C(1)<<21;
         imm(out,&n,word&31,((base+pc)&~UINT64_C(4095))+page*4096);
         if(!branch(out,&n,at,base+pc+4))return 0;
-    } else if(method) {out[n++]=word;if(!branch(out,&n,at,base+pc+4))return 0;}
+    } else if(method || plain) {out[n++]=word;if(!branch(out,&n,at,base+pc+4))return 0;}
     else {
         imm(out,&n,30,base+pc+4);
         if(pc==0x161ed8)out[n++]=0xd61f0080; /* displaced BLR x4 -> BR x4 */
@@ -66,5 +71,18 @@ size_t ft_emit_runtime_island(uint32_t *out,uint64_t at,uint64_t base,uint64_t p
     const size_t fatal=n;out[n++]=0xd4200000; /* invalid selector cannot fall through */
     out[original]=0xb4000009u|((uint32_t)(stock-original)<<5);
     out[invalid]=0x54000001u|((uint32_t)(fatal-invalid)<<5);
+    return n*4;
+}
+
+/* Invoke the complete original cleanup synchronously without reentering its
+ * patched entry. The caller uses the ordinary native call transport with this
+ * address as target. The native epilogue returns to that transport's LR.
+ * Not installed or executable until the loader has validated camera-sites.json.
+ */
+size_t ft_emit_camera_cleanup_bypass(uint32_t *out,uint64_t at,uint64_t base,uint64_t pc) {
+    if(!out || (at&3) || (base&3) || (pc!=0x15e1c8 && pc!=0x15df70))return 0;
+    size_t n=0;
+    out[n++]=0xa9be7bfd; /* exact pinned STP x29,x30,[sp,#-32]! */
+    if(!branch(out,&n,at,base+pc+4))return 0;
     return n*4;
 }
