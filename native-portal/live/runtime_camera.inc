@@ -125,6 +125,16 @@
         if(!camera_owner.bind_handoff(b,id.renderer_generation))return;
         camera_binding=b;camera=published_camera;camera_bound.store(true);
     }
+    [[noreturn]] void camera_route_abort(CameraFatalReason reason,uint64_t pc) noexcept {
+        // Foreign callers must not sample owner-only state. These atomics are
+        // lock-free on supported builds; bootstrap_tid is immutable. Separate
+        // loads are failure coordinates, not an authoritative state snapshot.
+        static_assert(std::atomic<uint64_t>::is_always_lock_free);
+        static_assert(std::atomic<bool>::is_always_lock_free);
+        abort_camera_failure({reason,pc,tid(),owner_tid.load(std::memory_order_relaxed),bootstrap_tid,
+            camera_bound.load(std::memory_order_relaxed),handoff_wait.load(std::memory_order_relaxed),
+            stopped.load(std::memory_order_relaxed),joined.load(std::memory_order_relaxed)});
+    }
     bool camera_route(uint64_t pc,arena::Saved& s) noexcept {
         if(pc==0x15fbb8 || pc==0x15fb20) {
             // Actual native decision boundaries. The emitter selects 15fbc8
@@ -132,7 +142,7 @@
             // Never replace x0 with logical acceptance or a cached result.
             if(!camera_bound.load())return true;
             if((tid()==owner_tid || (tid()==bootstrap_tid && joined)) && camera_cleanup_active)return true;
-            if(tid()!=owner_tid || !camera_active || s.x[19]!=camera_binding.camera)std::abort();
+            if(tid()!=owner_tid || !camera_active || s.x[19]!=camera_binding.camera)camera_route_abort(CameraFatalReason::DecisionScope,pc);
             if(camera_aggregate && camera_aggregate->snapshot().producer_demand) {
                 if(pc==0x15fbb8 && source && source_observing && source_method==0x15fba8)
                     source->held_disconnect(camera_binding);
@@ -142,7 +152,7 @@
         }
         if(pc==0x8dc1c) {
             if(tid()!=bootstrap_tid || handoff_wait || camera_bound.load() ||
-               !camera_owner.observe_publication(pc,s))std::abort();
+               !camera_owner.observe_publication(pc,s))camera_route_abort(CameraFatalReason::Publication,pc);
             published_camera=s.x[26];published_application=s.x[19];return true;
         }
         if(cleanup_pc(pc)) {
@@ -150,16 +160,16 @@
             // application cleanup. Do not reacquire or self-wait in that call.
             if((tid()==owner_tid || (tid()==bootstrap_tid && joined)) && camera_cleanup_active)return true;
             backend.invalidate(Reason::Off);
-            if(tid()!=owner_tid && !(tid()==bootstrap_tid && joined))std::abort();
+            if(tid()!=owner_tid && !(tid()==bootstrap_tid && joined))camera_route_abort(CameraFatalReason::CleanupThread,pc);
             if(camera_bound.load() && tid()==owner_tid)camera_maintenance(true);
             struct Cleanup {Impl* p;uint64_t pc;arena::Saved* saved;bool ok=false;} c{this,pc,&s};
             auto original=[](void* v) noexcept {
                 auto& c=*static_cast<Cleanup*>(v);c.p->camera_cleanup_active=true;
                 c.ok=c.p->camera_original(c.pc,*c.saved);c.p->camera_cleanup_active=false;
-                if(!c.ok)std::abort();
+                if(!c.ok)c.p->camera_route_abort(CameraFatalReason::CleanupOriginal,c.pc);
             };
             const auto result=camera_owner.cleanup(pc,s,original,&c,std::chrono::milliseconds(0));
-            if(result==binding::CameraNativeBinding::Dispatch::Refused)std::abort();
+            if(result==binding::CameraNativeBinding::Dispatch::Refused)camera_route_abort(CameraFatalReason::CleanupRefused,pc);
             return true;
         }
         if(!writer_pc(pc))return false;
@@ -169,14 +179,14 @@
             const bool handler=pc==0x1366b0 || pc==0x136118 || pc==0x13a100;
             if((app_entry && s.x[0]!=camera_binding.application) ||
                (camera_entry && s.x[0]!=camera_binding.camera) ||
-               (handler && s.x[0]!=camera_binding.context))std::abort();
+               (handler && s.x[0]!=camera_binding.context))camera_route_abort(CameraFatalReason::WriterBinding,pc);
         }
         if(tid()==owner_tid && camera_active) {
             // Start at the nested entry, before any arbitrated bypass. Only its
             // own native RET can finish this scope, never the enclosing return.
             source_begin(pc);
             if(camera_aggregate && !camera_method_active && (pc==0x15f9e0 || pc==0x15fba8)) {
-                if(!camera_method(pc,s))std::abort();
+                if(!camera_method(pc,s))camera_route_abort(CameraFatalReason::NestedMethod,pc);
                 s.pad=arena::SkipOwned;
             }
             return true; // other nested operations stay in the original method
@@ -184,7 +194,7 @@
         // Before completed publication/binding only bootstrap initialization is
         // native stock. Listener entry before Run is unsupported, not unretained.
         if(!camera_bound.load()) {
-            if(tid()!=bootstrap_tid || handoff_wait)std::abort();
+            if(tid()!=bootstrap_tid || handoff_wait)camera_route_abort(CameraFatalReason::WriterBeforeHandoff,pc);
             return true;
         }
         auto mutation=[&](const CameraBinding& held,coordination::DemandArbiter& arbiter) {
@@ -194,7 +204,7 @@
             // consumer. Serialization alone does not settle a committed command.
             // Until that exact source-consumer scope is proved, withhold the
             // destructive operation and fail-stop, never forward over live debt.
-            if(camera_debt || (adapter && adapter->state().pending))std::abort();
+            if(camera_debt || (adapter && adapter->state().pending))camera_route_abort(CameraFatalReason::MutationDebt,pc);
             const bool camera_update=pc==0x15fcc0;
             const bool handler=pc==0x1366b0 || pc==0x136118 || pc==0x13a100;
             const auto kind=(pc==0x15d730 || pc==0x15d198 || pc==0x15d248)?
@@ -227,17 +237,17 @@
         else {
             // submit retains its gate ticket BEFORE mutation can read app.camera.
             auto submitted=camera_owner.submit(camera_owner.epoch(),camera_binding.renderer_generation,mutation);
-            if(!submitted.id)std::abort();
+            if(!submitted.id)camera_route_abort(CameraFatalReason::SubmitRefused,pc);
             coordination::Result complete;
             const auto end=std::chrono::steady_clock::now()+std::chrono::milliseconds(250);
             while(!camera_owner.take(submitted.id,complete)) {
-                if(std::chrono::steady_clock::now()>=end)std::abort();
+                if(std::chrono::steady_clock::now()>=end)camera_route_abort(CameraFatalReason::CompletionTimeout,pc);
                 std::this_thread::yield();
             }
-            if(!complete.retention_released)std::abort();
+            if(!complete.retention_released)camera_route_abort(CameraFatalReason::RetentionNotReleased,pc);
             result=complete.native;
         }
-        if(result.execution!=coordination::Execution::Executed || !result.value_valid)std::abort();
+        if(result.execution!=coordination::Execution::Executed || !result.value_valid)camera_route_abort(CameraFatalReason::NativeResult,pc);
         s.pad=arena::SkipOwned;return true;
     }
     bool camera_owned_transition(bool acquiring) noexcept {

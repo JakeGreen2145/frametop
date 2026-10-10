@@ -7,6 +7,7 @@ extern "C" bool ft_native_portal_source_modules(uint64_t*,uint64_t*) noexcept __
 #include "policy_sample.hpp"
 #include "diagnostics.hpp"
 #include "command_trace.hpp"
+#include "camera_fatal.hpp"
 #include <chrono>
 #include <fcntl.h>
 #include <sys/socket.h>
