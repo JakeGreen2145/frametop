@@ -11,6 +11,13 @@ import struct
 ROOT = Path(__file__).resolve().parents[1]
 PIN = '9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265'
 ELF = Path('/home/jakeg/.hermes/work/frame-native-reuse/camera-analysis/vrcompositor')
+CLIENT_ELF = ELF.with_name('vrclient.so')
+CLIENT_PIN = 'fe967dcc0d97dab984bd9acc1dc522fcecbcf9beb794fdd7ec156334ec31e313'
+SOURCE_COMP = [0x15fa78,0x15faa4,0x15fbd8,0x15fc20,0x15fa24,0x15fa28,0x15fa44,0x15fa48,0x15fae8,0x15faec,0x15fbec,0x15fbf0,0x15fc34,0x15fc38]
+SOURCE_CLIENT = [0x32a270,0x32a398,0x32a39c,0x32a49c,0x32a504,
+    0x32750c,0x327e54,0x3280a8,0x32813c,0x328140,0x327640,0x3276c4,0x3276c8,
+    0x327e18,0x327f2c,0x327f30,0x327f70,0x327f74,0x3274d8,0x32758c,0x327590,0x3275a0,0x3275a4]
+SOURCE_COMP += [0x15fdc8,0x15fee4,0x15fee8,0x160164,0x160168,0x160184,0x160188,0x160380,0x160384,0x1605c4,0x1605c8]
 ARENA = [0x161d64,0x29a14c,0x299110,0x2988b0,0x29f358,0x7fdbc,0x2987d4,0x161d68,0x29a150]
 PASS = [0x2a1e18,0x2a1c18]
 LIFECYCLE = [0x2a2230,0x2a2320,0x2987d8,0x298840,0x300b20,0x300c54,0x300a08,0x300a38,0x3018b0]
@@ -27,9 +34,9 @@ def number(v):
 
 def digest(data): return hashlib.sha256(data).hexdigest()
 
-def image(path):
+def image(path, pin=PIN):
     data = Path(path).read_bytes()
-    if digest(data) != PIN: raise ValueError('unsupported compositor ELF hash')
+    if digest(data) != pin: raise ValueError('unsupported module ELF hash')
     if data[:6] != b'\x7fELF\x02\x01' or struct.unpack_from('<H',data,18)[0] != 183:
         raise ValueError('not little-endian AArch64 ELF')
     off = struct.unpack_from('<Q',data,32)[0]
@@ -63,6 +70,7 @@ def core_specs():
     for emitter,pcs in [('arena',ARENA),('pass',PASS),('lifecycle',LIFECYCLE)]:
         specs += [dict(name=emitter+'_'+hex(pc),pc=pc,emitter=emitter,index=i) for i,pc in enumerate(pcs)]
     specs += [dict(name='evidence_'+hex(pc),pc=pc,emitter='observer') for pc in EVIDENCE]
+    specs += [dict(name='source_'+hex(pc),pc=pc,emitter='observer') for pc in SOURCE_COMP]
     # The enqueue skip has the same restored Original/SkipOwned routes as upload.
     specs.append(dict(name='camera_enqueue_owned',pc=0x161ed8,emitter='enqueue',index=0))
     return specs
@@ -109,7 +117,7 @@ def merge(at, specs):
     if not merged or len(merged)>256: raise ValueError('invalid site count')
     return [merged[pc] for pc in sorted(merged)]
 
-def prepare(elf, output, manifest=None):
+def prepare(elf, output, manifest=None, client=CLIENT_ELF):
     output=Path(output).resolve()
     if ROOT/'build' not in output.parents: raise ValueError('output must be below native-portal/build')
     at=image(elf);specs=core_specs();runtime=None
@@ -127,8 +135,9 @@ def prepare(elf, output, manifest=None):
             elif runtime.get(key)!=value:raise ValueError('runtime manifest ABI mismatch: '+key)
         specs += runtime['sites']
     rows=merge(at,specs)
+    client_rows=merge(image(client,CLIENT_PIN),[dict(name="client_source_"+hex(pc),pc=pc,emitter="observer") for pc in SOURCE_CLIENT])
     output.mkdir(parents=True,exist_ok=True)
-    result={'schema':1,'elf_sha256':PIN,'runtime_manifest_sha256':digest(Path(manifest).read_bytes()) if manifest else None,'sites':rows}
+    result={'schema':1,'elf_sha256':PIN,'runtime_manifest_sha256':digest(Path(manifest).read_bytes()) if manifest else None,'sites':rows,'client_sha256':CLIENT_PIN,'client_sites':client_rows}
     (output/'sites.private.json').write_text(json.dumps(result,sort_keys=True,indent=2)+'\n')
     lines=['#pragma once','#include <stdint.h>','#define EXE "/opt/steamvr/bin/linuxarm64/vrcompositor"',
            '#define EXE_SHA "'+PIN+'"','#define SITE_COUNT '+str(len(rows)),
@@ -136,6 +145,12 @@ def prepare(elf, output, manifest=None):
            'static const struct site sites[SITE_COUNT] = {']
     for s in rows:
         lines.append('{%s,%s,%d,{%s},%d,%d},'%(hex(s['pc']),hex(s['word']),s['kind'],','.join('0x'+s['guard'][i:i+2] for i in range(0,32,2)),EMITTERS[s['emitter']],s['index']))
+    lines+=['};','#define CLIENT_SHA "'+CLIENT_PIN+'"',
+            '#define CLIENT_PATH "/opt/steamvr/bin/linuxarm64/vrclient.so"',
+            '#define CLIENT_SITE_COUNT '+str(len(client_rows)),
+            'static const struct site client_sites[CLIENT_SITE_COUNT] = {']
+    for s in client_rows:
+        lines.append('{%s,%s,%d,{%s},0,0},'%(hex(s['pc']),hex(s['word']),s['kind'],','.join('0x'+s['guard'][i:i+2] for i in range(0,32,2))))
     lines+=['};']
     (output/'loader-pins.h').write_text('\n'.join(lines)+'\n')
     return result
@@ -143,4 +158,5 @@ def prepare(elf, output, manifest=None):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--elf',type=Path,default=ELF)
     p.add_argument('--output',type=Path,required=True);p.add_argument('--manifest',type=Path)
-    a=p.parse_args();r=prepare(a.elf,a.output,a.manifest);print('PASS pinned sites:',len(r['sites']))
+    p.add_argument('--client',type=Path,default=CLIENT_ELF)
+    a=p.parse_args();r=prepare(a.elf,a.output,a.manifest,a.client);print('PASS pinned sites:',len(r['sites']))

@@ -11,8 +11,12 @@ def main():
     from elftools.elf.elffile import ELFFile
     from unicorn import Uc,UC_ARCH_ARM64,UC_MODE_ARM,UC_HOOK_CODE,UC_HOOK_INTR
     import unicorn.arm64_const as A
-    sys.path.insert(0,str(ROOT/'runtime'));from evidence_test import limits
-    cg,report=limits();data=args.elf.read_bytes();manifest=json.loads((ROOT/'live/runtime-sites.json').read_text())
+    # This emitter-only runner needs no large Evidence C++ compile. Accept the
+    # smaller source-hook scope without asking callers to raise its RAM limit.
+    cg=pathlib.Path('/sys/fs/cgroup')/pathlib.Path('/proc/self/cgroup').read_text().strip().split('::')[1].lstrip('/')
+    report:dict[str,object]={name:(cg/name).read_text().strip() for name in ('memory.max','memory.swap.max')}
+    assert report['memory.max'] in ('268435456','681574400') and report['memory.swap.max']=='0',report
+    data=args.elf.read_bytes();manifest=json.loads((ROOT/'live/runtime-sites.json').read_text())
     assert hashlib.sha256(data).hexdigest()==manifest['elf_sha256']
     with args.elf.open('rb') as f:
         segments=[(x['p_vaddr'],x['p_offset'],x['p_filesz']) for x in ELFFile(f).iter_segments() if x['p_type']=='PT_LOAD']

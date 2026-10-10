@@ -128,6 +128,7 @@ class LoaderTests(unittest.TestCase):
                         with self.subTest(pc=hex(pc),route=route,zero=zero):
                             values=[0x70002000+i*0x100 for i in range(31)]+[rng.getrandbits(128) for _ in range(32)]+[sp,0 if zero else 0xa0000000,0x400000,0x8000011]
                             values[30]=base+0x790100
+                            if s['pc']==0x32758c:values[24]=8 # native slot-byte offset, not a pointer
                             if s['kind']==2:values[(s['word']>>5)&31]=base+0x790000
                             if s['kind']==3 and s['word']&0x7e000000==0x34000000:values[s['word']&31]=0 if zero else 0x70008000
                             actual,expected=[Uc(UC_ARCH_ARM64,UC_MODE_ARM) for _ in range(2)]

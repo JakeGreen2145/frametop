@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "baseline": "536e4747fa2bf05b693faff8965c2381b4ff29a4",
+  "memory_max": 268435456,
+  "memory_swap_max": 0,
+  "compositor_sha256": "9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265",
+  "client_sha256": "fe967dcc0d97dab984bd9acc1dc522fcecbcf9beb794fdd7ec156334ec31e313",
+  "production_site_counts": {
+    "compositor": 144,
+    "client": 23
+  },
+  "observed_test_output": {
+    "source-runtime-sanitize": [
+      "PASS real Runtime retained invocation, pinned call vectors, persistent provider history; producer admission remains absent",
+      "PASS real Runtime retained invocation, pinned call vectors, persistent provider history; producer admission remains absent",
+      "PASS real Runtime retained invocation, pinned call vectors, persistent provider history; producer admission remains absent",
+      "PASS real Runtime retained invocation, pinned call vectors, persistent provider history; producer admission remains absent",
+      "PASS real Runtime retained invocation, pinned call vectors, persistent provider history; producer admission remains absent",
+      "PASS real Runtime retained invocation, pinned call vectors, persistent provider history; producer admission remains absent",
+      "PASS real Runtime retained invocation, pinned call vectors, persistent provider history; producer admission remains absent",
+      "PASS original active-invoke ticket, foreign/outside-scope refusal, unwind and same closing barrier",
+      "PASS source runtime/native vectors and active owner scopes; no live native service, readiness or GPU claim"
+    ],
+    "source-metadata-ubsan": [
+      "----------------------------------------------------------------------",
+      "Ran 11 tests in 75.263s"
+    ],
+    "source-provider-ubsan": [
+      "----------------------------------------------------------------------",
+      "Ran 17 tests in 109.492s"
+    ],
+    "source-loader-green": [
+      "----------------------------------------------------------------------",
+      "Ran 2 tests in 0.025s",
+      "PASS exact ELF file hash and mapped identity, missing/mismatch refusal",
+      "PASS loader gates/fork/TTL; 144 sites, 48 text pages; all precommit failures and fatal postpatch/rollback failures",
+      "----------------------------------------------------------------------",
+      "Ran 1 test in 18.710s",
+      "PASS real inert preload default-off/wrong opt-in/noncompositor, strong-link missing-router refusal",
+      "PASS actual merged loader emitter instruction replays: 1170",
+      "PASS dual module: complete RX pin, mapped identity, module-tag dispatch, second-image precommit rollback"
+    ],
+    "source-loader-regression": [
+      "PASS exact ELF file hash and mapped identity, missing/mismatch refusal",
+      "PASS loader gates/fork/TTL; 144 sites, 48 text pages; all precommit failures and fatal postpatch/rollback failures",
+      "PASS actual merged loader emitter instruction replays: 1032",
+      "----------------------------------------------------------------------",
+      "Ran 5 tests in 15.980s"
+    ],
+    "camera-source-regression": [
+      "--absent 0",
+      "--no-source 0",
+      "--positive 0",
+      "--no-gpu -6",
+      "--no-cpu -6",
+      "--no-source-return -6",
+      "--foreign-debt -6",
+      "--partial-receipt -6",
+      "--timeout -6",
+      "--join-error -6"
+    ]
+  },
+  "limitations": [
+    "No working SourceAdmission or portal readiness; see source-hooks.md for exact producer/detach/source-command gaps.",
+    "Pinned ELF instruction execution and actual production Runtime with modeled native storage/services; not a live loader/constructor activation test.",
+    "No full production ARM64 build, device, GPU, Desktop access or restricted evidence transfer.",
+    "Independent review remains parent-owned; no nested reviewer tool was available."
+  ]
+}

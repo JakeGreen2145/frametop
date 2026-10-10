@@ -1,6 +1,6 @@
 # Source-provider binding and admission boundary
 
-This change implements `ClientSourceBinding`, the native provider observation part. It does **not** supply a working `SourceAdmission`, install new hooks, or enable frames. The production source list compiles it. `Runtime` construction and the original camera command path are unchanged.
+The production loader now installs `ClientSourceBinding` observations in both pinned modules. `Runtime` owns one persistent binding and runs its before/event/after flow inside the original retained camera invocation. It also observes native Update readable-metadata acquisitions and returns. It does **not** supply a working `SourceAdmission` or enable frames. The original camera and source command paths are unchanged. See [source-hooks.md](source-hooks.md) for installation, the expanded event ABI, and verification.
 
 The distinction is intentional. Returning `ready=true` after these connection observations would still fabricate producer publication and source-consumer retirement. There is no replacement always-false `SourceAdmission` class either.
 
@@ -20,7 +20,7 @@ A missing event does not grant ownership. A failed/unreadable/mismatched header,
 
 ## Exact hook ABI needed by the runtime owner
 
-The current `SourceAdmission::transition(binding, plan, actual)` is post-call only. It cannot recover the inner observations after the original method has returned.
+`SourceAdmission::transition(binding, plan, actual)` remains the post-call receipt boundary. Additive `before`, `observe`, and `after` notifications now carry the actual invocation observations; they do not confer readiness. The Runtime owns observation collection even when `SourceAdmission` is null.
 
 Use the original owner-queue gate ticket to call `begin(ticket, binding, action, compositor_base, client_base, compositor_digest, client_digest)` **before** the original camera call. Forward the following saved-register events unchanged, then call `finish(actual_camera_return)`. The caller must retain the ticket throughout. No extra camera Acquire/Release is allowed for observation.
 
@@ -39,19 +39,19 @@ Use the original owner-queue gate ticket to call `begin(ticket, binding, action,
 
 At compositor Connect calls, `x19=camera`, `x0=provider`, `x1=out-slot`, `x2=name`, `x3=target`. Disconnect uses `x1=id`, `x2=target`. Inner client events have `SP=callerSP-0xc0`, `x20=manager`, `x23=out-slot`, `x19=alias`. These registers come from executed pinned instructions in the tests.
 
-The loader must authenticate the **live client image and lifecycle**, not just receive the expected digest string. As with existing `runtime::Evidence`, digest parameters are a trusted preparer contract, not cryptographic proof supplied by the caller. This change does not extend the current compositor-only loader or claim register-preserving emitters for the new client sites. Adding those hooks without the remaining admission facts would not enable a sound provider.
+The loader authenticates the **live client image and lifecycle**, not just the digest arguments. It verifies the canonical pinned file, all loaded file-backed segments and full immutable RX bytes, obtains the load bias from the actual `dlopen` handle and `dl_iterate_phdr`, and retains that handle until exit. Both hook groups pass precommit protection before any instruction is replaced. The emitted observers preserve the existing 800-byte Saved ABI. As with `runtime::Evidence`, digest parameters to the binding remain a trusted loader contract, not an alternative way to authenticate a module.
 
 ## Exact remaining boundary
 
 The allowed handoffs establish static native behavior, but the current runtime supplies no authenticated observation interface for these remaining facts:
 
 1. **Intact producer and committed queue generation.** Driver `d1380` uses the separately supplied server-side `IVRBlockQueue_005`. Its attempted-once latch is not successful Create. Need attributable successful per-queue creation or an authenticated intact-generation contract, name/alias/header/mapping identity, capacity, and actual successful matching layout/data publication. Client Connect and the header ID loaded here cannot provide that history. Membership `header+1c` and queue IDs must not be manufactured into `header_generation`.
-2. **Readable metadata obligations and full consumer detach.** Need the actual original camera read acquisitions and matching releases, with queue and metadata-handle identity. Existing static client contracts identify read-side `3280a8` / `327640` and inner `327e18` / `3274d8`. Disconnect map erasure alone does not drain captured waiter references or outstanding readable handles. Do not populate `producer_revalidated` from successful Release or from this observer's valid flag.
+2. **Full consumer detach.** Original Update acquisitions and matching releases are now observed through `3280a8` / `327640`, inner `327e18` / `3274d8`, the native refcount stores, and metadata-interface call/return. Queue, header, metadata and data identities remain separate. Missing matching returns invalidate the invocation. This is not observation of other captured waiter references, outstanding handles outside this Update, or the imported-image registry. Disconnect map erasure still does not prove their drain. `producer_revalidated` remains unsupported.
 3. **Attribution to the preserved source-command lifetime.** Need an observation that associates each original Adapter ticket watermark with its native sampled-resource use, ordinary `29abf0` acquire, `2a1e18` reverse release, relevant actual inner registry ref/unref or initial-owner conversion, and metadata return. The post-only `settled(binding, watermark)` interface currently receives no such attribution. RPC `226/228` success and import success are not the inner registry results. Existing Command/Lifecycle remain the independent authorities for the original accepted command, exact timeline and CPU disposal/reset.
 
 These are missing operational observations and integration contracts, not a request to strengthen every Valve error path. B4 caller review section 5 supersedes the older speculative requirement for an additional external DMA fence on this unchanged native path. This implementation creates no source copy, queue, DMA fence, ownership registry, shader path or custom camera stream. App `+25668` remains VSYNC.
 
-The newer DMA and native-reuse-closure contents were not available under the local transfer permission. No Desktop access, SSH, alternate transfer, substitute remote request or duplicate bulk analysis was attempted. Their conclusions are not guessed here. The runtime must keep `SourceAdmission` absent until the remaining facts can be supplied and wired.
+The newer DMA and native-reuse-closure contents remain unavailable under the local transfer permission. No Desktop access, SSH, alternate transfer, substitute remote request or duplicate bulk analysis was attempted. Their conclusions are not guessed here. The runtime must keep `SourceAdmission` absent until the remaining facts can be supplied and wired.
 
 ## Evidence and verification
 
@@ -75,4 +75,4 @@ Both runs passed **17 tests**, including the positive production binding against
 
 The fixture models OS/shared mapping, property service, allocator, C++ tree insertion, temporary disposal and Disconnect boundaries. It executes the original camera functions, client Connect path, actual ID search/dedup branches, header comparison, success/error branches and output writes. Those modeled service boundaries are not production readiness or lifetime evidence. The production observer and real camera gate are compiled and exercised. No hardware, GPU, camera API, deployment, native loader activation or full production ARM64 build was performed.
 
-The first expanded suite reached the 256 MiB limit because callback cycles retained old emulators. Releasing each Unicorn hook and ctypes callback before collecting the fixture fixed the runner; both final suites completed under the unchanged cap and zero swap. On a SteamVR update, recheck both module hashes and rerun these witnesses before any loader integration. Existing exact pins reject other builds.
+The first expanded suite reached the 256 MiB limit because callback cycles retained old emulators. Releasing each Unicorn hook and ctypes callback before collecting the fixture fixed the runner; both final suites completed under the unchanged cap and zero swap. On a SteamVR update, recheck both module hashes and rerun these witnesses before enabling the loader. Existing exact pins reject other builds.

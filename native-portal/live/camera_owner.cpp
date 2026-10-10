@@ -30,6 +30,11 @@ bool CameraOwner::bind_handoff(const CameraBinding& binding,uint64_t generation,
 bool CameraOwner::retained_binding(CameraBinding& b) const {
     return owner() && barrier_ && gate_.lookup(barrier_,b);
 }
+bool CameraOwner::observe_scope(const ScopeObserver& fn) {
+    if(!owner() || !active_ || !current_ticket_ || !fn)return false;
+    CameraBinding held;if(!gate_.lookup(current_ticket_,held))return false;
+    fn(gate_,current_ticket_,held);return true;
+}
 co::DemandSnapshot CameraOwner::snapshot() const {
     if(owner() && demand_)return demand_->snapshot();
     co::DemandSnapshot s;s.fault=true;return s;
@@ -59,7 +64,8 @@ co::NativeReceipt CameraOwner::invoke(uint64_t ticket,const NativeMutation& fn) 
     if(!owner() || active_ || !fn || !demand_)return {};
     CameraBinding held;
     if(!gate_.lookup(ticket,held))return {};
-    struct Guard {bool& active;~Guard(){active=false;}} guard{active_};active_=true;
+    struct Guard {bool& active;uint64_t& ticket;~Guard(){ticket=0;active=false;}} guard{active_,current_ticket_};
+    active_=true;current_ticket_=ticket;
     return fn(held,*demand_);
 }
 co::Submission CameraOwner::submit(uint64_t epoch,uint64_t generation,NativeMutation fn) {

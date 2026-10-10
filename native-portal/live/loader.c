@@ -44,6 +44,7 @@ EXPORT uint64_t ft_native_portal_original(uint64_t pc) {
 }
 static uint64_t deadline;
 static _Atomic int enabled;
+#include "source_loader.inc"
 EXPORT uint64_t ft_native_portal_camera_coverage(void) {
     static const uint64_t pcs[]={0x8dc1c,0x8b020,0x15e1c8,0x15df70,0x162360,0x6d6e0,0x6d6f0,0x1366b0,0x136118,0x13a100,0x15d730,0x15d198,0x15d248,0x15f9e0,0x15fba8,0x15f938,0x15faf8,0x15fcc0};
     if(getpid()!=self_pid || !image_islands || !atomic_load_explicit(&enabled,memory_order_acquire))return 0;
@@ -65,11 +66,12 @@ static _Noreturn void fatal(unsigned reason) {
 static void dispatch(struct saved *saved,unsigned id) {
     int e=errno;
     // Fork cannot reach any router state, TLS, allocation, control server or log.
-    if(!atomic_load_explicit(&enabled,memory_order_acquire) || getpid()!=self_pid || id>=SITE_COUNT)goto out;
+    if(!atomic_load_explicit(&enabled,memory_order_acquire) || getpid()!=self_pid || id>=ALL_SITE_COUNT)goto out;
     // Removing routing at TTL could forward a queued owned packet as stock.
     // End this explicitly bounded compositor trial instead. Never unpatch live.
     uint64_t now=now_ns();if(!now || now>=deadline)fatal(80);
-    ft_native_portal_event(sites[id].offset,saved);
+    const struct site *s=site_at(id);
+    ft_native_portal_event(s->offset|(id>=SITE_COUNT?SOURCE_CLIENT_TAG:0),saved);
  out:errno=e;
 }
 typedef size_t (*emitter)(uint32_t*,uintptr_t,uintptr_t,uint64_t,uint32_t,unsigned,unsigned,uintptr_t);
@@ -80,8 +82,8 @@ extern size_t ft_emit_runtime_island(uint32_t*,uint64_t,uint64_t,uint64_t,uint64
 #define RUNTIME_CAPACITY 1024
 _Static_assert(RUNTIME_CAPACITY+40<=STRIDE,"runtime island plus callback thunk must fit");
 EXPORT size_t ft_loader_emit_site(uint32_t *out,uintptr_t at,uintptr_t base,unsigned id,uintptr_t callback) {
-    if(!out || !callback || id>=SITE_COUNT || ((at|base)&3) || at>UINTPTR_MAX-STRIDE)return 0;
-    const struct site *s=&sites[id];
+    if(!out || !callback || id>=ALL_SITE_COUNT || ((at|base)&3) || at>UINTPTR_MAX-STRIDE)return 0;
+    const struct site *s=site_at(id);
     if(s->emitter>=5 && s->emitter<=7) {
         // Keep the runtime emitter's (relative_pc,Saved*) ABI untouched. A
         // bounded per-island tail thunk enters the SAME errno/fork/TTL dispatcher
@@ -114,12 +116,15 @@ static int guards(uintptr_t base) {
     return 1;
 }
 // All branch range and guard checks precede the first writable text page.
-static int install_words(uintptr_t base,uintptr_t islands,size_t ps,int (*protect)(void*,size_t,int)) {
-    uintptr_t pages[SITE_COUNT];uint32_t words[SITE_COUNT];unsigned count=0;
-    if(!ps || (ps&(ps-1)) || !guards(base))return 0;
-    for(unsigned i=0;i<SITE_COUNT;i++) {
-        uintptr_t page=(base+sites[i].offset)&~(ps-1);unsigned j;
-        if(!branch_word(base+sites[i].offset,islands+i*STRIDE,&words[i]))return 0;
+static int install_modules(uintptr_t base,uintptr_t islands,uintptr_t cb,uintptr_t ci,size_t ps,int (*protect)(void*,size_t,int)) {
+    uintptr_t pages[ALL_SITE_COUNT],addresses[ALL_SITE_COUNT];uint32_t words[ALL_SITE_COUNT];unsigned count=0;
+    const unsigned total=cb?ALL_SITE_COUNT:SITE_COUNT;
+    if(!ps || (ps&(ps-1)) || !guards(base) || (cb && (!ci || !client_guards(cb))))return 0;
+    for(unsigned i=0;i<total;i++) {
+        const struct site *s=site_at(i);const unsigned local=i<SITE_COUNT?i:i-SITE_COUNT;
+        addresses[i]=(i<SITE_COUNT?base:cb)+s->offset;
+        uintptr_t page=addresses[i]&~(ps-1);unsigned j;
+        if(!branch_word(addresses[i],(i<SITE_COUNT?islands:ci)+local*STRIDE,&words[i]))return 0;
         for(j=0;j<count && pages[j]!=page;j++);
         if(j==count)pages[count++]=page;
     }
@@ -129,32 +134,39 @@ static int install_words(uintptr_t base,uintptr_t islands,size_t ps,int (*protec
         for(unsigned j=0;j<rw;j++)if(protect((void*)pages[j],ps,PROT_READ|PROT_EXEC))fatal(91);
         return 0;
     }
-    for(unsigned i=0;i<SITE_COUNT;i++)__atomic_store_n((uint32_t*)(base+sites[i].offset),words[i],__ATOMIC_RELAXED);
+    for(unsigned i=0;i<total;i++)__atomic_store_n((uint32_t*)addresses[i],words[i],__ATOMIC_RELAXED);
     for(unsigned i=0;i<count;i++)__builtin___clear_cache((char*)pages[i],(char*)pages[i]+ps);
     for(unsigned i=0;i<count;i++)if(protect((void*)pages[i],ps,PROT_READ|PROT_EXEC))fatal(92);
-    for(unsigned i=0;i<SITE_COUNT;i++)if(*(uint32_t*)(base+sites[i].offset)!=words[i])fatal(93);
+    for(unsigned i=0;i<total;i++)if(*(uint32_t*)addresses[i]!=words[i])fatal(93);
     for(unsigned i=0;i<count;i++)if(!map_range(pages[i],ps,NULL,0,PROT_READ|PROT_EXEC))fatal(94);
     return 1;
 }
-static void *make_islands(uintptr_t base,size_t ps,size_t *length) {
-    *length=(SITE_COUNT*STRIDE+ps-1)&~(ps-1);
+static int install_words(uintptr_t base,uintptr_t islands,size_t ps,int (*protect)(void*,size_t,int)) {
+    return install_modules(base,islands,0,0,ps,protect);
+}
+static void *make_module_islands(uintptr_t base,size_t ps,size_t *length,unsigned first,unsigned count) {
+    *length=(count*STRIDE+ps-1)&~(ps-1);
     for(uintptr_t delta=0x800000;delta<0x8000000;delta+=0x100000) {
         uintptr_t at=(base+delta+ps-1)&~(ps-1);
         void *p=mmap((void*)at,*length,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
         if(p==MAP_FAILED)continue;
         int ok=(uintptr_t)p==at;
-        for(unsigned i=0;ok && i<SITE_COUNT;i++) {
-            size_t n=ft_loader_emit_site((uint32_t*)((char*)p+i*STRIDE),at+i*STRIDE,base,i,(uintptr_t)dispatch);
-            uint32_t word;ok=n && n<=BYPASS_OFFSET && branch_word(base+sites[i].offset,at+i*STRIDE,&word);
-            if(ok && sites[i].emitter==6)
+        for(unsigned i=0;ok && i<count;i++) {
+            const struct site *s=site_at(first+i);
+            size_t n=ft_loader_emit_site((uint32_t*)((char*)p+i*STRIDE),at+i*STRIDE,base,first+i,(uintptr_t)dispatch);
+            uint32_t word;ok=n && n<=BYPASS_OFFSET && branch_word(base+s->offset,at+i*STRIDE,&word);
+            if(ok && s->emitter==6)
                 ok=ft_emit_camera_cleanup_bypass((uint32_t*)((char*)p+i*STRIDE+BYPASS_OFFSET),
-                    at+i*STRIDE+BYPASS_OFFSET,base,sites[i].offset)==8;
+                    at+i*STRIDE+BYPASS_OFFSET,base,s->offset)==8;
         }
         if(ok) {__builtin___clear_cache(p,(char*)p+*length);ok=!mprotect(p,*length,PROT_READ|PROT_EXEC);}
         if(ok && map_range(at,*length,NULL,0,PROT_READ|PROT_EXEC))return p;
         munmap(p,*length);
     }
     return MAP_FAILED;
+}
+static void *make_islands(uintptr_t base,size_t ps,size_t *length) {
+    return make_module_islands(base,ps,length,0,SITE_COUNT);
 }
 static int immutable_file(const char *path,const char *sha) {
     struct stat s;int fd=open(path,O_RDONLY|O_NOFOLLOW|O_CLOEXEC);
@@ -208,18 +220,21 @@ __attribute__((constructor)) static void launch(void) {
     path[n]=0;if(strcmp(path,EXE))return;
     int fd=exe_fd();if(fd<0)return;
     struct main_image m={0};dl_iterate_phdr(main_image_cb,&m);
-    if(m.seen!=1 || !bundle_ok() || !verify_load(fd,m.base,m.ph,m.count) || !one_thread()) {close(fd);return;}
+    if(m.seen!=1 || !bundle_ok() || !verify_load(fd,m.base,m.ph,m.count) || !one_thread() || !pin_client()) {close(fd);return;}
     uint64_t now=now_ns();size_t ps=(size_t)sysconf(_SC_PAGESIZE),length=0;
     if(!now || (ps!=4096 && ps!=16384 && ps!=65536)) {close(fd);return;}
     self_pid=getpid();image_base=m.base;deadline=now+(uint64_t)seconds*1000000000;
     void *islands=make_islands(m.base,ps,&length);
     if(islands==MAP_FAILED) {close(fd);return;}
+    size_t client_length=0;
+    void *ci=make_module_islands(client_base,ps,&client_length,SITE_COUNT,CLIENT_SITE_COUNT);
+    if(ci==MAP_FAILED) {munmap(islands,length);close(fd);return;}
     sigset_t all,old;sigfillset(&all);
-    if(sigprocmask(SIG_BLOCK,&all,&old)) {munmap(islands,length);close(fd);return;}
-    if(!one_thread() || !guards(m.base) || !install_words(m.base,(uintptr_t)islands,ps,mprotect)) {
-        munmap(islands,length);close(fd);if(sigprocmask(SIG_SETMASK,&old,NULL))fatal(95);return;
+    if(sigprocmask(SIG_BLOCK,&all,&old)) {munmap(ci,client_length);munmap(islands,length);close(fd);return;}
+    if(!one_thread() || !guards(m.base) || !install_modules(m.base,(uintptr_t)islands,client_base,(uintptr_t)ci,ps,mprotect)) {
+        munmap(ci,client_length);munmap(islands,length);close(fd);if(sigprocmask(SIG_SETMASK,&old,NULL))fatal(95);return;
     }
-    image_islands=(uintptr_t)islands;
+    image_islands=(uintptr_t)islands;client_islands=(uintptr_t)ci;
     atomic_store_explicit(&enabled,1,memory_order_release);
     // No native thread exists yet. Server creation is deferred until the complete
     // hook group is installed; failure from here cannot return into native code.

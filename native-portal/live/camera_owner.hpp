@@ -31,6 +31,11 @@ public:
     bool bind_handoff(const CameraBinding&,uint64_t generation,size_t capacity=8);
     coordination::NativeReceipt direct(const NativeMutation&);
     bool retained_binding(CameraBinding&) const;
+    // Only within an active owner mutation. This is the SAME FIFO ticket or
+    // pre-close barrier, never an additional retain. Gate/identities are borrowed
+    // for this callback. The Runtime observer must not outlive this CameraOwner.
+    using ScopeObserver=std::function<void(CameraAccessGate&,uint64_t,const CameraBinding&)>;
+    bool observe_scope(const ScopeObserver&);
     coordination::DemandSnapshot snapshot() const;
     uint64_t epoch() const noexcept {return epoch_;} // immutable after bind
     static CameraCoverage coverage() noexcept {return {};}
@@ -63,7 +68,7 @@ private:
     binding::CameraNativeBinding native_;
     std::optional<coordination::OwnerCoordinator> queue_;
     std::optional<coordination::DemandArbiter> demand_;
-    uint64_t epoch_=0,barrier_=0,generation_=0;
+    uint64_t epoch_=0,barrier_=0,generation_=0,current_ticket_=0;
     bool bound_=false,active_=false,closing_=false;
 };
 

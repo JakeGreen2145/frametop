@@ -31,19 +31,20 @@ bool ClientSourceBinding::read(uint64_t address,void* out,size_t size) noexcept 
 bool ClientSourceBinding::begin(uint64_t ticket,const CameraBinding& b,coordination::Action action,
     uint64_t comp,uint64_t client,const char* comp_digest,const char* client_digest) noexcept {
     if(!owner())return refuse();
-    if(active_ || failed_.load() || !comp_digest || !client_digest ||
+    if(active_ || failed_.load() || b.camera>UINT64_MAX-0x500 || !comp_digest || !client_digest ||
        std::strcmp(comp_digest,compositor_sha) || std::strcmp(client_digest,client_sha) ||
        !client || comp>UINT64_MAX-0x700000 || client>UINT64_MAX-0x700000 ||
-       (action!=coordination::Action::Connect && action!=coordination::Action::Disconnect))return refuse();
+       (action!=coordination::Action::None && action!=coordination::Action::Connect && action!=coordination::Action::Disconnect))return refuse();
     if(bound_ && (!(b==binding_) || comp!=compositor_base_ || client!=client_base_))return refuse();
     ticket_=ticket;binding_=b;
     if(!held())return refuse();
-    bound_=true;compositor_base_=comp;client_base_=client;observation_={};call_={};
+    bound_=true;compositor_base_=comp;client_base_=client;observation_={};call_={};metadata_={};
     observation_.action=action;active_=true;return true;
 }
 bool ClientSourceBinding::event(Module module,uint64_t pc,const arena::Saved& s) noexcept {
     if(!owner())return refuse();
     if(!active_ || !held())return refuse();
+    if(observation_.action==coordination::Action::None)return metadata_event(module,pc,s);
     return module==Module::Compositor?compositor(pc,s):client(pc,s);
 }
 bool ClientSourceBinding::compositor(uint64_t pc,const arena::Saved& s) noexcept {
@@ -128,10 +129,12 @@ bool ClientSourceBinding::client(uint64_t pc,const arena::Saved& s) noexcept {
 }
 bool ClientSourceBinding::finish(uint64_t actual) noexcept {
     if(!owner())return refuse();
-    const bool valid=active_ && held() && !call_.pending;
+    bool valid=active_ && held() && !call_.pending && !metadata_.pending;
+    for(const auto& r:observation_.reads)if(r.acquire_observed && r.acquire_result==0 && !r.returned)valid=false;
     if(!valid)refuse();
     observation_.actual=actual;observation_.valid=valid;active_=false;ticket_=0;return valid;
 }
+#include "source_metadata.inc"
 ClientSourceBinding::Observation ClientSourceBinding::snapshot() const noexcept {
     if(!owner())return {};
     auto out=observation_;out.valid=out.valid && !failed_.load();return out;

@@ -5,7 +5,7 @@ import argparse, fcntl, json, os, pathlib, resource, signal, socket, subprocess,
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'runtime'))
 from evidence_test import limits
-SOURCES=['live/camera_owner.cpp','binding/camera.cpp','control/camera_gate.cpp','control/owner_coordinator.cpp','live/runtime.cpp','runtime/evidence.cpp','runtime/recording.cpp','runtime/staging.cpp',
+SOURCES=['live/source_provider.cpp','live/camera_owner.cpp','binding/camera.cpp','control/camera_gate.cpp','control/owner_coordinator.cpp','live/runtime.cpp','runtime/evidence.cpp','runtime/recording.cpp','runtime/staging.cpp',
          'binding/command.cpp','binding/lifecycle.cpp','binding/pass.cpp','render/adapter.cpp',
          'arena/bridge.cpp','control/protocol.cpp','control/policy.cpp','control/transport.cpp','src/aperture.cpp']
 def main():

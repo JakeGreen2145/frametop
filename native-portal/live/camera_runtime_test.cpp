@@ -23,6 +23,10 @@ struct ModeledProvider final:SourceAdmission {
 extern "C" uint64_t ft_native_portal_original(uint64_t pc) noexcept {return Chain::base+pc;}
 static uint64_t modeled_coverage=0xfffff; // CPU callback routing, not installed executable bytes
 extern "C" uint64_t ft_native_portal_camera_coverage() noexcept {return modeled_coverage;}
+// Explicit loader boundary fixture, not a live module authentication proof.
+extern "C" bool ft_native_portal_source_modules(uint64_t* comp,uint64_t* client) noexcept {
+    *comp=Chain::base;*client=0x10000000;return true;
+}
 int main(int argc,char** argv) {
     const std::string mode=argc>1?argv[1]:"--absent";
     if(mode=="--missing-arbitration")modeled_coverage=0x3ffff;

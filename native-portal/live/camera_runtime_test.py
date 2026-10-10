@@ -35,7 +35,8 @@ objects=[]
 for src in SOURCES+['live/camera_runtime_test.cpp']:
     obj=B/(src.replace('/','_')+'.o');objects.append(obj)
     inputs=[ROOT/src,*[p for p in ROOT.rglob('*.hpp') if 'build' not in p.relative_to(ROOT).parts]]
-    if src=='live/runtime.cpp':inputs += [ROOT/'live/runtime_camera.inc']
+    if src=='live/runtime.cpp':inputs += [ROOT/'live/runtime_camera.inc',ROOT/'live/source_router.inc']
+    if src=='live/source_provider.cpp':inputs += [ROOT/'live/source_metadata.inc']
     if src=='live/camera_runtime_test.cpp':inputs += [ROOT/'live/runtime_chain_test.cpp',B/'camera.private.hpp',B/'pump.private.hpp']
     if not obj.exists() or any(p.stat().st_mtime>obj.stat().st_mtime for p in inputs):
         run(['g++',*flags,'-c',ROOT/src,'-o',obj])

@@ -6,7 +6,8 @@
 #include <assert.h>
 #include <sys/wait.h>
 static unsigned calls;
-void ft_native_portal_event(uint64_t pc,struct saved *r) {assert(pc==sites[0].offset);assert(r);++calls;errno=123;}
+static uint64_t expected_pc;
+void ft_native_portal_event(uint64_t pc,struct saved *r) {assert(pc==(expected_pc?expected_pc:sites[0].offset));assert(r);++calls;errno=123;}
 _Bool ft_native_portal_start(uint64_t b,const char *s,const char *d) {(void)b;(void)s;(void)d;return 0;}
 uint64_t ft_pipeline_generation(void *d) {(void)d;return 0;}
 static unsigned protections,fail_at,fail_again;
@@ -62,6 +63,7 @@ static void native_execution(void) {
     puts("PASS native ARM synthetic island execution, no compositor launched");
 }
 #endif
+#include "source_loader_test.inc"
 int main(int argc,char **argv) {
     if(argc==2)test_file_map(argv[1]);
 #if defined(__aarch64__)

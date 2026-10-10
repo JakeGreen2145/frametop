@@ -345,6 +345,8 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t x8) n
         const auto before=f.camera_state();assert(std::equal(before.begin(),before.end(),t.before));
         f.camera_state(t.after);x[0]=t.result;
         if(t.pc==0x15f9e0)++f.native_acquires;else ++f.native_releases;
+        arena::Saved returned{};returned.x[0]=x[0];
+        f.router.event(t.pc==0x15f9e0?0x15faa4:0x15fbd8,returned);
         return true;
     }
     switch(target-Chain::base) {
@@ -389,6 +391,7 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t x8) n
         f.router.event(0x15fb20,decision);
         if(decision.pad!=arena::SkipOwned)++f.native_clears;
         break; // native Clear is void; preserve its modeled register result
+
     }
     case 0x8b020:case 0x15e1c8:case 0x15df70:x[0]=0xabcdef;break;
     case 0x15f9e0:++f.native_acquires;put(f.camera,0x34a,uint8_t(1));put(f.camera,0x360,uint8_t(1));x[0]=1;break;
@@ -413,6 +416,12 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t x8) n
         std::memcpy(f.packets.data()+off+0x1c8,&d,24);std::memcpy(f.packets.data()+off+0x1c8+4*24,&d,24);break;}
     case 0x29dac0:++f.lookups;x[0]=addr(f.pipeline_object);break;
     default:std::fprintf(stderr,"unmodeled native call %llx\n",(unsigned long long)(target-Chain::base));std::abort();
+    }
+    if(target==Chain::base+0x15f9e0 || target==Chain::base+0x15fba8) {
+        // The actual modeled method returns before an arbitrated nested bypass
+        // unwinds. No service event or producer truth is fabricated here.
+        arena::Saved returned{};returned.x[0]=x[0];
+        f.router.event(target==Chain::base+0x15f9e0?0x15faa4:0x15fbd8,returned);
     }
     return true;
 }

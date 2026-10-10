@@ -20,7 +20,7 @@ void* source_fixture(ClientSourceBinding::Read read,void* context) {return new F
 void source_delete(void* p){delete static_cast<Fixture*>(p);}
 int source_begin(void* p,int action) {
     auto& f=*static_cast<Fixture*>(p);
-    return f.observer.begin(f.ticket,f.binding,action==1?coordination::Action::Connect:coordination::Action::Disconnect,
+    return f.observer.begin(f.ticket,f.binding,action==0?coordination::Action::None:action==1?coordination::Action::Connect:coordination::Action::Disconnect,
         0,0x10000000,ClientSourceBinding::compositor_sha,ClientSourceBinding::client_sha);
 }
 int source_event(void* p,int module,uint64_t pc,const arena::Saved* s) {
@@ -35,7 +35,11 @@ uint64_t source_value(void* p,unsigned q,unsigned field) {
     switch(field) {
     case 0:return a.observed;case 1:return uint32_t(a.result);case 2:return a.id;
     case 3:return unsigned(a.ownership);case 4:return a.header;case 5:return a.alias;
-    case 6:return s.valid;case 7:return s.actual;default:return 0;
+    case 6:return s.valid;case 7:return s.actual;
+    case 8:return s.reads[q].acquire_observed;case 9:return s.reads[q].returned;
+    case 10:return s.reads[q].metadata;case 11:return s.reads[q].data;
+    case 12:return s.reads[q].increment;case 13:return s.reads[q].decrement;
+    case 14:return uint32_t(s.reads[q].acquire_result);case 15:return s.reads[q].metadata_return;default:return 0;
     }
 }
 void source_drop_retention(void* p) {auto& f=*static_cast<Fixture*>(p);if(f.ticket)f.gate.release(f.ticket);f.ticket=0;}

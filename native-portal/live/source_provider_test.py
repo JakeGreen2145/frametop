@@ -72,7 +72,7 @@ class Native:
                     self.m.mem_write(lo,seg.data())
         self.m.mem_map(self.camera,0x400000)
         self.next=0x90100000;self.header={};self.names={};self.aliases={};self.current=''
-        self.inject={};self.events=[];self.omit=set();self.error=None;self.reads=0
+        self.read_log=[];self.inject={};self.events=[];self.rejected=[];self.omit=set();self.error=None;self.reads=0
         self.put(self.manager,self.cb+0x60f108)
         self.put(self.cb+0x60f110,self.cb+0x32a270)
         self.put(self.cb+0x60f118,self.cb+0x328380)
@@ -85,7 +85,9 @@ class Native:
         @Read
         def read(_,address,out,size):
             self.reads+=1
-            try:C.memmove(out,bytes(self.m.mem_read(address,size)),size);return True
+            try:
+                            data=bytes(self.m.mem_read(address,size));self.read_log.append((address,int.from_bytes(data,"little"),size))
+                            C.memmove(out,data,size);return True;
             except Exception:return False
         self.read=read;self.fixture=dll.source_fixture(read,None)
         self.hook_id=self.m.hook_add(UC_HOOK_CODE,self.hook)
@@ -122,7 +124,7 @@ class Native:
         s.sp=self.m.reg_read(A.UC_ARM64_REG_SP)
         change=self.inject.get((module,pc))
         if change:change(s)
-        self.dll.source_event(self.fixture,module,pc,C.byref(s))
+        if not self.dll.source_event(self.fixture,module,pc,C.byref(s)):self.rejected.append((module,hex(pc)))
     def hook(self,uc,pc,size,_):
         try:self.step(pc)
         except BaseException as e:self.error=e;uc.emu_stop()

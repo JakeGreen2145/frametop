@@ -19,6 +19,7 @@ From `/home/steamos/dev/frametop-native-live-trial` inside distrobox `dev`:
 systemd-run --user --scope -p MemoryMax=650M -p MemorySwapMax=0 \
   python3 -B native-portal/live/build.py \
   --elf /opt/steamvr/bin/linuxarm64/vrcompositor \
+  --client /opt/steamvr/bin/linuxarm64/vrclient.so \
   --manifest native-portal/live/runtime-sites.json \
   --pipeline native-portal/build/live-pipeline \
   --output native-portal/build/live-owner
@@ -29,6 +30,13 @@ also accepted. Its required SHA256 is
 `9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265`.
 The installed executable path at activation remains exactly
 `/opt/steamvr/bin/linuxarm64/vrcompositor`.
+
+The source-observation extension also requires the pinned client image
+`fe967dcc0d97dab984bd9acc1dc522fcecbcf9beb794fdd7ec156334ec31e313`.
+Both modules are authenticated and installed in one single-threaded transaction.
+The client loader reference stays retained until process exit. See
+[source-hooks.md](source-hooks.md) for the actual Runtime flow, added hook ABI,
+CPU verification and remaining unsupported producer/source-command admission.
 
 The pipeline directory must be the existing production `pipeline/bundle.py`
 and `pipeline/build.py` output. It must contain all eight pinned shaders and

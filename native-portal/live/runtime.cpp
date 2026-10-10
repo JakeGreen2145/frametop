@@ -3,6 +3,7 @@
 #include "source_admission.hpp"
 extern "C" uint64_t ft_native_portal_original(uint64_t) noexcept __attribute__((weak));
 extern "C" uint64_t ft_native_portal_camera_coverage() noexcept __attribute__((weak));
+extern "C" bool ft_native_portal_source_modules(uint64_t*,uint64_t*) noexcept __attribute__((weak));
 #include "policy_sample.hpp"
 #include "diagnostics.hpp"
 #include "command_trace.hpp"
@@ -149,6 +150,7 @@ struct Runtime::Impl {
     }
     std::atomic<bool> collector_stop{false};std::thread collector;
     #include "runtime_camera.inc"
+    #include "source_router.inc"
     explicit Impl(SourceAdmission* admission):source(admission){published.publish(diag);live_published.publish(live);}
     ~Impl(){collector_stop=true;if(collector.joinable())collector.join();}
     void collect() {
@@ -419,6 +421,7 @@ struct Runtime::Impl {
     }
     void event(uint64_t pc,arena::Saved &s) noexcept {
         if(!pinned || getpid()!=pid)return;
+        if(source_route(pc,s))return;
         if(camera_route(pc,s))return;
         // Shutdown guard is owned by the original initializer thread. It pairs
         // the real timed wait and actual pthread_join result before cleanup.

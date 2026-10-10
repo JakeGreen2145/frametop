@@ -36,7 +36,7 @@ def inventory():
 
 def source_hashes(sources,manifest):
     tracked=[ROOT/s for s in sources]+[ROOT/'live/loader.c',ROOT/'live/loader_emit.c',ROOT/'live/runtime-emit.c',
-             ROOT/'arena/emit.c',ROOT/'binding/pass_emit.c',ROOT/'binding/lifecycle_emit.c',ROOT/'runtime/graph.inc',ROOT/'live/runtime_camera.inc',manifest]
+             ROOT/'arena/emit.c',ROOT/'binding/pass_emit.c',ROOT/'binding/lifecycle_emit.c',ROOT/'runtime/graph.inc',ROOT/'live/runtime_camera.inc',ROOT/'live/source_router.inc',ROOT/'live/source_loader.inc',ROOT/'live/source_metadata.inc',manifest]
     tracked += [p for p in ROOT.rglob('*') if p.suffix in ('.h','.hpp') and 'build' not in p.relative_to(ROOT).parts]
     tracked += [ROOT/'live'/n for n in ('prepare.py','build.py','bundle.py')]
     return {str(p.relative_to(ROOT)) if ROOT in p.parents else str(p):hash_file(p) for p in tracked}
@@ -68,7 +68,7 @@ def build(a):
             raise ValueError('invalid runtime production source')
         if name not in sources:sources.append(name)
     pipeline=pipeline_check(a.pipeline)
-    prepared=prepare.prepare(a.elf,output,a.manifest)
+    prepared=prepare.prepare(a.elf,output,a.manifest,a.client)
     hashes=source_hashes(sources,a.manifest)
     identity={'schema':1,'sources':hashes,'sites_sha256':hash_file(output/'sites.private.json'),'pipeline_sha256':hash_file(pipeline)}
     build_id=hashlib.sha256(json.dumps(identity,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -94,7 +94,7 @@ def build(a):
     syms=subprocess.check_output(['nm','-D','--defined-only',owner],text=True)
     if ' ft_native_portal_event\n' not in syms:raise ValueError('real router event ABI is not exported')
     run(['readelf','-d',owner])
-    report={**identity,'build_id':build_id,'owner_sha256':hash_file(owner),'compiled_sources':['live/loader.c','live/loader_emit.c','live/runtime-emit.c',*sources],'site_count':len(prepared['sites'])}
+    report={**identity,'build_id':build_id,'owner_sha256':hash_file(owner),'compiled_sources':['live/loader.c','live/loader_emit.c','live/runtime-emit.c',*sources],'site_count':len(prepared['sites'])+len(prepared['client_sites']),'module_site_counts':{'compositor':len(prepared['sites']),'client':len(prepared['client_sites'])}}
     (output/'build-report.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
     import bundle
     target=bundle.create(output,a.pipeline)
@@ -109,6 +109,7 @@ def build(a):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--elf',type=Path,default=prepare.ELF)
+    p.add_argument('--client',type=Path,default=prepare.CLIENT_ELF)
     p.add_argument('--manifest',type=Path,default=ROOT/'live/runtime-sites.json')
     p.add_argument('--output',type=Path,default=ROOT/'build/live-owner')
     p.add_argument('--pipeline',type=Path,required=True)
