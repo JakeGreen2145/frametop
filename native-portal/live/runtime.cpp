@@ -461,13 +461,19 @@ struct Runtime::Impl {
             const unsigned owner_bit=pc==0x14099c?0:pc==0x140dbc?2:4;
             owner_events.fetch_or(1ull<<owner_bit);
             if(pc!=0x14e5a8 && (handoff_wait || owner_tid!=bootstrap_tid)) {owner_rejected(pc,253);return;}
+            // Make Start authentication and its lifetime snapshot atomic with
+            // cleanup entry/return. Never holds this lock over an original.
+            std::unique_lock<std::mutex> start_lock(camera_join_mutex,std::defer_lock);
+            if(pc==0x140dbc)start_lock.lock();
             uint16_t predicate=0;
             if(evidence.owner_event(pc,s,&predicate)) {
                 owner_events.fetch_or(1ull<<(owner_bit+1));
                 if(pc==0x14099c){worker=s.x[19];context=s.x[21];}
                 if(pc==0x140dbc){
                     handoff_wait=true;
-                    std::lock_guard<std::mutex> lock(camera_join_mutex);
+                    start_application=evidence.start_application();
+                    for(const auto application:destructive_applications)
+                        if(application && application==start_application)start_revoked=true;
                     run_invalidations=camera_owner.candidate().invalidations;
                     camera_diagnostic.start_scope=evidence.identity().renderer_generation;
                     camera_snapshot_locked();

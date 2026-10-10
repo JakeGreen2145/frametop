@@ -31,7 +31,7 @@ def main():
     p.add_argument('--sanitize', action='store_true')
     p.add_argument('--test', default='initial_binding_test')
     p.add_argument('--camera-matrix', action='store_true')
-    p.add_argument('--modes', nargs='+', default=['initial-success','init-failure','foreign-stock','worker-stock','late','mismatch','nested-cleanup','cleanup-between','concurrent-cleanup','blocked-stock','aba','start-aba','exhausted','partial-bind','active-rebind','unclassified-init','repeated-init','bad-publication','rejected-run','replacement-malformed','bound-publication'])
+    p.add_argument('--modes', nargs='+', default=['initial-success','init-failure','foreign-stock','worker-stock','late','mismatch','nested-cleanup','cleanup-between','concurrent-cleanup','blocked-stock','unrelated-cleanup','aba','start-aba','late-aba','cleanup-straddles-start','exhausted','partial-bind','active-rebind','unclassified-init','repeated-init','bad-publication','rejected-run','replacement-malformed','bound-publication'])
     a = p.parse_args()
     if a.camera_matrix:
         a.test='camera_runtime_test'

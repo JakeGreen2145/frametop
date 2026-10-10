@@ -77,6 +77,10 @@ class Evidence {
     // Exact identities authenticated at worker Run; no read/write registry.
     struct ApplicationOwner {uint64_t worker=0,context=0,scheduler=0,application=0;};
     ApplicationOwner application_owner() const noexcept;
+    // Already-authenticated Start scalar, for revocation only, not Run authority.
+    uint64_t start_application() const noexcept {
+        return initialized() && handoff_.load()==1?application_:0;
+    }
     bool settled(const render::Binding &,const render::Provenance &,const render::Provenance &,const render::Completion &) const noexcept;
     bool command_owner(binding::Owner &) const noexcept;
     bool release_lifecycle() noexcept;

@@ -18,6 +18,10 @@ extern "C" uint64_t ft_native_portal_camera_coverage() noexcept {return 0xfffff;
 extern "C" bool ft_native_portal_source_modules(uint64_t* a,uint64_t* b) noexcept {*a=Chain::base;*b=0x10000000;return true;}
 extern "C" bool ft_native_portal_call(uint64_t target,uint64_t* x,uint64_t indirect) noexcept {
     const auto pc=target-Chain::base;
+    if(((pc==0x15df70 && mode=="cleanup-straddles-start") ||
+        (pc==0x8b020 && mode=="unrelated-cleanup")) && blocked.load()==0) {
+        blocked=1;while(blocked==1)std::this_thread::yield();
+    }
     if(pc==0x162360) {
         ++init_calls;
         auto cleanup=[] {arena::Saved d{};d.x[0]=addr(active->camera);active->router.event(0x15df70,d);};
@@ -58,7 +62,7 @@ int main(int argc,char** argv) {
     rlimit zero{0,0};setrlimit(RLIMIT_CORE,&zero);mode=argc>1?argv[1]:"initial-success";
     auto f=std::make_unique<Chain>();active=f.get();
     const bool absent=mode=="foreign-stock" || mode=="worker-stock";
-    const bool late=mode=="late";
+    const bool late=mode=="late" || mode=="late-aba";
     if(!absent && !late){publication(*f,mode=="mismatch");if(mode!="aba")initialize(*f);}
     if(mode=="repeated-init")initialize(*f);
     if(mode=="replacement-malformed") {
@@ -69,7 +73,18 @@ int main(int argc,char** argv) {
     if(mode=="blocked-stock") {listener=std::thread([&]{stock(*f,0x13a100);});while(blocked!=1)std::this_thread::yield();}
     if(mode=="cleanup-between") {arena::Saved s{};s.x[0]=addr(f->app);f->router.event(0x8b020,s);}
     if(mode=="foreign-stock") {std::thread t([&]{stock(*f,0x13a100);stock(*f,0x15fcc0);});t.join();assert(lostpipes==1 && updates==1 && properties==2);}
+    // Source-modeled lifetime negatives, not claims of native late publication.
+    if(mode=="cleanup-straddles-start" || mode=="unrelated-cleanup") {
+        listener=std::thread([&]{arena::Saved d{};
+            const bool unrelated=mode=="unrelated-cleanup";
+            d.x[0]=unrelated?addr(f->app)+8:addr(f->camera);f->router.event(unrelated?0x8b020:0x15df70,d);
+            assert(d.pad==arena::SkipOwned && d.x[0]==0xabcdef);});
+        while(blocked!=1)std::this_thread::yield();
+    }
     f->bootstrap_router();f->publish_worker();
+    if(mode=="cleanup-straddles-start") {
+        blocked=2;listener.join();publication(*f);initialize(*f);
+    }
     if(mode=="start-aba") {
         arena::Saved s{};s.x[0]=addr(f->camera);f->router.event(0x15df70,s);
         publication(*f);initialize(*f);
@@ -81,7 +96,7 @@ int main(int argc,char** argv) {
             f->s.x[0]=addr(f->worker);put(f->worker,0x10,uint32_t(syscall(SYS_gettid)));
             put(f->worker,0x14,uint32_t(0x80000000));f->s.x[30]=Chain::base+FT_NATIVE_RUN_RETURN+4;f->event(0x14e5a8);
         } else f->run_enter();
-        if(mode=="blocked-stock") {
+        if(mode=="blocked-stock" || mode=="unrelated-cleanup") {
             const auto d=f->router.camera_binding_diagnostics();
             assert(d.inflight==1 && d.run_authenticated && !d.runtime_bound && !d.join_attempts);
         }
@@ -89,13 +104,18 @@ int main(int argc,char** argv) {
         if(absent || mode=="rejected-run")stock(*f,0x15fcc0);
         arena::Saved pump{};f->router.event(0,pump);
         f->frame_start();f->frame_end();
-        const bool capable=mode=="initial-success" || mode=="blocked-stock" || mode=="active-rebind" || mode=="bound-publication" || late;
+        const bool capable=mode=="initial-success" || mode=="blocked-stock" || mode=="unrelated-cleanup" || mode=="active-rebind" || mode=="bound-publication" || mode=="late";
         assert(f->router.diagnostics().capable==capable);
         auto d=f->router.camera_binding_diagnostics();
         assert(d.run_seen && d.start_scope);
         if(mode=="rejected-run")assert(!d.run_authenticated && d.run_rejection==3 && !d.join_attempts);
         else assert(d.run_authenticated);
         assert(d.runtime_bound==capable);
+        if(mode=="late-aba" || mode=="cleanup-straddles-start") {
+            assert(d.pending && d.resource_ready && d.join_rejection==4 && !d.join_attempts);
+            assert(!d.epoch_published && !d.internal_bound && !d.barrier_retained && !d.partial);
+            stock(*f,0x15fcc0); // stale join refusal must leave ordinary stock intact
+        }
         if(capable)assert(d.publication_accepted && d.pending && d.native_pending && d.resource_ready &&
             d.join_attempts==1 && d.app_match==2 && d.worker_match==2 && d.context_match==2 &&
             d.epoch_published && d.barrier_retained && d.internal_bound && !d.partial && !d.join_rejection);
@@ -121,9 +141,15 @@ int main(int argc,char** argv) {
         f->router.stop();f->router.event(0,pump);
     });
     while(stage!=1)std::this_thread::yield();
+    if(mode=="late-aba") {
+        arena::Saved d{};d.x[0]=addr(f->app);f->router.event(0x8b020,d);
+        assert(d.pad==arena::SkipOwned && d.x[0]==0xabcdef);
+        d={};d.x[0]=addr(f->camera);f->router.event(0x15df70,d);
+        assert(d.pad==arena::SkipOwned && d.x[0]==0xabcdef);
+    }
     if(late){publication(*f);initialize(*f);} // modeled order only, not a native late path claim
     if(mode=="aba") {arena::Saved s{};s.x[0]=addr(f->camera);f->router.event(0x15df70,s);publication(*f);initialize(*f);}
-    if(mode=="blocked-stock"){blocked=2;listener.join();}
+    if(mode=="blocked-stock" || mode=="unrelated-cleanup"){blocked=2;listener.join();}
     stage=2;owner.join();
     put(f->worker,8,uint64_t(0x123456));f->s={};f->s.sp=0x990000;
     f->s.x[0]=addr(f->worker);f->s.x[20]=addr(f->context);f->event(0x142704);
@@ -132,6 +158,6 @@ int main(int argc,char** argv) {
     f->event(0x1381b8);
     f->s={};f->s.x[0]=addr(f->app);f->event(0x8b020);
     f->s={};f->s.x[0]=addr(f->camera);f->event(0x15df70);
-    assert(init_calls==(absent?0u:(mode=="active-rebind" || mode=="start-aba" || mode=="repeated-init")?2u:1u));
+    assert(init_calls==(absent?0u:(mode=="active-rebind" || mode=="start-aba" || mode=="repeated-init" || mode=="cleanup-straddles-start")?2u:1u));
     std::printf("PASS source Runtime %s init=%u updates=%u properties=%u lostpipes=%u\n",mode.c_str(),init_calls,updates,properties,lostpipes);
 }

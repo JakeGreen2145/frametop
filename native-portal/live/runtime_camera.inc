@@ -8,6 +8,10 @@
     // Serializes only owned decisions. Never held across original/native calls.
     std::mutex camera_join_mutex;
     uint64_t unbound_invocations=0,run_invalidations=0,join_version=0;
+    // Start/Run lifetime is independent of whether P has arrived. Saved scalar
+    // identities only; the slots span complete originals and never grant reads.
+    uint64_t start_application=0,destructive_applications[64]{};
+    bool start_revoked=false;
     bool run_authenticated=false;
     CameraBindingDiagnostic camera_diagnostic{};
     Mailbox<CameraBindingDiagnostic> camera_published;
@@ -155,7 +159,7 @@
         if(camera_owner.bind_stage()>=CameraOwner::BindStage::Published){camera_join_refused(JoinRefusal::Dirty);return;}
         const auto c=camera_owner.candidate();
         if(unbound_invocations || c.inflight){camera_join_refused(JoinRefusal::Inflight);return;}
-        if(c.invalidations!=run_invalidations){camera_join_refused(JoinRefusal::Invalidated);return;}
+        if(start_revoked || c.invalidations!=run_invalidations){camera_join_refused(JoinRefusal::Invalidated);return;}
         if(!c.camera){camera_join_refused(JoinRefusal::NoPublication);return;}
         if(!c.resource_ready){camera_join_refused(JoinRefusal::Resource);return;}
         const auto app=evidence.application_owner();const auto id=evidence.identity();
@@ -193,6 +197,7 @@
         std::abort();
     }
     bool camera_unbound_original(uint64_t pc,arena::Saved& s) noexcept {
+        unsigned destructive_slot=64;
         {
             std::lock_guard<std::mutex> lock(camera_join_mutex);
             if(camera_bound.load())return false;
@@ -201,6 +206,18 @@
             // A partially published epoch MUST NOT take this path.
             if(camera_owner.bind_stage()>=CameraOwner::BindStage::Published || unbound_invocations==64)
                 camera_route_abort(CameraFatalReason::WriterBeforeHandoff,pc);
+            // First Init remains governed by NativeBinding's narrow exception.
+            // App cleanup also revokes R with no P. Camera/resource destruction
+            // uses only the pending publication's saved camera/app identities.
+            const auto c=camera_owner.candidate();
+            const uint64_t application=pc==0x8b020?s.x[0]:
+                ((pc==0x15df70 || pc==0x15e1c8) && c.camera && c.camera==s.x[0]?c.application:0);
+            if(application) {
+                for(unsigned i=0;i<64;++i)if(!destructive_applications[i]){destructive_slot=i;break;}
+                if(destructive_slot==64)camera_route_abort(CameraFatalReason::WriterBeforeHandoff,pc);
+                destructive_applications[destructive_slot]=application;
+                if(application==start_application)start_revoked=true;
+            }
             ++unbound_invocations;camera_snapshot_locked();
         }
         struct Original {Impl* self;uint64_t pc;arena::Saved* saved;};
@@ -222,6 +239,7 @@
         } else {original(&call);s.pad=arena::SkipOwned;}
         {
             std::lock_guard<std::mutex> lock(camera_join_mutex);
+            if(destructive_slot!=64)destructive_applications[destructive_slot]=0;
             --unbound_invocations;camera_snapshot_locked();
         }
         // The suspended original has returned before eligibility is reconsidered.
