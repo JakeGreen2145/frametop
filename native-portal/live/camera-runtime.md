@@ -7,7 +7,7 @@ production build links `camera_owner.cpp`, `camera.cpp`, `camera_gate.cpp` and
 `owner_coordinator.cpp`. `runtime_camera.inc` is part of the actual Runtime
 translation unit and build identity, not a separate demonstration owner.
 
-The base `runtime-sites.json` installs these 18 boundaries:
+The merged `runtime-sites.json` installs these 20 camera boundaries:
 
 - Completed publication `8dc1c`, using x26 camera and x19 application.
 - Precleanup/destruction `8b020`, `15e1c8`, `15df70`, and conservative rebind `162360`.
@@ -15,6 +15,7 @@ The base `runtime-sites.json` installs these 18 boundaries:
 - Connection handlers `1366b0`, `136118`, lost-pipe `13a100`.
 - Policy paths `15d730`, `15d198`, `15d248`.
 - Native acquire/release `15f9e0`, `15fba8`, Set/Clear `15f938`, `15faf8`, and update `15fcc0`.
+- Aggregate decisions inside Release `15fbb8` and Clear `15fb20`. These are not method entries or original-method bypasses.
 
 The loader emits a separate original-method bypass at offset 1536 in each of
 17 method islands. It validates the whole group before patching. Runtime uses
@@ -23,14 +24,19 @@ The saved-state AAPCS64 transport supplies x0-x8 and q0-q7 and captures integer
 and vector results. The original native return is never replaced with a queue
 acknowledgement or guessed success.
 
-Aggregate arbitration additionally requires decision hooks `15fbb8` and `15fb20`.
-The parent-owned loader/emitter merge must install them as coverage bits 18 and 19.
+`Runtime::camera_coverage()` reports the loader's actual installed mask. All 20
+bits are `0xfffff`, with decision hooks `15fbb8` and `15fb20` appended at bits 18
+and 19. Provider-backed portal admission requires all 20 bits; an old 18-entry
+loader cannot authorize the aggregate path. Its `supported` result additionally
+requires current Runtime capability. Standalone `CameraOwner::coverage()` cannot
+claim loader installation. CPU fixtures model callback coverage; they do not
+install native executable bytes.
 See [the bounded repair and hook contract](camera-stock-preservation.md).
-`Runtime::camera_coverage()` and provider-backed portal admission require all 20
-bits, `0xfffff`. An old 18-entry loader cannot authorize the new aggregate path.
-Its `supported` result additionally requires current Runtime capability.
-Standalone `CameraOwner::coverage()` cannot claim loader installation. CPU fixtures
-model callback coverage; they do not install native executable bytes.
+
+The decision island contract and CPU verification are in
+[`camera-decision-hooks.md`](camera-decision-hooks.md). Runtime aggregate policy
+is integrated with these decision islands. Production source admission remains
+absent; installing the islands does not authorize source readiness or live use.
 
 ## Lifetime and queue behavior
 

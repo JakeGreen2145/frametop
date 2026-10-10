@@ -1611,6 +1611,38 @@
         "2": "return-native-method",
         "3": "fail-stop"
       }
+    },
+    {
+      "relative_pc": 1440696,
+      "pc": "0x15fbb8",
+      "guard": "d0ffff9760824d397f2a0d39c0000035",
+      "guard_sha256": "964722f6c64a9622b86c9176bd03dce535c43ae95e6d35e846e84b792ffea1ae",
+      "word": "0x97ffffd0",
+      "kind": 1,
+      "emitter": "camera-decision",
+      "site_id": null,
+      "continuation": "0x15fbbc",
+      "selectors": {
+        "0": "relocated-original",
+        "2": "0x15fbc8",
+        "3": "fail-stop"
+      }
+    },
+    {
+      "relative_pc": 1440544,
+      "pc": "0x15fb20",
+      "guard": "01084091e01f00f921b0433961000034",
+      "guard_sha256": "7ae9fa31be75d65bf77b35d08feddbf70f8f92f234c1bff459e8301620ccf290",
+      "word": "0x91400801",
+      "kind": 0,
+      "emitter": "camera-decision",
+      "site_id": null,
+      "continuation": "0x15fb24",
+      "selectors": {
+        "0": "relocated-original",
+        "2": "0x15fb74",
+        "3": "fail-stop"
+      }
     }
   ],
   "runtime_emitter": {
@@ -1621,7 +1653,8 @@
     "kinds": [
       "replace-call",
       "return-function",
-      "observer-relocated"
+      "observer-relocated",
+      "camera-decision"
     ]
   },
   "sources": [

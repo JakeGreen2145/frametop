@@ -46,12 +46,12 @@ static uint64_t deadline;
 static _Atomic int enabled;
 #include "source_loader.inc"
 EXPORT uint64_t ft_native_portal_camera_coverage(void) {
-    static const uint64_t pcs[]={0x8dc1c,0x8b020,0x15e1c8,0x15df70,0x162360,0x6d6e0,0x6d6f0,0x1366b0,0x136118,0x13a100,0x15d730,0x15d198,0x15d248,0x15f9e0,0x15fba8,0x15f938,0x15faf8,0x15fcc0};
+    static const uint64_t pcs[]={0x8dc1c,0x8b020,0x15e1c8,0x15df70,0x162360,0x6d6e0,0x6d6f0,0x1366b0,0x136118,0x13a100,0x15d730,0x15d198,0x15d248,0x15f9e0,0x15fba8,0x15f938,0x15faf8,0x15fcc0,0x15fbb8,0x15fb20};
     if(getpid()!=self_pid || !image_islands || !atomic_load_explicit(&enabled,memory_order_acquire))return 0;
     uint64_t mask=0;
     for(unsigned k=0;k<sizeof(pcs)/sizeof(*pcs);++k)
         for(unsigned i=0;i<SITE_COUNT;++i)if(sites[i].offset==pcs[k] &&
-            (k==0 || sites[i].emitter==6))mask|=UINT64_C(1)<<k;
+            (k==0 || sites[i].emitter==(k>=18?8:6)))mask|=UINT64_C(1)<<k;
     return mask;
 }
 
@@ -84,7 +84,7 @@ _Static_assert(RUNTIME_CAPACITY+40<=STRIDE,"runtime island plus callback thunk m
 EXPORT size_t ft_loader_emit_site(uint32_t *out,uintptr_t at,uintptr_t base,unsigned id,uintptr_t callback) {
     if(!out || !callback || id>=ALL_SITE_COUNT || ((at|base)&3) || at>UINTPTR_MAX-STRIDE)return 0;
     const struct site *s=site_at(id);
-    if(s->emitter>=5 && s->emitter<=7) {
+    if(s->emitter>=5 && s->emitter<=8) {
         // Keep the runtime emitter's (relative_pc,Saved*) ABI untouched. A
         // bounded per-island tail thunk enters the SAME errno/fork/TTL dispatcher
         // as every donor emitter, using its immutable deduplicated site ID.

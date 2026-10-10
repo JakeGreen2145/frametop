@@ -2,7 +2,9 @@
  * Pinned call/return/ADRP islands, including the merged camera boundary group.
  * Not a generic
  * skip emitter: BL replacement resumes PC+4, method replacement returns native
- * x30. The loader must validate runtime-sites.json's complete original guard.
+ * x30. Interior camera decisions restore state and branch to native continuations,
+ * never inventing x0 or returning from the enclosing method. The loader must
+ * validate runtime-sites.json's complete original guard.
  */
 #include <stdint.h>
 #include <stddef.h>
@@ -24,6 +26,7 @@ static void restore(uint32_t *o,size_t *n) {
 }
 size_t ft_emit_runtime_island(uint32_t *out,uint64_t at,uint64_t base,uint64_t pc,uint64_t callback) {
     uint32_t word=0;int method=0,adrp=0,plain=0;
+    uint64_t skip=0;
     switch(pc) {
     /* The exact instruction words are validated against the pinned ELF in tests. */
     case 0x9eeb0:word=0x9403033e;break;
@@ -50,6 +53,8 @@ size_t ft_emit_runtime_island(uint32_t *out,uint64_t at,uint64_t base,uint64_t p
     case 0x15f938:word=0xa9bc7bfd;method=1;break;
     case 0x15faf8:word=0xa9bc7bfd;method=1;break;
     case 0x15fcc0:word=0xd10d83ff;method=1;break;
+    case 0x15fbb8:word=0x97ffffd0;skip=0x15fbc8;break;
+    case 0x15fb20:word=0x91400801;plain=1;skip=0x15fb74;break;
     default:return 0;
     }
     if(!out || !callback || (at&3) || (base&3))return 0;
@@ -66,7 +71,8 @@ size_t ft_emit_runtime_island(uint32_t *out,uint64_t at,uint64_t base,uint64_t p
     out[n++]=0xf94003e9|(99<<10);const size_t original=n++; /* cbz x9 */
     out[n++]=0xf100093f;const size_t invalid=n++; /* cmp x9,2 ; b.ne */
     restore(out,&n);
-    if(adrp || plain)out[n++]=0xd4200000;else if(method)out[n++]=0xd65f03c0;else if(!branch(out,&n,at,base+pc+4))return 0;
+    if(skip) {if(!branch(out,&n,at,base+skip))return 0;}
+    else if(adrp || plain)out[n++]=0xd4200000;else if(method)out[n++]=0xd65f03c0;else if(!branch(out,&n,at,base+pc+4))return 0;
     const size_t stock=n;restore(out,&n);
     if(adrp) {
         int64_t page=((word>>29)&3)|(((word>>5)&0x7ffff)<<2);

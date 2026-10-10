@@ -108,11 +108,24 @@ int main(int argc,char **argv) {
     b=fixture();size_t len=0;void *islands=make_islands(b,4096,&len);assert(islands!=MAP_FAILED);
     assert(map_range((uintptr_t)islands,len,NULL,0,PROT_READ|PROT_EXEC));
     image_islands=(uintptr_t)islands;atomic_store(&enabled,1);
-    assert(ft_native_portal_camera_coverage()==0x3ffff);
+#ifndef FT_TEST_CAMERA_MASK
+#define FT_TEST_CAMERA_MASK 0xfffff
+#endif
+    const uint64_t mask=ft_native_portal_camera_coverage();
+    assert(mask==FT_TEST_CAMERA_MASK);
+    assert(!ft_native_portal_original(0x15fbb8) && !ft_native_portal_original(0x15fb20));
+    uint32_t unused[8];
+    assert(!ft_emit_camera_cleanup_bypass(unused,0x800000,0,0x15fbb8));
+    assert(!ft_emit_camera_cleanup_bypass(unused,0x800000,0,0x15fb20));
+    unsigned originals=0;
     for(unsigned i=0;i<SITE_COUNT;++i)if(sites[i].emitter==6) {
+        ++originals;
         assert(ft_native_portal_original(sites[i].offset)==image_islands+i*STRIDE+BYPASS_OFFSET);
         assert(*(uint32_t*)ft_native_portal_original(sites[i].offset)==sites[i].word);
     }
+    assert(originals==17);
+    printf("PASS camera installed mask=%#llx required=%d original methods=%u; no interior bypasses\n",
+           (unsigned long long)mask,mask==0xfffff,originals);
     image_islands=0;atomic_store(&enabled,0);munmap(islands,len);munmap((void*)b,0x800000);
     child=fork();assert(child>=0);if(!child) {self_pid=getpid();atomic_store(&enabled,1);deadline=1;dispatch(&r,0);_exit(99);}
     assert(waitpid(child,&status,0)==child&&WIFEXITED(status)&&WEXITSTATUS(status)==190);
