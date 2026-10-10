@@ -2,6 +2,7 @@
 #pragma once
 #include "../runtime/evidence.hpp"
 #include "../binding/pass_gate.hpp"
+#include "camera_owner.hpp"
 #include <memory>
 namespace native_portal::live {
 // Exact 64-bit Vulkan submit layouts for bounded self-reads. The production
@@ -31,16 +32,18 @@ struct Diagnostics {
     Refusal refusal=Refusal::NativeInitialization;
     bool capable=false,pending=false,initialized=false,stopped=false;
 };
+struct SourceAdmission;
 class Runtime {
     struct Impl;std::unique_ptr<Impl> p_;
 public:
-    Runtime();~Runtime();
+    explicit Runtime(SourceAdmission* source=nullptr);~Runtime();
     Runtime(const Runtime&)=delete;Runtime& operator=(const Runtime&)=delete;
     bool pin(uint64_t image_base,const char *sha256) noexcept;
     // Called by launch installer before native callbacks, never from a draw.
     bool start_server(const char *runtime_directory);
     void event(uint64_t relative_pc,arena::Saved &) noexcept;
     Diagnostics diagnostics() const noexcept;
+    CameraCoverage camera_coverage() const noexcept;
     void stop() noexcept; // stop new commits, not native lifetime settlement
 };
 }
@@ -51,4 +54,5 @@ __attribute__((visibility("default"))) bool ft_native_portal_diagnostics(native_
 __attribute__((visibility("default"))) void ft_native_portal_stop() noexcept;
 // AAPCS64 transport. x8 is an actual indirect result pointer, not an x1 argument.
 bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t indirect_result) noexcept;
+bool ft_native_portal_call_saved(uint64_t target,native_portal::arena::Saved*) noexcept;
 }

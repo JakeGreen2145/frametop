@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "runtime.hpp"
+#include "source_admission.hpp"
+extern "C" uint64_t ft_native_portal_original(uint64_t) noexcept __attribute__((weak));
+extern "C" uint64_t ft_native_portal_camera_coverage() noexcept __attribute__((weak));
 #include "policy_sample.hpp"
 #include "diagnostics.hpp"
 #include "command_trace.hpp"
@@ -21,6 +24,11 @@
 #pragma weak ft_pipeline_approved
 #if !defined(__aarch64__) && !defined(FT_NATIVE_PORTAL_TEST_CALL)
 extern "C" bool ft_native_portal_call(uint64_t,uint64_t *,uint64_t) noexcept { return false; }
+#endif
+#if !defined(__aarch64__)
+extern "C" bool ft_native_portal_call_saved(uint64_t target,native_portal::arena::Saved* s) noexcept {
+    return ft_native_portal_call(target,s->x,s->x[8]); // explicit CPU fixture transport
+}
 #endif
 namespace native_portal::live {
 using namespace render;
@@ -73,9 +81,7 @@ struct Runtime::Impl {
     bool available=false,stock_active=false,native_portal_policy=false;
     bool transition_handled=false;uint64_t transition_result=0;
     bool layer_effective=false;
-    bool external_call=false,policy_ready=false,claimed_layer=false;
-    std::array<uint64_t,8> external_args{};
-    uint64_t external_target=0;
+    bool policy_ready=false,claimed_layer=false;
 
     Backend backend;runtime::Evidence evidence;arena::Bridge bridge{evidence.bridge_memory()};
     std::unique_ptr<Server> server;
@@ -142,7 +148,8 @@ struct Runtime::Impl {
         uint64_t empty=0;first_stop.compare_exchange_strong(empty,(lr<<32)|(flags<<24)|pc);stopped=true;
     }
     std::atomic<bool> collector_stop{false};std::thread collector;
-    Impl(){published.publish(diag);live_published.publish(live);}
+    #include "runtime_camera.inc"
+    explicit Impl(SourceAdmission* admission):source(admission){published.publish(diag);live_published.publish(live);}
     ~Impl(){collector_stop=true;if(collector.joinable())collector.join();}
     void collect() {
         collector=std::thread([this] {
@@ -201,7 +208,7 @@ struct Runtime::Impl {
         diag.refusal=why;diag.capable=false;
     }
     void publish() noexcept {
-        if(adapter)diag.pending=adapter->state().pending;
+        if(adapter)diag.pending=adapter->state().pending || camera_debt;
         BackendStatus status{};if(backend.status(status))diag.submitted_frame=status.submitted_frame;
         diag.origin=origin_epoch;diag.stopped=stopped.load();published.publish(diag);
         live.events=diag.events;live.frames=diag.frames;live.refusal=diag.refusal;
@@ -323,18 +330,12 @@ struct Runtime::Impl {
         if(!adapter->initialize()){refuse(Refusal::Adapter);return false;}
         runtime_owned=true;diag.capable=true;diag.refusal=Refusal::None;return true;
     }
-    bool in_native_demand=false,transition_called=false;
+    bool transition_called=false;
     static bool acquire(void *u) noexcept {return static_cast<Impl*>(u)->camera_transition(true);}
     static bool release(void *u) noexcept {return static_cast<Impl*>(u)->camera_transition(false);}
     bool camera_transition(bool acquiring) noexcept {
-        Registers r{};r.target=base+(acquiring?0x15f9e0:0x15fba8);
-        r.x={camera,2,0,0,0,0,0,0};
-        if(external_call) {r.target=external_target;r.x=external_args;}
-        in_native_demand=true;const bool called=call(r);in_native_demand=false;
-        transition_result=r.x[0];transition_called=called;
-        uint8_t active=1,state=1;
-        if(!called || !get(camera+0x34a,active) || !get(camera+0x360,state))return false;
-        return acquiring?(uint8_t(r.x[0])!=0 && active!=0):(active==0 && state==0);
+        if(camera_bound.load())return camera_owned_transition(acquiring);
+        return false;
     }
     bool signal(uint64_t resource,binding::Signal &s) noexcept {
         s={};return get(resource+0x10,s.synchronization) && get(resource+0x18,s.serial) && get(resource+0x20,s.subserial);
@@ -418,6 +419,7 @@ struct Runtime::Impl {
     }
     void event(uint64_t pc,arena::Saved &s) noexcept {
         if(!pinned || getpid()!=pid)return;
+        if(camera_route(pc,s))return;
         // Shutdown guard is owned by the original initializer thread. It pairs
         // the real timed wait and actual pthread_join result before cleanup.
         const bool shutdown_store=pc==0x1426d4 && tid()==bootstrap_tid && context &&
@@ -435,7 +437,7 @@ struct Runtime::Impl {
             }
             // Explicit bounded-trial fail-stop, not a fabricated join, silent
             // queue cancellation or a speculative blocking wait inside Run locks.
-            if(pc==0x1381b8 && runtime_owned.load() && !joined.load())std::abort();
+            if(pc==0x1381b8 && (runtime_owned.load() || camera_bound.load()) && !joined.load())std::abort();
         }
         if(pc==0x14099c || pc==0x140dbc || pc==0x14e5a8) {
             command_trace.push(pc,s,base,tid(),owner_tid.load(),CommandTrace::OwnerEvent);
@@ -447,7 +449,7 @@ struct Runtime::Impl {
                 owner_events.fetch_or(1ull<<(owner_bit+1));
                 if(pc==0x14099c){worker=s.x[19];context=s.x[21];}
                 if(pc==0x140dbc)handoff_wait=true;
-                if(pc==0x14e5a8){owner_tid=tid();handoff_wait=false;}
+                if(pc==0x14e5a8){owner_tid=tid();handoff_wait=false;camera_handoff();}
             } else owner_rejected(pc,predicate);
             return;
         }
@@ -466,6 +468,7 @@ struct Runtime::Impl {
             return;
         }
         if(external_pending.exchange(false) && demand) {demand->external_observed();owned=false;}
+        camera_maintenance(stopped.load());
         ++diag.events;live.pc=pc;
         constexpr uint64_t phase_pcs[]={0x7fda0,0x7fdbc,0x147a48,0x112b58,0x63920,0x1480b8,
             0x161d64,0x161d68,0x161ed8,0x2a1e18,0x29f1e8,0x3021d4,0x3021d8,0x316120,0x300a38};
@@ -499,19 +502,6 @@ struct Runtime::Impl {
         }
         if((pc==0x112e50 || pc==0x1130a8) && uint8_t(s.x[1])) {
             backend.invalidate(Reason::External);owned=false;
-        }
-        if((pc==0x15f9e0 || pc==0x15fba8) && !in_native_demand)
-            command_trace.push(pc,s,base,tid(),owner_tid.load(),CommandTrace::Owner);
-        if((pc==0x15f9e0 || pc==0x15fba8) && demand && s.x[0]==camera && !in_native_demand) {
-            // Raw methods include all native callers, not merely the public
-            // RoomView wrappers. Reenter the original through one guarded call,
-            // then the site-specific FUNCTION-RETURN island restores native LR.
-            external_call=true;external_target=base+pc;
-            for(unsigned i=0;i<8;++i)external_args[i]=s.x[i];
-            const bool ok=demand->external(pc==0x15f9e0,pc==0x15f9e0?acquire:release,this);
-            command_trace.push(pc,s,base,tid(),owner_tid.load(),CommandTrace::Owner,nullptr,transition_called,transition_result);
-            external_call=false;owned=false;s.x[0]=transition_result;s.pad=arena::SkipOwned;
-            if(!ok)refuse(Refusal::Policy);
         }
         if(pc==0x9ee5c && outer)available=uint8_t(s.x[0])!=0;
         if(pc==0x9ee98 && outer && demand && (owned || demand->owned_debt())) {
@@ -601,7 +591,9 @@ struct Runtime::Impl {
                 return ok;
             };
             live.assoc_fallback=false;
-            bool selected=association_check(8,application_owner.worker && outer_owner==application_owner.worker &&
+            CameraBinding held_camera;
+            const bool retained=camera_bound.load() && camera_owner.retained_binding(held_camera);
+            bool selected=retained && association_check(8,application_owner.worker && outer_owner==application_owner.worker &&
                     context==application_owner.context) &&
                 association_check(1,get(outer_owner+0x48,native_context)) &&
                 association_check(2,native_context==context) && association_check(3,get(context+0x1a8,application));
@@ -616,7 +608,7 @@ struct Runtime::Impl {
             const bool associated=selected && association_check(4,application!=0) &&
                 association_check(12,application==application_owner.application) &&
                 association_check(5,get(application+0x25320,camera)) &&
-                association_check(6,camera!=0) && association_check(7,get(application+0x2568c,cache)) &&
+                association_check(6,camera!=0 && camera==held_camera.camera) && association_check(7,get(application+0x2568c,cache)) &&
                 association_check(13,get(application+0x256a0,renderer)) &&
                 association_check(14,renderer==identity.renderer) &&
                 association_check(15,get(renderer+0xa78,device)) && association_check(16,device==identity.device);
@@ -636,11 +628,11 @@ struct Runtime::Impl {
             live.camera_h0=h0;live.camera_h1=h1;
             if(idle && !live.idle_first)live.idle_first=frame_number;
             if(!demand && evidence.graph_capable())demand.emplace(&backend);
-            if(demand && idle && !backend.render_pending())demand->establish(true,true);
+            if(demand && camera_ready() && idle && !backend.render_pending())demand->establish(true,true);
             BackendStatus status{};backend.status(status);
             status.origin=origin_epoch;status.serialized=evidence.graph_capable();
             const bool pipeline_abi=ft_pipeline_begin && ft_pipeline_end && ft_pipeline_approved && evidence.identity().device_generation;
-            status.capable=status.serialized && pipeline_abi && origin_ok && origin_epoch && demand && (demand->can_acquire() || demand->owned_debt());
+            status.capable=camera_ready() && status.serialized && pipeline_abi && origin_ok && origin_epoch && demand && (demand->can_acquire() || demand->owned_debt());
             if(!pipeline_abi)refuse(Refusal::PipelineAbi);
             else if(!associated)refuse(Refusal::NativeRead);
             status.external_clear=policy_ready && !policy.request && !policy.construct && !policy.forced && (!policy.special || policy.normal_construct);
@@ -706,6 +698,7 @@ struct Runtime::Impl {
             }
         }
         if(pc==0x148de0 && outer && s.sp==outer_sp) {if(adapter && frame.id==frame_number)adapter->outer_return();outer=false;owned=false;claimed_layer=false;}
+        if(pc==0x2a1e18)camera_commit_debt();
         if(adapter && pc==0x2a1e18 && s.x[0]==binding.identity.renderer && !uint32_t(s.x[1])) {
             Observation observation{};
             if(evidence.snapshot(wrapper,marker,observation)) {
@@ -759,13 +752,14 @@ struct Runtime::Impl {
         }
         if(adapter && (pc==0x300c54 || pc==0x300a38)) {
             adapter->reclaim();
-            if(command && !adapter->state().pending && evidence.release_lifecycle())command.reset();
+            camera_maintenance(stopped.load());
+            if(command && !camera_debt && !adapter->state().pending && evidence.release_lifecycle())command.reset();
         }
         publish();
     }
     uint64_t backend_pipeline=0;
 };
-Runtime::Runtime():p_(new Impl){}
+Runtime::Runtime(SourceAdmission* source):p_(new Impl(source)){}
 Runtime::~Runtime()=default;
 bool Runtime::pin(uint64_t b,const char *sha) noexcept {
     if(!p_->evidence.pin(b,sha))return false;
@@ -781,6 +775,13 @@ bool Runtime::start_server(const char *path) {
 }
 void Runtime::event(uint64_t pc,arena::Saved &r) noexcept {p_->event(pc,r);}
 Diagnostics Runtime::diagnostics() const noexcept {Diagnostics d{};p_->published.read(d);return d;}
+CameraCoverage Runtime::camera_coverage() const noexcept {
+    const uint64_t mask=ft_native_portal_camera_coverage?ft_native_portal_camera_coverage():0;
+    const bool installed=mask==0x3ffff;
+    return {installed && diagnostics().capable,mask,installed?
+        "native entries installed; source/provider admission and rebind association remain separately checked":
+        "loader camera boundary group not installed"};
+}
 void Runtime::stop() noexcept {p_->stopped=true;p_->backend.invalidate(Reason::Off);}
 }
 namespace {std::atomic<native_portal::live::Runtime*> live_runtime{nullptr};}

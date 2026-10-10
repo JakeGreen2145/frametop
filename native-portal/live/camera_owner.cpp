@@ -21,12 +21,36 @@ co::Retention CameraOwner::retention() noexcept {
 bool CameraOwner::observe_publication(uint64_t pc,const arena::Saved& saved) {
     return owner() && !bound_ && native_.observe_publication(pc,saved);
 }
+bool CameraOwner::bind_handoff(const CameraBinding& binding,uint64_t generation,size_t capacity) {
+    if(process_!=getpid() || bound_ || active_)return false;
+    const auto prior=owner_;owner_=std::this_thread::get_id();
+    if(bind(binding,generation,capacity))return true;
+    owner_=prior;return false;
+}
+bool CameraOwner::retained_binding(CameraBinding& b) const {
+    return owner() && barrier_ && gate_.lookup(barrier_,b);
+}
+co::DemandSnapshot CameraOwner::snapshot() const {
+    if(owner() && demand_)return demand_->snapshot();
+    co::DemandSnapshot s;s.fault=true;return s;
+}
+co::NativeReceipt CameraOwner::direct(const NativeMutation& fn) {
+    if(!owner() || active_ || closing_ || !barrier_)return {};
+    // Reserve in the SAME FIFO as listeners. submit executes inline only if it
+    // really is first. Never overtake an earlier retain or self-wait behind it.
+    const auto submission=submit(epoch_,generation_,fn);if(!submission.id)return {};
+    queue_->pump();co::Result result;
+    if(!queue_->take(submission.id,result)) {
+        if(!queue_->cancel(submission.id) || !queue_->take(submission.id,result))std::terminate();
+    }
+    return result.native;
+}
 bool CameraOwner::bind(const CameraBinding& binding,uint64_t generation,size_t capacity) {
     if(!owner() || bound_ || !generation || !capacity || capacity>co::OwnerCoordinator::MaxSlots)return false;
     if(!native_.bind(binding,owner_,epoch_))return false;
     // This ticket is acquired BEFORE close, never manufactured by drain. A
     // concurrent precleanup can instead win and make this generation unusable.
-    bound_=true;
+    bound_=true;generation_=generation;
     if(!gate_.retain(epoch_,barrier_))return false;
     queue_.emplace(epoch_,generation,capacity,retention());
     demand_.emplace(epoch_,generation,retention());return true;

@@ -1,16 +1,19 @@
 # Camera-owner composition
 
 `camera_owner.hpp/.cpp` composes the real `CameraAccessGate`,
-`CameraNativeBinding`, `OwnerCoordinator` and `DemandArbiter`. It does not install
-hooks or replace `Runtime`. `CameraOwner::coverage()` deliberately returns
-`supported=false` and `installed_boundaries=0`. Building or testing this component
-cannot enable live camera admission.
+`CameraNativeBinding`, `OwnerCoordinator` and `DemandArbiter`. The actual Runtime
+now owns this composition; see [runtime integration](camera-runtime.md).
+`CameraOwner::coverage()` remains a standalone component result. Use
+`Runtime::camera_coverage()` for the loader's installed boundary mask and current
+admission. Building or testing this component alone cannot enable live admission.
 
 ## Lifetime and execution
 
-Construct on the authenticated render owner. Observe completed camera publication
-at `0x8dc1c`, then call `bind` with independently authenticated renderer, device and
-association generations. Publish the instance to listeners only after binding.
+Construct on bootstrap and observe completed camera publication at `0x8dc1c`.
+After Evidence authenticates Run, use `bind_handoff` with the independently
+authenticated renderer/device/association identities. Direct component fixtures
+may still construct and `bind` on one owner. Publish the instance to listeners
+only after binding.
 One instance serves one camera lifetime. Do not reconstruct it to clear a fault.
 
 Binding acquires a real gate ticket for the closing barrier. Both the mutation
@@ -138,14 +141,11 @@ reattach change. Regular and ASan/UBSan composition runs pass. The focused gate,
 native-binding and original owner-coordinator suites also pass; the coordinator
 suite passes ASan/UBSan as well. No GPU or device operation is exercised here.
 
-## Remaining global integration
+## Runtime integration boundary
 
-Native publication and cleanup component code exists, but the live loader does
-not install this owner. Remaining coverage includes application precleanup
-`0x8b020`, rebind `0x162360`, all application and connection acquire/release/lost-pipe
-callers, policy acquire/release/teardown, direct shared-demand Set/Clear and bank
-migration, retained backend/association lifetimes, and actual owner-loop pumping.
-Existing shutdown/join guards must remain tied to the exact worker and real join
-result. Native service/provider/alias/header provenance and source-settlement
-callbacks must be bound before live reattach or frame admission. Full renderer
-frame gates and the current shader-only aperture remain unchanged.
+The merged loader now installs the camera group and Runtime pumps its retained
+owner FIFO. See [runtime integration](camera-runtime.md) for exact installed PCs,
+positive real-router tests and limitations. Native source/provider admission,
+precise rebind association, unclassified lost-pipe identity and co-owned mutation
+over committed source work remain explicit unsupported cases. No live activation
+or GPU result follows from the CPU fixtures.

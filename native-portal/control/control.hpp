@@ -55,18 +55,19 @@ struct BackendStatus {
 // production the default stays unsupported. Submission is an observer fact.
 class Backend {
     Mailbox<BackendStatus> status_; Mailbox<Lease> lease_; std::atomic<bool> collision_{false};
-    std::atomic<bool> render_pending_{false};
+    std::atomic<bool> render_pending_{false},camera_pending_{false};
     std::atomic<uint64_t> revoked_{0}; std::atomic<Reason> blocked_{Reason::None}; std::atomic<bool> new_ready_{true};
 public:
     Backend() { status_.publish(BackendStatus{}); lease_.publish(Lease{}); }
     // Single render owner; independent of lease revocation and demand settlement.
     void render_pending(bool value) noexcept { render_pending_=value; }
-    bool render_pending() const noexcept { return render_pending_.load(); }
+    void camera_pending(bool value) noexcept { camera_pending_=value; }
+    bool render_pending() const noexcept { return render_pending_.load() || camera_pending_.load(); }
     void refuse() noexcept { collision_=true; }
     bool publish(const BackendStatus& s) { if(status_.publish(s))return true; collision_=true; return false; }
     bool status(BackendStatus& s) const {
         if(collision_||!status_.read(s))return false;
-        s.pending=render_pending_.load();
+        s.pending=render_pending();
         auto reason=blocked_.load();
         if(reason!=Reason::None)s.external_clear=false;
         if(reason==Reason::NativeFault)s.fault=true;
@@ -76,7 +77,7 @@ public:
     void invalidate(Reason r) noexcept { blocked_=r; if(revoked_.fetch_add(1)==UINT64_MAX)refuse(); }
     void settled() noexcept { blocked_=Reason::None; } // native owner, verified idle only
     void new_lease_ready(bool value) noexcept { new_ready_=value; }
-    bool new_lease_ready() const noexcept { return new_ready_.load()&&!render_pending_.load(); }
+    bool new_lease_ready() const noexcept { return new_ready_.load()&&!render_pending(); }
     bool lease(Lease& out,uint64_t now) const;
     bool publish_lease(const Lease& l) { if(lease_.publish(l))return true; collision_=true; return false; }
 };

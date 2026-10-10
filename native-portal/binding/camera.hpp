@@ -4,9 +4,9 @@
 #include "../arena/bridge.hpp"
 
 namespace native_portal::binding {
-// Source-equivalent binding for THREE established native boundaries only.
-// Not installed by the live loader. Parent must integrate every selected entry,
-// application precleanup and rebind before permitting any live camera admission.
+// Completed publication and synchronous destructive-boundary interlock.
+// Runtime supplies authenticated owner/bypass execution. Rebind conservatively
+// closes the bound generation until an exact association contract is available.
 class CameraNativeBinding final {
 public:
     enum class Dispatch { Completed, ForwardedUnrelated, Refused };

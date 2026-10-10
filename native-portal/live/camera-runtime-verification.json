@@ -1,0 +1,126 @@
+{
+  "elf_sha256": "9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265",
+  "scope": "CPU-only actual Runtime and merged loader; native service/GPU/source boundaries modeled; no device activation",
+  "memory_max": "256M",
+  "memory_swap_max": 0,
+  "runtime": [
+    {
+      "mode": "--absent",
+      "code": 0,
+      "sanitize": false
+    },
+    {
+      "mode": "--no-source",
+      "code": 0,
+      "sanitize": false
+    },
+    {
+      "mode": "--positive",
+      "code": 0,
+      "sanitize": false
+    },
+    {
+      "mode": "--no-gpu",
+      "code": -6,
+      "sanitize": false
+    },
+    {
+      "mode": "--no-cpu",
+      "code": -6,
+      "sanitize": false
+    },
+    {
+      "mode": "--no-source-return",
+      "code": -6,
+      "sanitize": false
+    },
+    {
+      "mode": "--foreign-debt",
+      "code": -6,
+      "sanitize": false
+    },
+    {
+      "mode": "--partial-receipt",
+      "code": -6,
+      "sanitize": false
+    },
+    {
+      "mode": "--timeout",
+      "code": -6,
+      "sanitize": false
+    },
+    {
+      "mode": "--join-error",
+      "code": -6,
+      "sanitize": false
+    }
+  ],
+  "runtime_asan_ubsan": [
+    {
+      "mode": "--absent",
+      "code": 0,
+      "sanitize": true
+    },
+    {
+      "mode": "--no-source",
+      "code": 0,
+      "sanitize": true
+    },
+    {
+      "mode": "--positive",
+      "code": 0,
+      "sanitize": true
+    },
+    {
+      "mode": "--no-gpu",
+      "code": -6,
+      "sanitize": true
+    },
+    {
+      "mode": "--no-cpu",
+      "code": -6,
+      "sanitize": true
+    },
+    {
+      "mode": "--no-source-return",
+      "code": -6,
+      "sanitize": true
+    },
+    {
+      "mode": "--foreign-debt",
+      "code": -6,
+      "sanitize": true
+    },
+    {
+      "mode": "--partial-receipt",
+      "code": -6,
+      "sanitize": true
+    },
+    {
+      "mode": "--timeout",
+      "code": -6,
+      "sanitize": true
+    },
+    {
+      "mode": "--join-error",
+      "code": -6,
+      "sanitize": true
+    }
+  ],
+  "camera_method_routes": 68,
+  "loader_results": [
+    "PASS exact ELF file hash and mapped identity, missing/mismatch refusal",
+    "PASS loader gates/fork/TTL; 123 sites, 47 text pages; all precommit failures and fatal postpatch/rollback failures",
+    "PASS real inert preload default-off/wrong opt-in/noncompositor, strong-link missing-router refusal",
+    "PASS actual merged loader emitter instruction replays: 906",
+    "PASS merged camera method/bypass routes: 68"
+  ],
+  "unverified": [
+    "ARM64 production DSO deployment",
+    "live provider/source admission",
+    "exact rebind receiver association",
+    "co-owned source mutations while committed debt exists",
+    "migration of every preexisting unrestricted router fixture",
+    "independent integration review"
+  ]
+}

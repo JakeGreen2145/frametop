@@ -33,9 +33,27 @@ extern void ft_native_portal_event(uint64_t pc,struct saved *saved);
 extern _Bool ft_native_portal_start(uint64_t base,const char *sha,const char *runtime_directory);
 extern uint64_t ft_pipeline_generation(void *device);
 static pid_t self_pid;
-static uintptr_t image_base;
+static uintptr_t image_base, image_islands;
+#define BYPASS_OFFSET 1536
+extern size_t ft_emit_camera_cleanup_bypass(uint32_t*,uint64_t,uint64_t,uint64_t);
+EXPORT uint64_t ft_native_portal_original(uint64_t pc) {
+    if(getpid()!=self_pid || !image_islands)return 0;
+    for(unsigned i=0;i<SITE_COUNT;++i)
+        if(sites[i].offset==pc && sites[i].emitter==6)return image_islands+i*STRIDE+BYPASS_OFFSET;
+    return 0;
+}
 static uint64_t deadline;
 static _Atomic int enabled;
+EXPORT uint64_t ft_native_portal_camera_coverage(void) {
+    static const uint64_t pcs[]={0x8dc1c,0x8b020,0x15e1c8,0x15df70,0x162360,0x6d6e0,0x6d6f0,0x1366b0,0x136118,0x13a100,0x15d730,0x15d198,0x15d248,0x15f9e0,0x15fba8,0x15f938,0x15faf8,0x15fcc0};
+    if(getpid()!=self_pid || !image_islands || !atomic_load_explicit(&enabled,memory_order_acquire))return 0;
+    uint64_t mask=0;
+    for(unsigned k=0;k<sizeof(pcs)/sizeof(*pcs);++k)
+        for(unsigned i=0;i<SITE_COUNT;++i)if(sites[i].offset==pcs[k] &&
+            (k==0 || sites[i].emitter==6))mask|=UINT64_C(1)<<k;
+    return mask;
+}
+
 EXPORT uint64_t ft_native_portal_image_base(void) { return getpid()==self_pid?image_base:0; }
 static uint64_t now_ns(void) {
     struct timespec t;if(clock_gettime(CLOCK_BOOTTIME,&t))return 0;
@@ -127,7 +145,10 @@ static void *make_islands(uintptr_t base,size_t ps,size_t *length) {
         int ok=(uintptr_t)p==at;
         for(unsigned i=0;ok && i<SITE_COUNT;i++) {
             size_t n=ft_loader_emit_site((uint32_t*)((char*)p+i*STRIDE),at+i*STRIDE,base,i,(uintptr_t)dispatch);
-            uint32_t word;ok=n && n<=STRIDE && branch_word(base+sites[i].offset,at+i*STRIDE,&word);
+            uint32_t word;ok=n && n<=BYPASS_OFFSET && branch_word(base+sites[i].offset,at+i*STRIDE,&word);
+            if(ok && sites[i].emitter==6)
+                ok=ft_emit_camera_cleanup_bypass((uint32_t*)((char*)p+i*STRIDE+BYPASS_OFFSET),
+                    at+i*STRIDE+BYPASS_OFFSET,base,sites[i].offset)==8;
         }
         if(ok) {__builtin___clear_cache(p,(char*)p+*length);ok=!mprotect(p,*length,PROT_READ|PROT_EXEC);}
         if(ok && map_range(at,*length,NULL,0,PROT_READ|PROT_EXEC))return p;
@@ -198,6 +219,7 @@ __attribute__((constructor)) static void launch(void) {
     if(!one_thread() || !guards(m.base) || !install_words(m.base,(uintptr_t)islands,ps,mprotect)) {
         munmap(islands,length);close(fd);if(sigprocmask(SIG_SETMASK,&old,NULL))fatal(95);return;
     }
+    image_islands=(uintptr_t)islands;
     atomic_store_explicit(&enabled,1,memory_order_release);
     // No native thread exists yet. Server creation is deferred until the complete
     // hook group is installed; failure from here cannot return into native code.

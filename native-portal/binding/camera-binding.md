@@ -1,8 +1,9 @@
 # Camera publication and cleanup binding
 
-Separate from the gate component. These pieces are CPU-tested and **not installed
-in the live loader manifest**. No live admission, stock demand, renderer join,
-Off or committed-frame policy is changed.
+The actual Runtime and merged loader now use this binding. See
+[Runtime camera integration](../live/camera-runtime.md) for installed entry,
+prelookup, cleanup and bypass coverage. The component tests below remain
+CPU-only evidence, not live source admission or GPU proof.
 
 ## Implemented contract
 
@@ -41,8 +42,8 @@ second eye; its original ticket remains valid for lookup.
 
 `binding/camera-sites.json` pins the three 16-byte guards against ELF SHA-256
 `9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265`.
-The existing runtime emitter now supports these three PCs, but the live manifest,
-loader preparation and runtime router do not install or dispatch them.
+The live manifest includes these three PCs and the other camera writer and
+precleanup boundaries. Loader preparation and Runtime dispatch the complete group.
 
 `ft_emit_camera_cleanup_bypass(out, at, base, pc)` emits the exact displaced
 prologue plus a branch to the original method's PC+4. The integration's original
@@ -58,19 +59,13 @@ GPRs, SIMD registers, SP, NZCV, FPCR/FPSR and prologue stack writes. It delibera
 clobbers callback registers. Refusal traps before the destructive continuation.
 Native cleanup bodies are explicit synthetic callbacks, not GPU/IPC execution.
 
-## Parent composition still required
+## Integration limits
 
-The phase3 boundary inventory is an obligation list, not proof that current hooks
-interlock anything. This change supplies only publication and exact camera
-cleanup building blocks. Parent must compose the owner coordinator and cover
-retention before context/direct-or-fallback application/camera lookup, application
-precleanup0x8b020, rebind0x162360, renderer/controller/connection/lost-pipe writers,
-direct shared-demand mutations, backend/association teardown and all selected
-caller contracts. Unknown nested mutation/cleanup paths must remain fail-closed.
-
-Do not enable these methods as a partial live gate. Do not weaken actual worker
-join guards, invent native successful results, or treat quiescent tickets as GPU
-or source reuse evidence. Shader/DMA contracts are separate Desktop work.
+Publication and camera cleanup are composed with the owner coordinator in the
+actual Runtime. Source/provider proof remains default-null, and rebind association
+is conservative rather than guessed. Unknown nested mutation/cleanup paths stay
+fail-closed. The current native source path does not require an invented DMA fence.
+See the runtime integration report for the exact verified and unsupported scope.
 
 ## Focused verification
 

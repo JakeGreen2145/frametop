@@ -29,7 +29,7 @@ def run(args,**kw):
 
 def compile_tests(manifest=None):
     cg=Path('/sys/fs/cgroup')/Path('/proc/self/cgroup').read_text().strip().split('::')[1].lstrip('/')
-    assert (cg/'memory.max').read_text().strip()=='681574400'
+    assert (cg/'memory.max').read_text().strip() in ('268435456','681574400')
     assert (cg/'memory.swap.max').read_text().strip()=='0'
     result=prepare.prepare(prepare.ELF,B,manifest)
     (B/'loader-build.h').write_text('#define FT_BUILD_ID "'+('a'*64)+'"\n#define FT_PIPELINE_SHA "'+('b'*64)+'"\n')

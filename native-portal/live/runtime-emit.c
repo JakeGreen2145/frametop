@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: MIT
- * Pinned call/return/ADRP islands. Camera lifetime sites are tested but remain
- * absent from the live loader manifest until full entry coverage is integrated.
+ * Pinned call/return/ADRP islands, including the merged camera boundary group.
  * Not a generic
  * skip emitter: BL replacement resumes PC+4, method replacement returns native
  * x30. The loader must validate runtime-sites.json's complete original guard.
@@ -38,6 +37,19 @@ size_t ft_emit_runtime_island(uint32_t *out,uint64_t at,uint64_t base,uint64_t p
     case 0x8dc1c:word=0x910cc000;plain=1;break;
     case 0x15e1c8:word=0xa9be7bfd;method=1;break;
     case 0x15df70:word=0xa9be7bfd;method=1;break;
+    case 0x8b020:word=0xa9ba7bfd;method=1;break;
+    case 0x162360:word=0xa9b87bfd;method=1;break;
+    case 0x6d6e0:word=0x91408000;method=1;break;
+    case 0x6d6f0:word=0x91408000;method=1;break;
+    case 0x1366b0:word=0xa9be7bfd;method=1;break;
+    case 0x136118:word=0xa9be7bfd;method=1;break;
+    case 0x13a100:word=0xa9b27bfd;method=1;break;
+    case 0x15d730:word=0xa9b97bfd;method=1;break;
+    case 0x15d198:word=0xf9400401;method=1;break;
+    case 0x15d248:word=0xa9be7bfd;method=1;break;
+    case 0x15f938:word=0xa9bc7bfd;method=1;break;
+    case 0x15faf8:word=0xa9bc7bfd;method=1;break;
+    case 0x15fcc0:word=0xd10d83ff;method=1;break;
     default:return 0;
     }
     if(!out || !callback || (at&3) || (base&3))return 0;
@@ -77,12 +89,32 @@ size_t ft_emit_runtime_island(uint32_t *out,uint64_t at,uint64_t base,uint64_t p
 /* Invoke the complete original cleanup synchronously without reentering its
  * patched entry. The caller uses the ordinary native call transport with this
  * address as target. The native epilogue returns to that transport's LR.
- * Not installed or executable until the loader has validated camera-sites.json.
+ * Installed only with the complete validated runtime-sites.json group.
  */
 size_t ft_emit_camera_cleanup_bypass(uint32_t *out,uint64_t at,uint64_t base,uint64_t pc) {
-    if(!out || (at&3) || (base&3) || (pc!=0x15e1c8 && pc!=0x15df70))return 0;
-    size_t n=0;
-    out[n++]=0xa9be7bfd; /* exact pinned STP x29,x30,[sp,#-32]! */
+    if(!out || (at&3) || (base&3))return 0;
+    uint32_t word=0;
+    switch(pc) {
+    case 0x8b020:word=0xa9ba7bfd;break;
+    case 0x15e1c8:word=0xa9be7bfd;break;
+    case 0x15df70:word=0xa9be7bfd;break;
+    case 0x162360:word=0xa9b87bfd;break;
+    case 0x6d6e0:word=0x91408000;break;
+    case 0x6d6f0:word=0x91408000;break;
+    case 0x1366b0:word=0xa9be7bfd;break;
+    case 0x136118:word=0xa9be7bfd;break;
+    case 0x13a100:word=0xa9b27bfd;break;
+    case 0x15d730:word=0xa9b97bfd;break;
+    case 0x15d198:word=0xf9400401;break;
+    case 0x15d248:word=0xa9be7bfd;break;
+    case 0x15f938:word=0xa9bc7bfd;break;
+    case 0x15faf8:word=0xa9bc7bfd;break;
+    case 0x15fcc0:word=0xd10d83ff;break;
+    case 0x15f9e0:word=0xa9be7bfd;break;
+    case 0x15fba8:word=0xa9be7bfd;break;
+    default:return 0;
+    }
+    size_t n=0;out[n++]=word;
     if(!branch(out,&n,at,base+pc+4))return 0;
     return n*4;
 }

@@ -19,7 +19,7 @@ EVIDENCE = [0x7fda0,0x301808,0x30180c,0x3003d0,0x311648,0x4b3d0,0x305260,0x2953a
 EMITTERS = {'observer':0, 'arena':1, 'pass':2, 'lifecycle':3, 'enqueue':4,
             'replace-call':5, 'return-function':6, 'observer-relocated':7}
 RUNTIME = {'replace-call':[0x9eeb0,0xa050c,0x161ed8,0x29f200],
-           'return-function':[0x15f9e0,0x15fba8], 'observer-relocated':[0x4b3d0,0x142708]}
+           'return-function':[0x8b020,0x15e1c8,0x15df70,0x162360,0x6d6e0,0x6d6f0,0x1366b0,0x136118,0x13a100,0x15d730,0x15d198,0x15d248,0x15f938,0x15faf8,0x15fcc0,0x15f9e0,0x15fba8], 'observer-relocated':[0x4b3d0,0x142708]}
 
 def number(v):
     if isinstance(v, bool): raise ValueError('boolean address')

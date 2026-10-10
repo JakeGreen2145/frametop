@@ -26,11 +26,11 @@ bool CameraNativeBinding::publish_completed(uint64_t pc,const arena::Saved& s,
 CameraNativeBinding::Dispatch CameraNativeBinding::cleanup(uint64_t pc,arena::Saved& s,
     CameraAccessGate::Cleanup original,void* argument,std::chrono::milliseconds timeout) {
     s.pad=arena::Unsupported;
-    if(process_!=getpid() || (pc!=0x15e1c8 && pc!=0x15df70))return Dispatch::Refused;
+    if(process_!=getpid() || (pc!=0x15e1c8 && pc!=0x15df70 && pc!=0x8b020 && pc!=0x162360))return Dispatch::Refused;
     uint64_t e=0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if(epoch_ && camera_==s.x[0]) {
+        if(epoch_ && (camera_==s.x[0] || (pc==0x8b020 && application_==s.x[0]) || pc==0x162360)) {
             e=epoch_;
             // Close under the binding lock so a publisher cannot race this
             // classification. Neither lock is held across the native call.
@@ -38,7 +38,7 @@ CameraNativeBinding::Dispatch CameraNativeBinding::cleanup(uint64_t pc,arena::Sa
         } else if(original) {
             // Pending publication is not retention. Revoke it BEFORE any
             // unbound native cleanup, so later backend readiness cannot bind it.
-            if(camera_==s.x[0]) {camera_=0;application_=0;}
+            if(camera_==s.x[0] || (pc==0x8b020 && application_==s.x[0]) || pc==0x162360) {camera_=0;application_=0;}
             if(unrelated_inflight_==UINT64_MAX)return Dispatch::Refused;
             ++unrelated_inflight_;
         }

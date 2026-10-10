@@ -15,7 +15,7 @@ struct CameraCoverage {
 
 // One completed camera publication, one backend binding, one owner. Bind before
 // publishing this instance to listener threads; join all users before destroying.
-// Never reconstruct over debt. Runtime intentionally does not install this class.
+// Never reconstruct over debt. Runtime owns this instance across bootstrap/Run.
 class CameraOwner final {
 public:
     using NativeMutation=std::function<coordination::NativeReceipt(
@@ -26,6 +26,12 @@ public:
     CameraOwner& operator=(const CameraOwner&)=delete;
     bool observe_publication(uint64_t pc,const arena::Saved&);
     bool bind(const CameraBinding&,uint64_t generation,size_t capacity=8);
+    // Runtime calls ONLY after Evidence authenticates the actual Run handoff.
+    // The pending publication stays in native_, not reconstructed from Run reads.
+    bool bind_handoff(const CameraBinding&,uint64_t generation,size_t capacity=8);
+    coordination::NativeReceipt direct(const NativeMutation&);
+    bool retained_binding(CameraBinding&) const;
+    coordination::DemandSnapshot snapshot() const;
     uint64_t epoch() const noexcept {return epoch_;} // immutable after bind
     static CameraCoverage coverage() noexcept {return {};}
 
@@ -52,12 +58,12 @@ private:
     coordination::Retention retention() noexcept;
     coordination::NativeReceipt invoke(uint64_t ticket,const NativeMutation&);
     const int process_;
-    const std::thread::id owner_;
+    std::thread::id owner_;
     CameraAccessGate gate_;
     binding::CameraNativeBinding native_;
     std::optional<coordination::OwnerCoordinator> queue_;
     std::optional<coordination::DemandArbiter> demand_;
-    uint64_t epoch_=0,barrier_=0;
+    uint64_t epoch_=0,barrier_=0,generation_=0;
     bool bound_=false,active_=false,closing_=false;
 };
 

@@ -48,7 +48,7 @@ struct Chain:Fixture {
         put(camera,0x360,uint8_t(state[2]));put(camera,0x350,state[3]);put(camera,0x358,state[4]);
     }
     std::string directory;
-    Chain() {
+    explicit Chain(SourceAdmission* admission=nullptr):router(admission) {
         put(worker,0,uint64_t(base+0x5a1428));put(worker,0x48,addr(context));
         put(context,0x98,addr(worker));put(context,0x1c0,addr(scheduler));put(context,0x1a8,addr(app));
         put(scheduler,8,addr(app));put(app,0x256a0,addr(r));put(app,0x25320,addr(camera));
@@ -351,8 +351,16 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t x8) n
     case 0x4c450:*reinterpret_cast<int32_t*>(x[1])=0;x[0]=uint64_t(&f.system_interface);break;
     case 0x1010:assert(x8);std::memcpy(reinterpret_cast<void*>(x8),f.origin_matrix.data(),48);break;
     case 0x296c00:x[0]=addr(f.wrapper);break;case 0x294358:x[0]=addr(f.marker);break;
+    case 0x6d6e0:case 0x6d6f0: {
+        uint64_t camera=0;assert(runtime::read_self(x[0]+0x25320,&camera,8));
+        assert(camera==addr(f.camera));x[0]=camera;
+        const auto pc=target-Chain::base==0x6d6e0?0x15f9e0:0x15fba8;
+        arena::Saved nested{};nested.x[0]=camera;f.router.event(pc,nested);assert(!nested.pad);
+        return ft_native_portal_call(Chain::base+pc,x,x8);
+    }
+    case 0x8b020:case 0x15e1c8:case 0x15df70:x[0]=0xabcdef;break;
     case 0x15f9e0:++f.native_acquires;put(f.camera,0x34a,uint8_t(1));put(f.camera,0x360,uint8_t(1));x[0]=1;break;
-    case 0x15fba8:++f.native_releases;put(f.camera,0x34a,uint8_t(0));put(f.camera,0x360,uint8_t(0));break;
+    case 0x15fba8:++f.native_releases;put(f.camera,0x34a,uint8_t(0));put(f.camera,0x360,uint8_t(0));x[0]=1;break;
     case 0x2988a8:{uint32_t offset=0;std::memcpy(&offset,f.wrapper.data()+0x18,4);render::Descriptor d{0x999,offset,592};std::memcpy(reinterpret_cast<void*>(x[1]),&d,24);break;}
     case 0x29b278:{const auto off=f.enqueues++*0x2b0;assert(f.enqueues<=2);
         std::memcpy(f.packets.data()+off,reinterpret_cast<void*>(x[1]),352);
@@ -580,7 +588,13 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     const bool begin_failed=final && mode=="--repeated-owned-begin-failed";
     const bool no_wait=final && mode=="--repeated-owned-no-wait";
     const bool no_disposal=final && mode=="--repeated-owned-no-disposal";
+    const bool no_source=final && mode=="--repeated-owned-no-source";
     f.frame_start();f.record(0);f.record(1);f.frame_end();
+    if(mode=="--foreign-debt") {
+        std::fprintf(stderr,"camera-cleanup-guard: writer cannot invalidate recorded source debt\n");
+        arena::Saved request{};request.x[0]=addr(f.app);request.x[1]=2;
+        f.router.event(0x6d6f0,request);assert(false);
+    }
     if(mode=="--foreign-external") {
         std::thread external([&]{
             arena::Saved r{};r.x[0]=addr(f.camera);r.x[1]=2;r.x[30]=Chain::base+0x6d6ec;
@@ -692,7 +706,7 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         ++request.sequence;assert(client.exchange(request,reply) && reply.state!=State::Draining);
         std::puts("owned old generation settled by reset, failed Begin cannot renew or publish after 7 settled cycles PASS");return 0;
     }
-    if(reset_failed || no_wait || no_disposal) {
+    if(reset_failed || no_wait || no_disposal || no_source) {
         assert(f.router.diagnostics().pending);
         f.stock_pool_return("");f.stock_pool_recycle("");
         assert(f.router.diagnostics().pending && f.router.diagnostics().queue_success==cycles);
