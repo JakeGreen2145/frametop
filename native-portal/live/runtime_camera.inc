@@ -295,6 +295,10 @@
         };
         if(camera_closing)camera_owner.drain(poll);else camera_owner.direct(poll);
         if(camera_closing) {
+            // A real upload can precede a refused first enqueue, before the
+            // dispatch-time pair debt exists. Keep its closing barrier and
+            // forbid Disconnect/cleanup until that native work is settled.
+            if(adapter && adapter->state().pending)return;
             camera_owner.drain([&](const CameraBinding& held,coordination::DemandArbiter& arbiter) {
                 if(camera_debt || !source || !source_integrity() ||
                    !source->transition_eligible(held,coordination::Action::None))return coordination::NativeReceipt{};

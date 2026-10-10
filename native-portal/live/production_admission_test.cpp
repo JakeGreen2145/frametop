@@ -16,6 +16,7 @@ static std::byte* storage;
 static bool modules_present=true;
 static std::string mode;
 static unsigned native_updates=0;
+static bool protect_partial_upload=false;
 extern "C" uint64_t ft_native_portal_original(uint64_t pc) noexcept {return Chain::base+pc;}
 extern "C" uint64_t ft_native_portal_camera_coverage() noexcept {return 0xfffff;}
 extern "C" bool ft_native_portal_source_modules(uint64_t* comp,uint64_t* client) noexcept {
@@ -46,6 +47,12 @@ static void replay(unsigned index) {
     const auto& c=source_calls[index];replay_events(source_events,c.first,c.last);
 }
 extern "C" bool ft_native_portal_call(uint64_t target,uint64_t* x,uint64_t x8) noexcept {
+    if(protect_partial_upload && (target==Chain::base+0x15fba8 || target==Chain::base+0x8b020 ||
+       target==Chain::base+0x15e1c8 || target==Chain::base+0x15df70)) {
+        std::fprintf(stderr,"forbidden-native-cleanup: pending upload, target=%llx\n",
+            static_cast<unsigned long long>(target-Chain::base));
+        _Exit(70); // Never disguise a destructive call as a successful SIGABRT guard.
+    }
     if(target==Chain::base+0x15f9e0 || target==Chain::base+0x15fba8) {
         const bool on=target==Chain::base+0x15f9e0;
         if(!on) {
@@ -72,6 +79,9 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t* x,uint64_t x8) n
 }
 static int scenario(int argc,char** argv) {
     mode=argc>1?argv[1]:"cold";native_updates=0;
+    const bool joined_failure=mode=="bad-selection-joined";
+    if(joined_failure)mode="bad-selection";
+    protect_partial_upload=false;
     if(mode=="bad-selection")assert(!setenv("FT_ADMISSION_BAD_SELECTION","1",1));
     if(mode=="sustained-on")assert(!setenv("FT_ADMISSION_WARM_FRAME","1",1));
     storage=static_cast<std::byte*>(mmap(nullptr,0x400000,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0));assert(storage!=MAP_FAILED);
@@ -95,7 +105,11 @@ static int scenario(int argc,char** argv) {
         ++request.sequence;request.sent_ns=boottime();assert(client.exchange(request,reply));
         f->frame_start();f->s.x[0]=addr(f->app);f->s.x[1]=0;f->s.x[2]=addr(f->outer_stack)+0xc70;
         f->s.x[3]=addr(f->outer_stack)+0x610;f->event(0x148244);f->s.x[0]=1;f->event(0x9ee5c);f->s.x[27]=1;f->event(0x9ee98);
-        if(mode=="bad-selection")f->record(0);
+        if(mode=="bad-selection") {
+            f->record(0);
+            assert(f->router.diagnostics().pending && !f->enqueues && !f->native_releases);
+            protect_partial_upload=true;
+        }
         f->frame_end();
         assert(f->native_acquires==1 && !f->native_releases && !f->enqueues);
         if(mode=="provider-loss")modules_present=false;
@@ -104,7 +118,18 @@ static int scenario(int argc,char** argv) {
         if(mode=="bad-selection")assert(f->router.diagnostics().pending && !f->enqueues && !f->router.diagnostics().submitted_frame);
         else assert(!f->router.diagnostics().capable);
         std::fprintf(stderr,"production-cleanup-guard: uncertain original connection stays retained\n");
-        f->s={};f->s.x[0]=addr(f->app);f->event(0x8b020);assert(false);
+        if(joined_failure) {
+            f->router.stop();arena::Saved pump{};f->router.event(0,pump);
+            put(f->worker,8,uint64_t(0x123456));f->s={};f->s.sp=0x990000;
+            f->s.x[0]=addr(f->worker);f->s.x[20]=addr(f->context);f->event(0x142704);
+            f->s.sp-=0x20;f->s.x[0]=0x123456;f->s.x[20]=addr(f->worker);f->event(0x183f78);
+            f->s.x[0]=0;f->event(0x183f7c);put(f->worker,8,uint64_t(0));put(f->worker,0x10,uint32_t(0));f->s.sp+=0x20;
+            f->s.x[0]=1;f->event(0x142708);f->event(0x1381b8);
+            assert(f->router.diagnostics().pending && !f->native_releases);
+        }
+        f->s={};f->s.x[0]=addr(f->app);f->event(0x8b020);
+        std::fprintf(stderr,"unexpected-cleanup-return: production did not refuse\n");
+        _Exit(71); // A returned hook must fail the negative test, not assert false.
     }
     assert(run_chain(*f,mode.rfind("--aggregate-",0)==0?mode:"--repeated-cycles",true)==0);
     assert(native_updates==f->router.diagnostics().queue_success+(mode=="warm"?1:0));

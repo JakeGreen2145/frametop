@@ -18,10 +18,11 @@ unit=B/"native-source-admission-unit"
 run(["g++",*flags,ROOT/"live/native_source_admission_test.cpp","-o",unit]);run([unit])
 import subprocess, signal, json
 results=[]
-for mode in ['partial-connect','partial-alias','missing-event','provider-migration','provider-loss','association-migration','bad-selection']:
+for mode in ['partial-connect','partial-alias','missing-event','provider-migration','provider-loss','association-migration','bad-selection','bad-selection-joined']:
     result=subprocess.run(['systemd-run','--user','--scope','--quiet','-p','MemoryMax=256M','-p','MemorySwapMax=0',str(exe),mode],capture_output=True,text=True,timeout=30)
     text=result.stdout+result.stderr;(B/('production-'+mode+'.log')).write_text(text)
     assert result.returncode==-signal.SIGABRT and 'production-cleanup-guard:' in text,(mode,result.returncode,text[-2000:])
+    assert 'forbidden-native-cleanup:' not in text and 'unexpected-cleanup-return:' not in text,(mode,text[-2000:])
     assert 'ERROR: AddressSanitizer' not in text and 'runtime error:' not in text
     results.append(dict(mode=mode,returncode=result.returncode));print('PASS default production refusal:',mode)
 (B/'production-negatives.json').write_text(json.dumps(results,indent=2)+'\n')
