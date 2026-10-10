@@ -98,6 +98,7 @@ struct UpstreamFixture {
     Context context(){return {native.binding.identity,native.obs.arena.recording_generation};}
     void commit() {assert(adapter.outer_return());assert(prepare_commit(adapter,native,context(),lookup()));}
 };
+#ifndef FT_UPSTREAM_FIXTURE_ONLY
 int main(int argc,char** argv) {
     (void)argc;(void)argv;
     for(unsigned order=0;order<2;++order) {
@@ -189,3 +190,4 @@ int main(int argc,char** argv) {
     }
     std::puts("upstream Adapter + Bridge production tests passed");
 }
+#endif

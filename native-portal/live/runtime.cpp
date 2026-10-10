@@ -233,9 +233,14 @@ struct Runtime::Impl {
     }
     static bool stock(void *u,const Binding &b,uint64_t blend) noexcept {
         auto &p=*static_cast<Impl*>(u);std::array<uint32_t,8> words{};
-        // Read only in this exact suspended camera enqueue invocation.
+        // Read only in this exact suspended camera enqueue invocation. The
+        // pinned caller selects K+0xa0 at native alpha=1, K+0x90 otherwise.
+        // Admit their exact attachments as clone SOURCES, never as portal state:
+        // Adapter always substitutes its separately allocated source-over marker.
         return p.owned && p.invocation && same(b.identity,p.binding.identity) && blend &&
-            runtime::read_self(blend+8,words.data(),sizeof words) && words==std::array<uint32_t,8>{1,1,7,0,1,7,0,15};
+            runtime::read_self(blend+8,words.data(),sizeof words) &&
+            (words==std::array<uint32_t,8>{1,1,7,0,1,7,0,15} ||
+             words==std::array<uint32_t,8>{0,0,0,0,0,0,0,15});
     }
     static bool pipeline(void *u,const Provenance &v,Registers &r) noexcept {
         auto &p=*static_cast<Impl*>(u);auto reader=p.evidence.pass_reader();
