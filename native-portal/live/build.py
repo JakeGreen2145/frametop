@@ -15,7 +15,8 @@ ROOT=Path(__file__).resolve().parents[1]
 FLAGS=['-O2','-g','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-unused-function',
        '-Wno-unused-variable','-fPIC','-fvisibility=hidden','-fno-stack-protector','-mno-outline-atomics']
 BASE_SOURCES=['render/adapter.cpp','arena/bridge.cpp','binding/pass.cpp','binding/command.cpp','binding/lifecycle.cpp',
-              'src/aperture.cpp','control/protocol.cpp','control/policy.cpp','control/transport.cpp']
+              'src/aperture.cpp','control/protocol.cpp','control/policy.cpp','control/transport.cpp',
+              'live/source_provider.cpp']
 
 def run(args):
     print('$',' '.join(map(str,args)),flush=True)
