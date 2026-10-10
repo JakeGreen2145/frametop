@@ -1643,6 +1643,146 @@
         "2": "0x15fb74",
         "3": "fail-stop"
       }
+    },
+    {
+      "relative_pc": 2749076,
+      "pc": "0x29f294",
+      "guard": "57eeff97e10316aae00317aaf98b00b9",
+      "guard_sha256": "ed6004fc52e8eb4008bea7aadc6366631e27fdd156b00d162926084c421c7864",
+      "word": "0x97ffee57",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x29f298",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2749080,
+      "pc": "0x29f298",
+      "guard": "e10316aae00317aaf98b00b995190094",
+      "guard_sha256": "e2e5081f86282514109197f17fe12e6955c30e3ba4f9e816d6b896a90fe17b3e",
+      "word": "0xaa1603e1",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x29f29c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2731136,
+      "pc": "0x29ac80",
+      "guard": "6e8e019461ae4af962b24af93f0002eb",
+      "guard_sha256": "af53e1112c036b93ce791867f13e1b810666f689a8bd9de496ef7ea910d868a4",
+      "word": "0x94018e6e",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x29ac84",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2731140,
+      "pc": "0x29ac84",
+      "guard": "61ae4af962b24af93f0002eba0030054",
+      "guard_sha256": "eddef11e3e4fca81dace4aba16e795dffe3a4555026e83a0c23b5061b0d25cb8",
+      "word": "0xf94aae61",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x29ac88",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3139372,
+      "pc": "0x2fe72c",
+      "guard": "40013fd6e10313aae00314aaa20a0094",
+      "guard_sha256": "1dfc9ddb7628413cda46748e19281c669b08be2101b58c50de7b523e7f3db8d8",
+      "word": "0xd63f0140",
+      "kind": 2,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2fe730",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3139376,
+      "pc": "0x2fe730",
+      "guard": "e10313aae00314aaa20a0094fd7b41a9",
+      "guard_sha256": "94d82e4039b93e79397c7260ed32b685d4c16743912345be20527bca8f1ac6a4",
+      "word": "0xaa1303e1",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2fe734",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3139384,
+      "pc": "0x2fe738",
+      "guard": "a20a0094fd7b41a9f35342a9f55b43a9",
+      "guard_sha256": "2214b9a91c757a8b084c700d30daf3328d225550066c83d73a22941551a1af58",
+      "word": "0x94000aa2",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2fe73c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3139388,
+      "pc": "0x2fe73c",
+      "guard": "fd7b41a9f35342a9f55b43a9f72340f9",
+      "guard_sha256": "09282b3a9e025ddbd3a5bf7f049b697b601c471b60ffadef53efe4827c38113f",
+      "word": "0xa9417bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2fe740",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2762076,
+      "pc": "0x2a255c",
+      "guard": "37700194f1feff17c0035fd6000440f9",
+      "guard_sha256": "b65bfd9ef2cc351fdd3b8292c068a3cce4ca98c022080318720a3f741e566882",
+      "word": "0x94017037",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2a2560",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2762080,
+      "pc": "0x2a2560",
+      "guard": "f1feff17c0035fd6000440f9020080d2",
+      "guard_sha256": "35e8a1436d6548cb9cd8bc624ea4e39419836f5d20a6c4433a402b9a0f840823",
+      "word": "0x17fffef1",
+      "kind": 4,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2a2564",
+      "selectors": {
+        "0": "relocated-original"
+      }
     }
   ],
   "runtime_emitter": {

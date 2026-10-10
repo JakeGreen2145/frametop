@@ -1,0 +1,126 @@
+{
+  "base": "5ae4afb14faccbad6b291e3cfaaa74a90d72d1a9",
+  "kind": "CPU native-source attribution, not production admission",
+  "matrix_counts": {
+    "build/camera-runtime/results.json": 19,
+    "build/camera-runtime-asan/results.json": 19,
+    "build/source-command/negative-results.json": 15,
+    "build/source-command/negative-asan-results.json": 15,
+    "build/source-command/positive-results.json": 3,
+    "build/source-command/positive-asan-results.json": 3
+  },
+  "source_runtime_modes": [
+    "positive",
+    "foreign",
+    "nested",
+    "missing-nested-return",
+    "missing-module",
+    "missing-event",
+    "provider-rebind"
+  ],
+  "source_runtime_modes_normal_and_sanitized": true,
+  "new_native_observer_sites": 10,
+  "merged_sites": {
+    "compositor": 156,
+    "client": 23
+  },
+  "native_source": {
+    "events": 16,
+    "api_calls": 2,
+    "source_resource_entries": 1,
+    "pcs": [
+      "0x29f294",
+      "0x29f298",
+      "0x29ac80",
+      "0x29ac84",
+      "0x2fe72c",
+      "0x2fe730",
+      "0x2fe738",
+      "0x2fe73c",
+      "0x2a255c",
+      "0x2a2560"
+    ],
+    "boundaries": [
+      "synthetic VkCommandBuffer/VkImage",
+      "synthetic void Vulkan driver call",
+      "synthetic format predicate"
+    ],
+    "native": [
+      "acquire",
+      "resource registration and dedup",
+      "texture append",
+      "reverse release",
+      "merged loader islands"
+    ]
+  },
+  "native_runtime_positive_cycles": 8,
+  "native_runtime_positive_normal_and_sanitized": true,
+  "memory": {
+    "max_bytes": 268435456,
+    "swap_bytes": 0,
+    "compilation": "serial"
+  },
+  "red": [
+    "red.log",
+    "range-red.log",
+    "stock-red.log",
+    "rejected-red.log"
+  ],
+  "logs": {
+    "build/source-command/barrier-api-asan.log": "0fa7b364d84a5f2716277834507d48ba754862cb849d48aa33ea2291bee4512d",
+    "build/source-command/barrier-api.log": "3b6ea1d0744187b1a1a6be29b3d46bc6273950e81e386550b71860077bde9309",
+    "build/source-command/camera-asan.log": "865261239f5b033732f285d03a618aa8646bde9f855e921b77544fb6cc7d1e44",
+    "build/source-command/camera-matrix.log": "865261239f5b033732f285d03a618aa8646bde9f855e921b77544fb6cc7d1e44",
+    "build/source-command/command-asan.log": "0fa7b364d84a5f2716277834507d48ba754862cb849d48aa33ea2291bee4512d",
+    "build/source-command/command.log": "7b8e8d16f4c3e14cd611471a3123827c8a3bda5b1eef2dc3befd25e8fdabd685",
+    "build/source-command/failed-submit-asan.log": "193f99b9a116d3f0621cc5f15b3c7d1cb0cf8e8e7703ebd860ea28cee855aabc",
+    "build/source-command/failed-submit.log": "7b8e8d16f4c3e14cd611471a3123827c8a3bda5b1eef2dc3befd25e8fdabd685",
+    "build/source-command/family-asan.log": "3b6ea1d0744187b1a1a6be29b3d46bc6273950e81e386550b71860077bde9309",
+    "build/source-command/family.log": "3b6ea1d0744187b1a1a6be29b3d46bc6273950e81e386550b71860077bde9309",
+    "build/source-command/frame-asan.log": "b7dd980dd1e1e10135797f155cf89e1c319a506d5465f1d90cf53e7991c457fe",
+    "build/source-command/frame.log": "23f818dae357651f4696c5598c6202414c3565b0350eb352a35c640a3ad86b08",
+    "build/source-command/generation-asan.log": "c2b8580a77b2e1d5f3abe50603392a9a543c6decaf5b54087442972b44826e3f",
+    "build/source-command/generation.log": "3b6ea1d0744187b1a1a6be29b3d46bc6273950e81e386550b71860077bde9309",
+    "build/source-command/green.log": "eade7a52f49034cdc2b7b81dd3d0dce4d09477785cf0330160696371dec64a36",
+    "build/source-command/image-asan.log": "193f99b9a116d3f0621cc5f15b3c7d1cb0cf8e8e7703ebd860ea28cee855aabc",
+    "build/source-command/image.log": "15a8445ff87c89bcea4d1e1cda831ef3f573fd718e506ddc4d37f165983233e1",
+    "build/source-command/missing-asan.log": "5d640ff0d37b672af96ca7776c40554c64b3c0fca55af1ed23031f05357acee1",
+    "build/source-command/missing.log": "5d640ff0d37b672af96ca7776c40554c64b3c0fca55af1ed23031f05357acee1",
+    "build/source-command/mixed-stock-release-asan.log": "963c84170fec4f3759ffc134cd054f98003dbdb6e3eae7fc7b1481bced108ab5",
+    "build/source-command/mixed-stock-release.log": "7b07bbf37e8244f2fd28f47d8ea93d81af3ea315a28863e12dfc23dad0433fa8",
+    "build/source-command/native-asan.log": "3e5217ac691d19a412b9d527b1ececd7d2c14252a9a0030d92e6a10d58b72312",
+    "build/source-command/native.log": "faf344e5f8f43649d7edb37080e63a72184d3281e2f1fb59feee45b0ea4e8cf4",
+    "build/source-command/partial-eye-asan.log": "0fa7b364d84a5f2716277834507d48ba754862cb849d48aa33ea2291bee4512d",
+    "build/source-command/partial-eye.log": "3b6ea1d0744187b1a1a6be29b3d46bc6273950e81e386550b71860077bde9309",
+    "build/source-command/range-asan.log": "0fa7b364d84a5f2716277834507d48ba754862cb849d48aa33ea2291bee4512d",
+    "build/source-command/range-red.log": "3973af1611cfba71f35ff9c38b748cdeebf3e33dba988897f0ae85b58e7b7399",
+    "build/source-command/range.log": "75af1d86ab0e73b902b1554d0fe2f50f5eddacaf4643ac7dde7e9282967fcdb6",
+    "build/source-command/record-asan.log": "0fa7b364d84a5f2716277834507d48ba754862cb849d48aa33ea2291bee4512d",
+    "build/source-command/record.log": "fa87990027b3de13a027ae277060ed5af558db602bb34247574c95c191182391",
+    "build/source-command/red.log": "7085142f809a290e132126962714624f069d9ef2cd92be01ee4468baf83f8d82",
+    "build/source-command/registration-asan.log": "0fa7b364d84a5f2716277834507d48ba754862cb849d48aa33ea2291bee4512d",
+    "build/source-command/registration.log": "3b6ea1d0744187b1a1a6be29b3d46bc6273950e81e386550b71860077bde9309",
+    "build/source-command/rejected-green.log": "beda883ab0bbfa1234f5d25a815f2c6526b31272de95815b74ff349b2f1d8158",
+    "build/source-command/rejected-pair-asan.log": "2d026945a1b0563a766cb93af5c63e818030eebaf3b50f7330ec4d318724a2a7",
+    "build/source-command/rejected-pair.log": "3ae8b0c016674ac6cc1e3e164a0604e403eaa212637632979ad174d1fe549deb",
+    "build/source-command/rejected-red.log": "50be664016fdb56b9ac9f9794c28771d2718e82b938d6c8b75d68ed631a0e90c",
+    "build/source-command/resource-asan.log": "0fa7b364d84a5f2716277834507d48ba754862cb849d48aa33ea2291bee4512d",
+    "build/source-command/resource.log": "3b6ea1d0744187b1a1a6be29b3d46bc6273950e81e386550b71860077bde9309",
+    "build/source-command/reverse-asan.log": "0fa7b364d84a5f2716277834507d48ba754862cb849d48aa33ea2291bee4512d",
+    "build/source-command/reverse-eye.log": "eb83a9463de3a2f661d8e7786d04784d86a1c26afbbb110ef22a4b384ac4c954",
+    "build/source-command/reverse-eyes-asan.log": "c4757b3e3edad711b9e76612eddf4f8e0f6407b4cc2316483b694c3c17f00815",
+    "build/source-command/reverse-eyes.log": "8c09a3beca068d016a4fcd9afcf4679338303a3ddea10b7bccab37a06159dbdd",
+    "build/source-command/reverse.log": "3b6ea1d0744187b1a1a6be29b3d46bc6273950e81e386550b71860077bde9309",
+    "build/source-command/signal-asan.log": "69f2d38d7175549718982e915b7dad8ad67a10511cbeea408dc82da35f06044d",
+    "build/source-command/signal.log": "0fa7b364d84a5f2716277834507d48ba754862cb849d48aa33ea2291bee4512d",
+    "build/source-command/source-runtime-asan.log": "9cfba8242cb577507529361f1b66ef5628102c3ec2cc9adb79a14f27bc933917",
+    "build/source-command/source-runtime.log": "7d9fb18e52e49bd048f44a87d770187ef0d09104e1838fe709e9517c4ef67767",
+    "build/source-command/stock-red.log": "22a19b7323d26cebf2687ac3b8956b600a2333e36011edba8fd1a90f9abce7d6"
+  },
+  "remaining": [
+    "SourceAdmission absent; minimum unchanged-path readiness/Connect bootstrap awaits Desktop caller reconciliation",
+    "Extra/split/unobserved source readers unsupported",
+    "Kernel/ICP visibility, live GPU, ARM64 production build and activation not performed"
+  ],
+  "independent_review": "No independent delegate or coding CLI available in this subagent; parent review still required"
+}

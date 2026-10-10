@@ -15,6 +15,7 @@
 using namespace native_portal::live;
 struct Chain:Fixture {
     Runtime router;
+    #include "source_command_fixture.inc"
     alignas(4096) std::array<std::byte,0xe40> context_padding{};
     std::array<std::byte,4096> context{};
     alignas(4096) std::array<std::byte,8192> worker{},scheduler{};
@@ -50,6 +51,7 @@ struct Chain:Fixture {
     }
     std::string directory;
     explicit Chain(SourceAdmission* admission=nullptr):router(admission) {
+        source_init();
         put(worker,0,uint64_t(base+0x5a1428));put(worker,0x48,addr(context));
         put(context,0x98,addr(worker));put(context,0x1c0,addr(scheduler));put(context,0x1a8,addr(app));
         put(scheduler,8,addr(app));put(app,0x256a0,addr(r));put(app,0x25320,addr(camera));
@@ -316,6 +318,7 @@ struct Chain:Fixture {
         put(camera,0x140,float(1));put(camera,0x154,float(1));put(camera,0x168,float(-1));put(camera,0x16c,float(-.1));put(camera,0x178,float(-1));
         std::memcpy(camera_stack.data()+0x170,origin_matrix.data(),48);
         put(camera_stack,0x308,addr(marker));put(camera_stack,0x320,uint32_t(57));put(camera_stack,0x330,uint32_t(125));
+        put(camera_stack,0x380,addr(source_texture));
         s={};s.sp=addr(camera_stack);s.x[0]=addr(r);s.x[1]=addr(stock_wrapper);s.x[2]=addr(camera)+0xc0;s.x[7]=base+0x2993f8;s.x[27]=addr(camera);
         event(0x161d64);if(s.pad!=arena::Replacement)std::fprintf(stderr,"upload refusal %u eye %u\n",unsigned(router.diagnostics().refusal),eye);
         assert(s.pad==arena::Replacement);const auto upload=s;
@@ -641,6 +644,7 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     const bool no_wait=final && mode=="--repeated-owned-no-wait";
     const bool no_disposal=final && mode=="--repeated-owned-no-disposal";
     const bool no_source=final && mode=="--repeated-owned-no-source";
+    if(final) {const char* fault=std::getenv("FT_SOURCE_FAULT");if(fault)f.source_fault=fault;}
     f.frame_start();
     if(mode=="--overlap-release") {
         f.s={};f.s.sp=addr(f.outer_stack);f.s.x[0]=addr(f.app);f.s.x[1]=0;
@@ -722,6 +726,8 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         std::puts("runtime foreign external: original continuation unchanged, owner notified without replay, extra owned release suppressed, debt remains pending PASS; native boundaries modeled");return 0;
     }
     if(mode=="--reject-graph")put(f.r,0x1478,addr(f.r));
+    const bool source_rejected=mode=="--source-rejected";
+    if(source_rejected)put(f.cache,0x38,uint32_t(0)); // real cold pass, full scan still valid
     f.s={};f.s.x[0]=addr(f.r);f.s.sp=0x900000;f.s.x[30]=Chain::base+0x6caf0;f.event(0x2a1e18);
     if(mode=="--reject-graph") {
         for(unsigned eye=0;eye<2;++eye) {
@@ -731,17 +737,21 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         assert(!f.lookups && f.router.diagnostics().pending && f.router.diagnostics().refusal==Refusal::GraphOwnership);
         std::puts("runtime refused graph: both immutable owned markers dropped, stock packet unchanged, no pipeline or settlement fabricated PASS; native boundaries modeled");return 0;
     }
-    assert(f.lookups==2*(cycle+1));
-    for(unsigned eye=0;eye<2;++eye) {
-        f.s={};f.s.sp=0x8ff000;f.s.x[19]=addr(f.packets)+eye*0x2b0;f.s.x[21]=addr(f.r);f.s.x[22]=addr(f.passes)+eye*0x98;
-        f.event(0x2a1c18);assert(f.s.pad==0);
+    assert(f.lookups==(source_rejected?0:2*(cycle+1)));
+    for(unsigned ordinal=0;ordinal<2;++ordinal) {
+        const unsigned eye=std::getenv("FT_SOURCE_REVERSE_ORDER")?1-ordinal:ordinal;
+        f.s={};f.s.sp=addr(f.source_stack)+0x2e0;f.s.x[30]=Chain::base+0x2a1c58;f.s.x[19]=addr(f.packets)+eye*0x2b0;f.s.x[21]=addr(f.r);f.s.x[22]=addr(f.passes)+eye*0x98;
+        f.event(0x2a1c18);
+        if(source_rejected){assert(f.s.pad==1);continue;}
+        assert(f.s.pad==0);
         f.s.x[0]=addr(f.r);f.s.x[1]=addr(f.packets)+eye*0x2b0;f.s.x[2]=0xa001;f.s.x[3]=37;f.s.x[30]=Chain::base+0x2a1c58;
         f.event(0x29f1e8);f.event(0x29f200);assert(f.s.pad==arena::SkipOwned && f.s.x[0]==addr(f.pipeline_object));
+        f.source_sample(eye);
         f.s.x[30]=Chain::base+0x2a1c58;f.event(0x29f518);
         if(eye==0 && mode=="--stop-after-left")f.router.stop();
     }
-    d=f.router.diagnostics();assert(d.uploads[0]==cycle+1 && d.uploads[1]==cycle+1 && d.encoded[0]==cycle+1 && d.encoded[1]==cycle+1 && d.pending);
-    assert(f.native_acquires==cycle+1 && f.lookups==2*(cycle+1));
+    d=f.router.diagnostics();assert(d.uploads[0]==cycle+1 && d.uploads[1]==cycle+1 && d.encoded[0]==(source_rejected?0:cycle+1) && d.encoded[1]==(source_rejected?0:cycle+1) && d.pending);
+    assert(f.native_acquires==cycle+1 && f.lookups==(source_rejected?0:2*(cycle+1)));
     request.op=Operation::Release;++request.sequence;assert(client.exchange(request,reply));assert(reply.state==State::Draining);
     if(mode=="--pool-owned-current") {
         f.stock_pool_return("");
@@ -751,13 +761,19 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     }
     // Real Command/Lifecycle classes, with explicitly modeled native queue,
     // post-stamp, wait, vector transfer/disposal and reset memory transitions.
+    if(!source_rejected)f.source_reverse();
     f.s={};f.s.sp=0x880000;f.s.x[0]=0xbeef;f.s.x[1]=addr(f.executable);f.s.x[30]=Chain::base+FT_BOOT_QUEUE_LR;f.event(0x3018b0);
     value=binding::Command::timeline_value({addr(f.sync),f.signal_value.serial,1});
+    if(f.source_fault=="signal")++value;
     timeline.type=1000207003;timeline.signal_count=1;timeline.signals=uint64_t(&value);
     submit.type=4;submit.next=uint64_t(&timeline);submit.command_count=1;submit.commands=uint64_t(&cb);
     submit.signal_count=1;submit.signals=uint64_t(&sem);
     f.s.x[19]=addr(f.executable);f.s.x[0]=0xa005;f.s.x[1]=1;f.s.x[2]=uint64_t(&submit);f.s.x[3]=0;f.event(0x3021d4);
-    f.s.x[0]=0;f.event(0x3021d8);
+    f.s.x[0]=f.source_fault=="failed-submit"?uint32_t(-4):0;f.event(0x3021d8);
+    if(f.source_fault=="failed-submit") {
+        assert(f.router.diagnostics().queue_success==cycle && f.router.diagnostics().pending);
+        std::puts("native prepared signal and reverse barrier do not settle failed submit PASS");return 0;
+    }
     f.s.x[0]=addr(f.executable);f.s.x[1]=addr(f.sync);f.s.x[2]=uint64_t(&f.signal_value);f.event(0x302208);
     for(auto *object:{&f.resource}) {
         f.s.sp=0x870000;f.s.x[0]=addr(*object);f.s.x[1]=addr(f.sync);f.s.x[2]=uint64_t(&f.signal_value);f.event(0x310ea0);
@@ -839,6 +855,7 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     // reset issued its next generation. It remains an authentic recording.
     f.frame_start();f.s.x[0]=addr(f.app);f.s.x[1]=0;f.s.x[2]=addr(f.outer_stack)+0xc70;f.s.x[3]=addr(f.outer_stack)+0x610;f.event(0x148244);
     f.s.x[0]=1;f.event(0x9ee5c);f.s.x[27]=0;f.event(0x9ee98);assert(f.native_releases==cycle+1);put(f.app,0x2568c,uint8_t(0));f.frame_end();
+    if(source_rejected){std::puts("real Runtime: exact rejected pair, no source sampling, exact upload queue/wait/CPU settlement PASS");return 0;}
     if(!repeated)break;
     // Lifecycle has settled both eyes and released its retained command. The
     // successor generation must survive until a NEW actual stock reset/Begin.

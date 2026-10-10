@@ -29,6 +29,7 @@ extern "C" bool ft_native_portal_source_modules(uint64_t* comp,uint64_t* client)
 }
 int main(int argc,char** argv) {
     const std::string mode=argc>1?argv[1]:"--absent";
+    if(mode=="--missing-sampled-source" && !std::getenv("FT_SOURCE_FAULT"))assert(!setenv("FT_SOURCE_FAULT","missing",1));
     if(mode=="--missing-arbitration")modeled_coverage=0x3ffff;
     if(mode=="--absent") {
         auto f=std::make_unique<Chain>();active=f.get();
@@ -81,11 +82,11 @@ int main(int argc,char** argv) {
             f->s={};f->s.x[0]=addr(f->app);f->event(0x8b020);assert(false);
         }
         if(mode=="--no-source-return")provider.returned=false;
-        const auto chain_mode=(mode=="--overlap-release" || mode.rfind("--aggregate-",0)==0)?mode.c_str():mode=="--foreign-debt"?"--foreign-debt":mode=="--no-gpu"?"--repeated-owned-no-wait":
+        const auto chain_mode=(mode=="--source-rejected" || mode=="--overlap-release" || mode.rfind("--aggregate-",0)==0)?mode.c_str():mode=="--foreign-debt"?"--foreign-debt":mode=="--no-gpu"?"--repeated-owned-no-wait":
             mode=="--no-cpu"?"--repeated-owned-no-disposal":
-            mode=="--no-source-return"?"--repeated-owned-no-source":"--repeated-cycles";
+            (mode=="--no-source-return" || mode=="--missing-sampled-source")?"--repeated-owned-no-source":"--repeated-cycles";
         assert(run_chain(*f,chain_mode,true)==0);
-        if(mode=="--no-gpu" || mode=="--no-cpu" || mode=="--no-source-return") {
+        if(mode=="--no-gpu" || mode=="--no-cpu" || mode=="--no-source-return" || mode=="--missing-sampled-source") {
             assert(f->router.diagnostics().pending);
             std::fprintf(stderr,"camera-cleanup-guard: debt must fail-stop\n");
             f->s={};f->s.x[0]=addr(f->app);f->event(0x8b020);assert(false);

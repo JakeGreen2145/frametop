@@ -18,9 +18,10 @@ struct SourceAdmission {
     virtual bool ready(const CameraBinding&) noexcept=0;
     virtual coordination::NativeReceipt transition(const CameraBinding&,
         const coordination::ActionPlan&,uint64_t actual_native_result) noexcept=0;
-    // Current path preserves native sampled resources and command. This is NOT
-    // a request for an extra DMA fence. Prove that original source-consumer
-    // lifetime, or stay false; Command/Lifecycle independently prove CPU/GPU.
+    // Independent provider/consumer lifetime fact. Runtime additionally requires
+    // its native sampled-record/reverse-release attribution and existing exact
+    // Command/Lifecycle certificates. Metadata return is not GPU completion.
+    // This is NOT a request for an extra DMA fence or a new source reader.
     virtual bool settled(const CameraBinding&,uint64_t original_ticket_watermark) noexcept=0;
 };
 }

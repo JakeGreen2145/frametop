@@ -85,7 +85,7 @@
     static bool camera_source_settled(void* p,uint64_t watermark) noexcept {
         auto& self=*static_cast<Impl*>(p);CameraBinding held;
         return self.source && self.source_integrity() && self.camera_owner.retained_binding(held) && held==self.camera_binding &&
-            self.source->settled(held,watermark);
+            self.source_command_settled(watermark) && self.source->settled(held,watermark);
     }
     void camera_handoff() noexcept {
         if(!published_camera || !published_application || camera_bound.load())return;
@@ -234,6 +234,8 @@
     }
     void camera_commit_debt() noexcept {
         if(camera_debt || !adapter || !portal_token.id || adapter->state().tickets_used!=2)return;
+        source_command.watermark=adapter->state().tickets_issued;
+        source_command.owner=command_owner;
         render_debt.emplace(*adapter,adapter->state().tickets_issued,SourceSettlement{this,camera_source_settled});
         camera_owner.direct([&](const auto&,coordination::DemandArbiter& arbiter) {
             camera_debt=arbiter.commit(portal_token,render_debt->callback());return coordination::NativeReceipt{};

@@ -76,7 +76,7 @@ struct Runtime::Impl {
     std::array<bool,2> encoded_returns{};
     arena::Saved native_queue_entry{};
     bool rejected_pair=false;
-    unsigned backend_eye=0;
+    unsigned backend_eye=0,backend_preparation=0;
     uint64_t camera=0,layer_frame=0,layer_policy=0;
     std::atomic<uint64_t> external_camera{0};std::atomic<bool> external_pending{false};
     bool available=false,stock_active=false,native_portal_policy=false;
@@ -151,6 +151,7 @@ struct Runtime::Impl {
     std::atomic<bool> collector_stop{false};std::thread collector;
     #include "runtime_camera.inc"
     #include "source_router.inc"
+    #include "source_command.inc"
     explicit Impl(SourceAdmission* admission):source(admission){published.publish(diag);live_published.publish(live);}
     ~Impl(){collector_stop=true;if(collector.joinable())collector.join();}
     void collect() {
@@ -355,6 +356,9 @@ struct Runtime::Impl {
                !get(signals,owner.synchronization) || !get(owner.synchronization+0x58,owner.semaphore) ||
                owner.semaphore!=submit.semaphore || !get(owner.command+0x4f0,token_pointer) ||
                !token(owner.synchronization,token_pointer,queue_signal)) {refuse(Refusal::Command);return;}
+            // Seal source coverage BEFORE this actual submit. A later barrier
+            // cannot be covered by this accepted signal, even on the same C.
+            source_command_seal();
             owner.queue=submit.queue;command_owner=owner;command.emplace();
             if(!command->bind(owner)) {refuse(Refusal::Command);return;}
             bool registered=true;
@@ -477,6 +481,7 @@ struct Runtime::Impl {
             0x161d64,0x161d68,0x161ed8,0x2a1e18,0x29f1e8,0x3021d4,0x3021d8,0x316120,0x300a38};
         for(unsigned i=0;i<sizeof(phase_pcs)/sizeof(*phase_pcs);++i)if(pc==phase_pcs[i])live.phases|=1ull<<i;
         // Native queue instructions always run, including mixed stock submissions.
+        source_command_event(pc,s);
         queue_event(pc,s);
         if(pc==0x7fda0 || pc==0x29a14c || pc==0x29a150 || pc==0x7fdbc) {
             if(!evidence.route(bridge,pc,s))refuse(Refusal::NativeInitialization);
@@ -671,7 +676,7 @@ struct Runtime::Impl {
                     std::memcpy(effective.data()+0x630,&frame.policy.effective.style,4);
                     std::memcpy(effective.data()+0x648,&frame.policy.effective.alpha,4);
                     if(!evidence.release_lifecycle()) {owned=false;adapter->off();refuse(Refusal::Command);}
-                    else {encoded_returns={};encoded_scopes={};provenance={};rejected_pair=false;command.reset();}
+                    else {encoded_returns={};encoded_scopes={};provenance={};rejected_pair=false;command.reset();source_command={};}
                 }
             }
         }
@@ -738,9 +743,16 @@ struct Runtime::Impl {
                 backend_scope=scope(s,s.x[0]);backend_open=true;
                 uint64_t ticket=0;decode_ticket(e.record.label,e.record.label_size,ticket);
                 unsigned eye_index=provenance[0].ticket==ticket?0:1;
-                backend_eye=eye_index;
+                backend_eye=eye_index;backend_preparation=i;
                 auto result=adapter->backend(e.record,e.context,lookup);backend_admitted=result.decision==Decision::Portal;
-                if(backend_admitted) {++diag.encoded[eye_index];encoded_scopes[eye_index]=backend_scope;}
+                if(backend_admitted) {
+                    ++diag.encoded[eye_index];encoded_scopes[eye_index]=backend_scope;
+                    source_command.packets[eye_index]=e.lookup.x[1];
+                    for(unsigned slot=0;slot<16;++slot) {
+                        uint64_t texture=0;std::memcpy(&texture,e.record.prefix.data()+0x80+8*slot,8);
+                        if(texture)source_command.expected[eye_index]|=uint16_t(1u<<slot);
+                    }
+                }
                 // The pipeline-result island receives the cached native object.
                 backend_pipeline=result.decision==Decision::Portal?result.pipeline:0;
                 break;
