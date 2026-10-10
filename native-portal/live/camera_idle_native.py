@@ -27,7 +27,7 @@ def witness():
         return m.reg_read(r)
     put(service,vtable);put(vtable+8,acquire);put(vtable+16,release)
     m.mem_write(shared+0x18,b'\1')
-    calls=[];transitions=[];fail_release=False;fail_acquire=0
+    calls=[];service_results=[];transitions=[];fail_release=False;fail_acquire=0
     def hook(uc,pc,size,user):
         if pc in (0x186a38,0x186a40,0x174510):x(0,0)
         elif pc==0x186ab0:x(0,shared)
@@ -41,8 +41,10 @@ def witness():
             handle=0xa001+(x(1)-camera-0x350)//8
             if handle!=fail_acquire:put(x(1),handle)
             calls.append(['acquire',handle]);x(0,1 if handle==fail_acquire else 0)
+            service_results.append(x(0))
         elif pc==release:
             calls.append(['release',x(1)]);x(0,1 if fail_release else 0)
+            service_results.append(x(0))
         else:return
         m.reg_write(A.UC_ARM64_REG_PC,x(30))
     m.hook_add(UC_HOOK_CODE,hook)
@@ -53,7 +55,8 @@ def witness():
         assert m.reg_read(A.UC_ARM64_REG_PC)==done
         if pc in (0x15f9e0,0x15fba8):
             transitions.append({'pc':pc,'before':before,'after':state(),
-                                'result':x(0),'service_calls':calls[start:]})
+                                'result':x(0),'service_calls':calls[start:],
+                                'service_results':service_results[start:]})
         return x(0)
     def state():
         b=bytes(m.mem_read(camera+0x340,40))

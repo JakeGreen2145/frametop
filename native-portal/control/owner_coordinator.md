@@ -1,7 +1,8 @@
 # Render-owner coordination
 
-`owner_coordinator.hpp/.cpp` is an independent production component. It is not
-wired into `live/runtime.cpp` or the legacy `DemandAdapter`. Renderer and
+`owner_coordinator.hpp/.cpp` is a production component, now composed with the
+real camera gate and native binding in [CameraOwner](../live/camera_owner.md).
+Neither is wired into `live/runtime.cpp` or the legacy `DemandAdapter`. Renderer and
 CameraControl APIs remain unchanged. Keep native admission closed until the
 parent integration verifies every writer and destructive boundary from the
 checkpoint06 contract. CPU tests below do not establish that coverage.
@@ -19,7 +20,9 @@ checkpoint06 contract. CPU tests below do not establish that coverage.
 3. Authenticate the native caller/connection at the incoming boundary, before
    submitting. Capture stable identities, not pointers obtained by an unretained
    lookup. Resolve native objects only inside the retained mutation callback.
-4. Marshal all demand mutations and native action executors through `submit`.
+4. Marshal all demand mutations and native action executors through `submit_scoped`.
+   Its callback receives the actual already-retained ticket for gate lookup. The
+   zero-argument `submit` remains compatible but cannot itself supply that ticket.
    `DemandArbiter` is owner-only; its direct API is not a replacement for the
    queue's retained scope. `reconcile` supplies a typed plan to the binding.
    The executor must additionally verify native caller coverage, exact queue
@@ -65,9 +68,15 @@ binding must prove those independently before registering and recording a frame.
   is not permission to use an aggregate native call that also releases borrowed
   memberships. Such a binding must return NotExecuted until a supported exact
   operation exists. Borrowed membership never authorizes a portal frame here.
-- One native connect attempt is supported per generation. Even a fully observed
-  disconnect does not repair attempted-once producer latches. Same-object restart
-  needs a separately verified generation repair, not reconstruction of this bank.
+- Another consumer connect is supported after complete observed disconnect of
+  both newly-owned queues and zero committed debts, in the same camera/producer
+  generation. The next plan has `reattach=true`. Its executor must revalidate the
+  intact producer, provider, alias/name resolution and both headers BEFORE native
+  execution, or return empty NotExecuted without effects. An executed receipt
+  must explicitly set `producer_revalidated`; missing proof faults admission.
+  Producer Create/recreation after driver Deactivate is a different lifetime and
+  is not authorized here. Partial, failed, borrowed and unobserved disconnects do
+  not reset the attempt latch or authorize a blind native Release retry.
 - A NotExecuted receipt promises no native effects and carries no native values
   or queue observations. Contradictory receipts latch Unknown/fault. Failed
   receipts can still preserve whatever native effects were actually observed.
@@ -121,5 +130,7 @@ Separate tests cover cancellation during execution/retention, FIFO, full/stale
 queues, callback and capture-destruction reentrancy, null/failed retention,
 borrowed/partial/lying native receipts, exact caller revocation, bounds, and
 nonreused token/debt storage over repeated cycles. The interlock and native/source
-results are explicitly modeled; lane-A gate composition and actual native writer
-coverage remain parent integration work.
+results are explicitly modeled. The separate [CameraOwner fixture](../live/camera_owner.md)
+uses the actual lane-A gate and native binding, plus Adapter/Command/Lifecycle
+settlement and pinned warm-transition receipts. Actual global native writer
+coverage remains integration work.

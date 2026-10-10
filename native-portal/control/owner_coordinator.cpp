@@ -37,6 +37,10 @@ size_t OwnerCoordinator::first_pending() const {
     return first;
 }
 Submission OwnerCoordinator::submit(uint64_t epoch,uint64_t generation,Mutation mutation) {
+    if(!mutation)return submit_scoped(epoch,generation,{});
+    return submit_scoped(epoch,generation,[fn=std::move(mutation)](uint64_t){return fn();});
+}
+Submission OwnerCoordinator::submit_scoped(uint64_t epoch,uint64_t generation,ScopedMutation mutation) {
     size_t i=capacity_;uint64_t id=0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -52,7 +56,7 @@ Submission OwnerCoordinator::submit(uint64_t epoch,uint64_t generation,Mutation 
     uint64_t ticket=0;bool retained=false;
     try {retained=retention_.retain(retention_.context,epoch_,ticket);}catch(...) {}
     bool finish_now=false,inline_now=false;
-    Mutation rejected;
+    ScopedMutation rejected;
     {
         std::lock_guard<std::mutex> lock(mutex_);auto& s=slots_[i];s.ticket=ticket;
         if(!retained||!ticket) {
@@ -76,7 +80,7 @@ Submission OwnerCoordinator::submit(uint64_t epoch,uint64_t generation,Mutation 
 }
 void OwnerCoordinator::finish(size_t i) {
     uint64_t ticket;
-    Mutation retired;
+    ScopedMutation retired;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         ticket=slots_[i].ticket;retired=std::move(slots_[i].mutation);
@@ -96,16 +100,17 @@ size_t OwnerCoordinator::pump(size_t budget) {
     if(std::this_thread::get_id()!=owner_)return 0;
     size_t count=0;
     while(count<budget) {
-        size_t i;Mutation mutation;
+        size_t i;uint64_t ticket=0;ScopedMutation mutation;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if(active_)break;
             i=first_pending();
             if(i==capacity_||slots_[i].phase!=Phase::Queued)break;
             active_=true;slots_[i].phase=Phase::Running;mutation=std::move(slots_[i].mutation);
+            ticket=slots_[i].ticket;
         }
         NativeReceipt receipt;
-        try {receipt=mutation();}catch(...) {receipt.execution=Execution::Failed;}
+        try {receipt=mutation(ticket);}catch(...) {receipt.execution=Execution::Failed;}
         mutation=nullptr;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -311,7 +316,7 @@ ActionPlan DemandArbiter::plan() {
     const auto s=snapshot();
     if(fault_||issued_plans_==exhausted)return p;
     if(s.producer_demand&&!closing_&&!connect_attempted_) {
-        p.action=Action::Connect;p.selected={true,true};
+        p.action=Action::Connect;p.selected={true,true};p.reattach=reattach_;
     } else if(!s.producer_demand) {
         for(size_t i=0;i<2;++i)if(queues_[i].state==QueueState::Connected&&queues_[i].ownership==Ownership::NewlyOwned) {
             p.action=Action::Disconnect;p.selected[i]=true;
@@ -336,6 +341,7 @@ void DemandArbiter::apply(const ActionPlan& p,const NativeReceipt& r) {
     }
     if(p.action==Action::Connect)connect_attempted_=true;
     if(r.execution!=Execution::Executed||!r.value_valid)fault_=true;
+    if(p.reattach&&!r.producer_revalidated)fault_=true;
     for(size_t i=0;i<2;++i) {
         const auto& v=r.queues[i];auto& q=queues_[i];
         if(!p.selected[i]) {if(v.observed)fault_=true;continue;}
@@ -352,6 +358,15 @@ void DemandArbiter::apply(const ActionPlan& p,const NativeReceipt& r) {
                 q.state=QueueState::Unknown;fault_=true;
             } else q.state=QueueState::Disconnected;
         }
+    }
+    // Consumer detach is not driver Deactivate or attempted-once producer Create.
+    // Only a full observed detach with zero debts permits another consumer plan.
+    // Partial, borrowed, failed and unobserved transitions never clear this latch.
+    if(p.action==Action::Disconnect&&!fault_&&!snapshot().committed_debts) {
+        bool detached=true;
+        for(const auto& q:queues_)
+            detached&=q.state==QueueState::Disconnected&&q.ownership==Ownership::NewlyOwned;
+        if(detached){connect_attempted_=false;reattach_=true;}
     }
 }
 NativeReceipt DemandArbiter::reconcile(const Executor& executor) {

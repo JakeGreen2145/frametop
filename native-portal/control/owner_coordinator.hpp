@@ -30,6 +30,9 @@ struct NativeReceipt {
     bool value_valid=false;
     int64_t value=0; // exact native return, including false/zero/negative
     std::array<QueueOutcome,2> queues{}; // data, layout; observed, not inferred
+    // Reattach only: executor revalidated the intact producer, provider, name /
+    // alias and exact headers BEFORE executing Connect. Never infer from pointers.
+    bool producer_revalidated=false;
 };
 enum class Rejection { None, Full, Stale, Closing, Retention, Invalid, Exhausted, Cancelled };
 struct Submission { uint64_t id=0; Rejection rejection=Rejection::None; };
@@ -50,11 +53,15 @@ class OwnerCoordinator {
 public:
     static constexpr size_t MaxSlots=64;
     using Mutation=std::function<NativeReceipt()>;
+    // The exact already-retained ticket. Borrow only during this callback;
+    // never release/store it or mint another ticket to perform native lookup.
+    using ScopedMutation=std::function<NativeReceipt(uint64_t ticket)>;
     OwnerCoordinator(uint64_t epoch,uint64_t generation,size_t capacity,Retention);
     ~OwnerCoordinator();
     OwnerCoordinator(const OwnerCoordinator&)=delete;
     OwnerCoordinator& operator=(const OwnerCoordinator&)=delete;
     Submission submit(uint64_t epoch,uint64_t generation,Mutation);
+    Submission submit_scoped(uint64_t epoch,uint64_t generation,ScopedMutation);
     size_t pump(size_t budget=MaxSlots);
     bool cancel(uint64_t id);
     void close(); // cancel unexecuted only; never wait for running work
@@ -68,7 +75,7 @@ private:
         Phase phase=Phase::Free;
         uint64_t id=0,ticket=0;
         bool cancelled=false;
-        Mutation mutation;
+        ScopedMutation mutation;
         Result result{};
     };
     size_t find(uint64_t) const;
@@ -106,6 +113,7 @@ struct ActionPlan {
     uint64_t epoch=0,generation=0,serial=0;
     std::array<bool,2> selected{};
     std::array<QueueJournal,2> queues{};
+    bool reattach=false; // prior complete detach; executor must revalidate producer
 };
 struct DemandSnapshot {
     bool producer_demand=false,legacy_stock_full=false,foreign_full=false;
@@ -157,6 +165,6 @@ private:
     std::array<DebtSlot,MaxDebts> debts_{};
     std::array<QueueJournal,2> queues_{};
     uint64_t issued_tokens_=0,issued_debts_=0,issued_plans_=0;
-    bool closing_=false,fault_=false,busy_=false,connect_attempted_=false;
+    bool closing_=false,fault_=false,busy_=false,connect_attempted_=false,reattach_=false;
 };
 }

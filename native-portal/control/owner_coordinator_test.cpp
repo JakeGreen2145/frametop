@@ -241,10 +241,17 @@ void demand_restart_and_contradictory_receipt() {
     d.reconcile([&](const ActionPlan& p){return ex(p);});
     assert(d.set_level(stock,false,false));d.reconcile([&](const ActionPlan& p){return ex(p);});
     assert(d.set_level(stock,true,true));
-    auto retry=d.reconcile([&](const ActionPlan& p){return ex(p);});
+    // Consumer reattach is supported only after complete detach, and the executor
+    // must refuse BEFORE executing if producer/provider/alias/header proof is absent.
+    auto retry=d.reconcile([&](const ActionPlan& p){assert(p.reattach);return NativeReceipt{};});
     assert(retry.execution==Execution::NotExecuted&&ex.plans.size()==2);
     assert(d.snapshot().producer_demand&&d.queues()[0].id==101);
-    // A successful release does not repair native same-object restart latches.
+    retry=d.reconcile([&](const ActionPlan& p){auto r=ex(p);r.producer_revalidated=true;return r;});
+    assert(retry.execution==Execution::Executed&&d.snapshot().portal_ready&&ex.plans.size()==3);
+    // An executor that executes without the required proof cannot admit frames.
+    assert(d.set_level(stock,false,false));d.reconcile([&](const ActionPlan& p){return ex(p);});
+    assert(d.set_level(stock,true,true));d.reconcile([&](const ActionPlan& p){return ex(p);});
+    assert(d.snapshot().fault&&!d.snapshot().portal_ready);
     DemandArbiter bad(7,10,gate.callbacks());
     assert(bad.register_caller(stock)&&bad.set_level(stock,true,true));
     bad.reconcile([](const ActionPlan&){auto r=native(1);r.execution=Execution::NotExecuted;return r;});
