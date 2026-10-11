@@ -3,7 +3,9 @@
 ## Delivered scope
 
 Initial component commit: `f5fbe0a14c1b1185b296687ddaf26c72ab9119c8`.
-Complete implementation commit: recorded below after commit.
+Complete implementation commit: `b3e93cc65dbefb29006d09e838873dbe7bd90d91`.
+Cherry-pick the initial component and complete implementation commits in that order;
+the following documentation-only commit records these immutable IDs.
 Base: `33877a86468b2a4422c1014d81414e4136f46b3c`.
 
 The canonical dual-module transaction now selects 191 compositor and 32 client
