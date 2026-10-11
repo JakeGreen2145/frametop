@@ -1,6 +1,6 @@
 # Current source admission integration
 
-Header-only implementation for the Runtime lane. Initial API commit is `5bd84e0`; the final tested delta is the branch tip accompanying this handoff. The legacy constructor preserves compatibility, not production current-field-read authority. No Runtime, Evidence, camera owner, source router, loader, manifest or build-list file was changed.
+Header-only implementation for the Runtime lane. Initial API commit is `5bd84e0`; final tested component commit is `1be8d3376fe79605b1d41a6e3fa77f53b5ce80cf`. Apply both commits in order, or the complete diff from base `0bd4fb0638af57f020e5bbc4056daa40b14dab28`. The later handoff-only commit changes no tested code. The legacy constructor preserves compatibility, not production current-field-read authority. No Runtime, Evidence, camera owner, source router, loader, manifest or build-list file was changed.
 
 ## Actual provider API and call order
 
@@ -92,6 +92,19 @@ AuthenticateIdentity is a trusted retained-lifetime/module/owner boundary. It mu
 Current render requires `160be8`, `160ca8`, `161bc0`, `161be8`, `161c74`, `161c78`, `161d64`, `161d68`, `161e40`, `161ed8`, `160dd4`, `161f30`. Existing upload/enqueue sites must keep their canonical emitters. Do not install duplicate hooks. All guard bytes were checked against compositor SHA256 `9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265`. The full `161c78` guard and two epilogue guards were read from its executable PT_LOAD, not synthesized. Missing any callback refuses render begin. V1 stock coverage alone cannot grant this incremental set.
 
 ## Verification and limits
+
+Final normal and ASan+UBSan runs both exited0. Each executed 37 capped commands, including 23 serial compiles and the complete Runtime link/smoke. Logs, hashes and source hashes are recorded in `current-source-admission-verification.json`. No sanitizer finding was reported.
+
+```sh
+python3 native-portal/live/stock_source_receipts_test.py --runtime \
+  --current-vectors /home/jakeg/.hermes/cache/scratch/current-render-vectors.bin \
+  --native-vectors /home/jakeg/.hermes/work/frametop-native-source-native-facts/native-portal/build/stock-native-contract/native-vectors.bin
+python3 native-portal/live/stock_source_receipts_test.py --sanitize --runtime \
+  --current-vectors /home/jakeg/.hermes/cache/scratch/current-render-vectors.bin \
+  --native-vectors /home/jakeg/.hermes/work/frametop-native-source-native-facts/native-portal/build/stock-native-contract/native-vectors.bin
+```
+
+Regenerate current vectors with `current_source_vectors.py --compositor <pinned ELF> --python-deps <existing Unicorn directory> --output <owned scratch file>`. The final vector SHA256 is `1778b1e0a94900441228b80b5e85b331344c1ab56298193e51ef0ebc6e3ba1d5`.
 
 Run the owning suite with the current-vector path, once normally and once with `--sanitize`; add `--runtime` for complete production Runtime compile/link and unchanged legacy-constructor CPU smoke. All compilation/link/test processes are serial user scopes with MemoryMax=256M, MemorySwapMax=0 and designated scratch TMPDIR. No installs, SSH, camera, headset or native activation.
 
