@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 #include "source_admission.hpp"
+#include "stock_source_receipts.hpp"
 #include <cstring>
 namespace native_portal::live {
 // Only Runtime supplies this retained observation boundary. It checks the gate,
@@ -8,9 +9,49 @@ namespace native_portal::live {
 // before reading scalars. No API here authorizes independent source reads.
 class NativeSourceAdmission final:public SourceAdmission {
 public:
-    struct State {uint64_t client=0;std::array<uint64_t,2> ids{};uint8_t active=0,connected=0,external=0;};
+    using State=StockSourceState;
     using Authenticate=bool(*)(void*,const CameraBinding&,State&) noexcept;
-    NativeSourceAdmission(void* context,Authenticate auth):context_(context),auth_(auth) {}
+    // Identity-only predicate for a provider constructed before render handoff.
+    // It must not read native fields. Without it, construction pins the owner.
+    using StockOwner=bool(*)(void*) noexcept;
+    NativeSourceAdmission(void* context,Authenticate auth,StockOwner stock_owner=nullptr):
+        context_(context),auth_(auth),stock_owner_check_(stock_owner) {}
+    // Owner folds only immutable history drained after stock-original exclusion.
+    // No auth callback and no native pointer reads occur here. Current eligibility
+    // still goes through lifetime()/Authenticate under the engagement read token.
+    bool fold_stock_receipt(const CameraBinding& b,uint64_t version,const StockSourceReceipt& r) noexcept {
+        if(!stock_owner() || r.process_!=stock_process_ || std::this_thread::get_id()!=r.owner_) {
+            stock_invalid_.store(true);return false;
+        }
+        if(stock_invalid_.load() || uncertain_ || before_ok_ || watermark_ || local_connection_ ||
+           !(b==r.binding_) || !r.runtime_ || !version || version!=r.version_ || !r.observation_.valid ||
+           r.sequence_!=stock_sequence_+1 || (stock_sequence_ && (stock_stream_!=r.stream_ || stock_runtime_!=r.runtime_ || stock_version_!=version ||
+               stock_owner_!=r.owner_ || !(stock_after_==r.before_))) ||
+           !r.before_.client || r.before_.client!=r.after_.client ||
+           (bound_ && (!(binding_==b) || client_!=r.before_.client))) {uncertain_=true;return false;}
+        last_=r.observation_; // retain literal partial failures even when no capability follows
+        const auto action=r.observation_.action;
+        if((action==coordination::Action::Connect && (!r.after_.active || !r.after_.connected)) ||
+           (action==coordination::Action::Disconnect &&
+               (r.held_disconnect_?!(r.before_==r.after_):(r.after_.active || r.after_.connected))) ||
+           (action==coordination::Action::None && !(r.before_==r.after_))) {uncertain_=true;return false;}
+        bound_=true;binding_=b;client_=r.after_.client;
+        stock_stream_=r.stream_;stock_version_=version;stock_owner_=r.owner_;stock_sequence_=r.sequence_;
+        stock_after_=r.after_;stock_runtime_=r.runtime_;
+        before_local_=false;held_disconnect_=r.held_disconnect_;
+        apply_observation(r.after_,r.observation_,true);
+        held_disconnect_=false;
+        return !uncertain_;
+    }
+    // Preferred batch API: failure to seal, including missing RET or overflow,
+    // poisons this provider as well as refusing engagement. Never resets history.
+    bool fold_stock_history(StockSourceTransport& transport) noexcept {
+        if(!stock_owner() || !transport.owner()) {stock_invalid_.store(true);return false;}
+        if(!transport.seal()){uncertain_=true;return false;}
+        while(auto r=transport.take())if(!fold_stock_receipt(transport.binding_,transport.version_,*r))return false;
+        if(transport.failed()){uncertain_=true;return false;}
+        return !uncertain_ && !stock_invalid_.load();
+    }
     bool connect_eligible(const CameraBinding& b) noexcept override {
         State s;if(!lifetime(b,s) || uncertain_ || s.external)return false;
         if(!s.active && !s.connected && !s.ids[0] && !s.ids[1])return true;
@@ -41,54 +82,7 @@ public:
         last_=o;State s;
         if(!before_ok_ || !lifetime(b,s) || !o.valid || o.action!=before_action_) {uncertain_=true;return;}
         before_ok_=false;
-        if(o.provider && provider_ && o.provider!=provider_){uncertain_=true;return;}
-        if(o.provider)provider_=o.provider;
-        if(o.action==coordination::Action::Connect) {
-            const bool empty=!o.queues[0].observed && !o.queues[1].observed;
-            if(empty) {
-                if(o.actual!=1 || !journal_ || !connected_ || s.ids!=ids_)uncertain_=true;
-                last_use_=coordination::UseDisposition::AuthenticatedBorrowedUse;return;
-            }
-            bool fresh=true;
-            for(unsigned i=0;i<2;++i) {
-                const auto& q=o.queues[i];
-                if(!q.observed || q.result || !q.id || q.id!=s.ids[i] || q.alias!=q.id ||
-                   q.ownership==ClientSourceBinding::Entry::Unknown ||
-                   (q.ownership==ClientSourceBinding::Entry::NewEntry && !q.header)) {uncertain_=true;return;}
-                fresh&=q.ownership==ClientSourceBinding::Entry::NewEntry;
-            }
-            if(o.actual!=1 || !provider_ || s.ids[0]==s.ids[1]){uncertain_=true;return;}
-            ids_=s.ids;journal_=connected_=true;detached_=false;
-            local_connection_=before_local_ && fresh;
-            last_use_=local_connection_?coordination::UseDisposition::NativeConnection:
-                coordination::UseDisposition::AuthenticatedBorrowedUse;
-        } else if(o.action==coordination::Action::Disconnect) {
-            // Only the actual aggregate decision authenticates a held no-op.
-            // Empty Release outside that scope remains uncertain, never detach.
-            if(held_disconnect_ && o.actual==1 && !o.queues[0].observed && !o.queues[1].observed &&
-               connected_ && s.ids==ids_)return;
-            // Native Release=1 without two Disconnect results is NOT detach.
-            for(unsigned i=0;i<2;++i)if(!o.queues[i].observed || o.queues[i].result || o.queues[i].id!=ids_[i]) {
-                uncertain_=true;return;
-            }
-            if(o.actual!=1 || !journal_){uncertain_=true;return;}
-            connected_=false;detached_=true;
-        } else {
-            // An authentic existing Update may establish narrow warm use. Its
-            // exact manager/header/ref observations do not imply a new owner or
-            // a producer generation. Never recover an uncertain partial call.
-            bool complete=true;
-            for(unsigned i=0;i<2;++i) {
-                const auto& r=o.reads[i];
-                complete&=r.acquire_observed && !r.acquire_result && r.returned &&
-                    r.release_observed && !r.release_result && r.increment && r.decrement &&
-                    r.queue && r.header && r.id==s.ids[i];
-            }
-            if(journal_ && s.ids!=ids_){uncertain_=true;return;}
-            if(complete && provider_ && s.active && s.connected) {
-                if(!journal_){ids_=s.ids;journal_=connected_=true;local_connection_=false;}
-            }
-        }
+        apply_observation(s,o,false);
     }
     coordination::NativeReceipt transition(const CameraBinding& b,const coordination::ActionPlan& p,uint64_t actual) noexcept override {
         coordination::NativeReceipt r;State s;
@@ -149,12 +143,78 @@ public:
         settled_watermark_=watermark;borrows_={};watermark_=0;return true;
     }
 private:
+    bool stock_owner() const noexcept {
+        return getpid()==stock_process_ && (stock_owner_check_?stock_owner_check_(context_):
+            std::this_thread::get_id()==stock_constructor_owner_);
+    }
+    void apply_observation(const State& s,const ClientSourceBinding::Observation& o,bool stock) noexcept {
+        if(o.provider && provider_ && o.provider!=provider_){uncertain_=true;return;}
+        if(o.provider)provider_=o.provider;
+        if(o.action==coordination::Action::Connect) {
+            const bool empty=!o.queues[0].observed && !o.queues[1].observed;
+            if(empty) {
+                if(o.actual!=1 || !journal_ || !connected_ || s.ids!=ids_)uncertain_=true;
+                last_use_=coordination::UseDisposition::AuthenticatedBorrowedUse;return;
+            }
+            bool fresh=true;
+            for(unsigned i=0;i<2;++i) {
+                const auto& q=o.queues[i];
+                if(!q.observed || q.result || !q.id || q.id!=s.ids[i] || q.alias!=q.id ||
+                   q.ownership==ClientSourceBinding::Entry::Unknown ||
+                   (q.ownership==ClientSourceBinding::Entry::NewEntry && !q.header)) {uncertain_=true;return;}
+                fresh&=q.ownership==ClientSourceBinding::Entry::NewEntry;
+            }
+            if(o.actual!=1 || !provider_ || s.ids[0]==s.ids[1]){uncertain_=true;return;}
+            ids_=s.ids;journal_=connected_=true;detached_=false;
+            local_connection_=!stock && before_local_ && fresh;
+            last_use_=local_connection_?coordination::UseDisposition::NativeConnection:
+                coordination::UseDisposition::AuthenticatedBorrowedUse;
+        } else if(o.action==coordination::Action::Disconnect) {
+            // Only the actual aggregate decision authenticates a held no-op.
+            // Empty Release outside that scope remains uncertain, never detach.
+            if(held_disconnect_ && o.actual==1 && !o.queues[0].observed && !o.queues[1].observed &&
+               connected_ && s.ids==ids_)return;
+            // Native Release=1 without two Disconnect results is NOT detach.
+            for(unsigned i=0;i<2;++i)if(!o.queues[i].observed || o.queues[i].result || o.queues[i].id!=ids_[i]) {
+                uncertain_=true;return;
+            }
+            if(o.actual!=1 || !journal_){uncertain_=true;return;}
+            connected_=false;detached_=true;
+        } else {
+            // An authentic existing Update may establish narrow warm use. Its
+            // exact manager/header/ref observations do not imply a new owner or
+            // a producer generation. Never recover an uncertain partial call.
+            bool complete=true,attempted=false;
+            for(unsigned i=0;i<2;++i) {
+                const auto& r=o.reads[i];
+                attempted|=r.acquire_observed || r.release_observed;
+                complete&=r.acquire_observed && !r.acquire_result && r.returned &&
+                    r.release_observed && !r.release_result && r.increment && r.decrement &&
+                    r.queue && r.header && r.id==s.ids[i];
+                if(stock)complete&=r.metadata_return_observed && r.metadata && r.data && r.ref_address;
+            }
+            if(stock && complete && (!s.ids[0] || !s.ids[1] || s.ids[0]==s.ids[1])) {uncertain_=true;return;}
+            if(stock && !complete && (attempted || (!journal_ && (s.active || s.connected || s.ids[0] || s.ids[1])))) {
+                uncertain_=true;return;
+            }
+            if(journal_ && s.ids!=ids_){uncertain_=true;return;}
+            if(complete && provider_ && s.active && s.connected) {
+                if(!journal_){ids_=s.ids;journal_=connected_=true;local_connection_=false;}
+            }
+        }
+    }
     bool lifetime(const CameraBinding& b,State& s) noexcept {
+        if(stock_invalid_.load()){uncertain_=true;return false;}
         if(!auth_ || !auth_(context_,b,s) || (bound_ && !(binding_==b)))return false;
         if(bound_ && client_!=s.client)return false;
         bound_=true;binding_=b;client_=s.client;return true;
     }
-    void* context_;Authenticate auth_;
+    const int stock_process_=getpid();
+    std::atomic<bool> stock_invalid_{false};
+    uint64_t stock_stream_=0,stock_version_=0,stock_sequence_=0,stock_runtime_=0;
+    std::thread::id stock_owner_{};State stock_after_{};
+    const std::thread::id stock_constructor_owner_=std::this_thread::get_id();
+    void* context_;Authenticate auth_;StockOwner stock_owner_check_;
     CameraBinding binding_{};uint64_t client_=0,provider_=0,watermark_=0,settled_watermark_=0;
     bool bound_=false,uncertain_=false,journal_=false,connected_=false,detached_=false,local_connection_=false;
     bool before_ok_=false,before_local_=false,held_disconnect_=false;
