@@ -4,6 +4,15 @@
 #include <cstdarg>
 #include <sys/uio.h>
 static std::atomic<unsigned> native_reads{0};
+static std::atomic<uint64_t> retired_read_begin{0},retired_read_end{0};
+static void check_retired_reads(const iovec* remote,size_t count) {
+    const auto begin=retired_read_begin.load(),end=retired_read_end.load();
+    if(!begin)return;
+    for(size_t i=0;i<count;++i) {
+        const auto p=uint64_t(remote[i].iov_base),n=remote[i].iov_len;
+        assert((p>=end || (p<begin && n<=begin-p)) && "attempted read of retired wrapper storage");
+    }
+}
 extern "C" long __real_syscall(long,...);
 extern "C" long __wrap_syscall(long n,...) {
     if(n==SYS_gettid)return __real_syscall(n);
@@ -11,11 +20,11 @@ extern "C" long __wrap_syscall(long n,...) {
     va_list args;va_start(args,n);
     const auto pid=va_arg(args,int);auto* local=va_arg(args,iovec*);const auto lc=va_arg(args,int);
     auto* remote=va_arg(args,iovec*);const auto rc=va_arg(args,int);const auto flags=va_arg(args,int);va_end(args);
-    ++native_reads;return __real_syscall(n,pid,local,lc,remote,rc,flags);
+    check_retired_reads(remote,rc);++native_reads;return __real_syscall(n,pid,local,lc,remote,rc,flags);
 }
 extern "C" ssize_t __real_process_vm_readv(pid_t,const iovec*,unsigned long,const iovec*,unsigned long,unsigned long);
 extern "C" ssize_t __wrap_process_vm_readv(pid_t pid,const iovec* local,unsigned long lc,const iovec* remote,unsigned long rc,unsigned long flags) {
-    ++native_reads;return __real_process_vm_readv(pid,local,lc,remote,rc,flags);
+    check_retired_reads(remote,rc);++native_reads;return __real_process_vm_readv(pid,local,lc,remote,rc,flags);
 }
 static void prebootstrap_observe(Chain& f) {
     if(current_mode.rfind("prebootstrap-",0)!=0)return;
@@ -146,7 +155,7 @@ static int bootstrap_guard(const std::string& mode) {
             f->s={};f->s.x[0]=addr(f->r);f->s.sp=addr(f->outer_stack)+0x1000;f->s.x[30]=Chain::base+FT_BOOT_DISPATCH_LR;f->event(0x2a1e18);
             f->s.sp-=0xd0;f->s.x[19]=addr(f->r);f->s.x[1]=addr(f->command);f->event(0x2a1e3c);
             f->event(0x2a2230);f->event(0x2a2320);
-            f->s.x[0]=addr(f->command);f->s.x[30]=Chain::base+FT_BOOT_RELEASE_LR;f->event(0x305260);
+            f->s.x[0]=f->s.x[20]=addr(f->command);f->s.x[30]=Chain::base+FT_BOOT_RELEASE_LR;f->event(0x305260);
             f->s.sp-=0x30;f->s.x[19]=addr(f->command);f->s.x[1]=addr(f->executable);f->event(0x3052e0);
             f->s.x[0]=addr(f->bootstrap_pool)+0xd0;f->event(0x3052ec);
             f->s.x[1]=1;f->s.x[30]=Chain::base+FT_BOOT_POOL_LR;f->event(0x311648);

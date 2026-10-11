@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 #include "evidence.hpp"
+#include "wrapper_epoch.hpp"
 
 namespace native_portal::runtime {
 // Register-only receipt collector. Installation coverage is supplied by the
@@ -45,6 +46,7 @@ class NativeStockFactCollector {
         unsigned phase=0;
     } factory_,publication_;
     struct Turn {uint64_t w=0,c=0;Point entry{};unsigned phase=0;} turn_;
+    WrapperEpoch wrapper_epoch_;
     struct Dispose {uint64_t w=0,c=0,p=0;Point entry{};unsigned phase=0;} dispose_;
     struct Begin {uint64_t c=0;Point entry{};bool loaded=false;} begin_;
     // One bounded disjoint invocation. Copies only, never a native pointer loan,

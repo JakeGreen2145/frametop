@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
+#include "wrapper_epoch.hpp"
 #include "../binding/pass.hpp"
 #include "../binding/lifecycle.hpp"
 #include <optional>
@@ -174,6 +175,7 @@ class Evidence {
     binding::Owner lifecycle_owner_{};
     uint64_t creation_=0,creation_sp_=0,begin_sp_=0,begin_vk_=0,recording_=0;
     bool begin_open_=false,begin_success_=false;
+    WrapperEpoch wrapper_epoch_;
     struct Turnover {
         uint64_t sp=0,command=0,wrapper=0,vk=0,generation=0,pool=0;
         unsigned phase=0;

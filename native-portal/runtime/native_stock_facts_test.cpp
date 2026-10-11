@@ -7,7 +7,9 @@
 #include "stock_facts_test.cpp"
 #pragma GCC diagnostic pop
 #include "native_stock_facts.hpp"
+#ifndef FT_NATIVE_STOCK_SOURCE_MODEL
 #include "native-stock-witness.hpp"
+#endif
 #include <vector>
 
 struct NativeFixture:StockFixture {
@@ -56,6 +58,16 @@ struct NativeFixture:StockFixture {
     void run() {StockFixture::run();assert(collector.handoff(evidence));}
     bool factory(uint64_t W,uint64_t C) {
         const auto sp=addr(stack)+0x100;
+#ifdef FT_NATIVE_STOCK_SOURCE_MODEL
+        // Explicit complete contract model for source-only test environments.
+        // Never exported or described as instruction-generated Saved vectors.
+        bool ok=true;
+        wrapper_factory_model(base,addr(r),W,C,addr(pool),sp,[&](uint64_t pc,arena::Saved call) {
+            if(pc==0x2a23f4 || pc==0x2a23f8 || (failed_pool && pc==0x304ec8))return;
+            s=call;if(ok)ok=emit(pc,false);
+        });
+        return ok;
+#else
         // Relocate synthetic object identities, not the observed ABI lanes.
         // PC/SP/LR and all register values originate in the pinned-text witness.
         auto relocate=[&](uint64_t v) {
@@ -68,12 +80,19 @@ struct NativeFixture:StockFixture {
         };
         const auto *vectors=failed_pool?failure_factory_vectors:factory_vectors;
         const size_t count=failed_pool?std::size(failure_factory_vectors):std::size(factory_vectors);
+        uint64_t factory_owner=0;
         for(size_t index=0;index<count;++index) {
             const auto &v=vectors[index];
             s={};s.sp=relocate(v.sp);for(unsigned i=0;i<31;++i)s.x[i]=relocate(v.x[i]);
+            // The saved factory-only witness did not execute the outer caller.
+            // These caller-context lanes are explicit contract models, not
+            // additional instruction-generated records or a complete replay.
+            if(v.pc==0x3053f8){factory_owner=s.x[0];s.x[19]=addr(r);s.x[20]=factory_owner;}
+            if(v.pc==0x302790){s.x[19]=W;s.x[3]=factory_owner;}
             if(!emit(v.pc,false))return false;
         }
         return true;
+#endif
     }
     bool turn(uint64_t W,uint64_t C,uint64_t nextW,unsigned fault=0) {
         assert(!fault);
@@ -84,13 +103,15 @@ struct NativeFixture:StockFixture {
         // No 2a1f64 here: native can bypass that branch. No invented C load.
         if(corrupt==0x2a1f64) {s.x[20]=C;s.x[2]=W;if(!emit(0x2a1f64))return false;}
         if(!emit(0x2a2230) || !emit(0x2a2320))return false;
-        put(r,0x1380,uint64_t(0));s.x[0]=W;s.x[30]=base+0x2a23b4;if(!emit(0x305260))return false;
+        put(r,0x1380,uint64_t(0));s.x[0]=s.x[20]=W;s.x[30]=base+0x2a23b4;if(!emit(0x305260))return false;
         s.sp-=0x30;s.x[19]=W;s.x[1]=C;if(!emit(0x3052e0))return false;
         s.x[0]=addr(pool)+0xd0;if(!emit(0x3052ec))return false;
         s.x[30]=base+0x3052f0;if(!emit(0x311648))return false;
         s.x[0]=pool_result;if(!emit(0x3052f0))return false;
+        s.sp+=0x30;s.x[0]=s.x[20]=W;s.x[19]=addr(r);s.x[1]=0x10;s.x[30]=base+0x2a23c0;
+        if(!emit(0x4b3d0))return false;
         if(!factory(nextW,nextC))return false;
-        s.x[19]=addr(r);s.x[0]=nextW;
+        s.x[19]=addr(r);s.x[0]=nextW;s.x[20]=0;
         assert(!evidence.event(0x2a23f4,s)); // cannot publish before store
         put(r,0x1380,nextW);return emit(0x2a23f8);
     }
@@ -142,7 +163,7 @@ static void collector_negatives() {
         NativeFixture f;assert(f.evidence.pin(Fixture::base,elf_sha256));assert(f.emit(0x7fda0));f.corrupt=fault.first;f.lane=fault.second;
         assert(!f.create(addr(f.executable),0xc001));assert(f.corrupted && !f.collector.complete());
     }
-    for(uint64_t omitted:{0x304ec8u,0x2a1e3cu,0x3052e0u,0x3052ecu,0x3052f0u,0x3053f8u,0x305308u,0x302790u,0x304e60u,0x304eccu,0x3053a8u,0x305490u,0x305470u}) {
+    for(uint64_t omitted:{0x4b3d0u,0x304ec8u,0x2a1e3cu,0x3052e0u,0x3052ecu,0x3052f0u,0x3053f8u,0x305308u,0x302790u,0x304e60u,0x304eccu,0x3053a8u,0x305490u,0x305470u}) {
         auto f=std::make_unique<NativeFixture>();assert(f->bootstrap(true,nullptr,1));f->run();f->skip=omitted;
         assert(!f->turn(addr(f->command),addr(f->executable),addr(f->next)));assert(!f->collector.complete());
         assert(!f->evidence.engage_stock(f->evidence.identity(),f->evidence.stock_command_facts().generation));

@@ -132,16 +132,37 @@ bool Evidence::event_impl(uint64_t pc,const arena::Saved &s) noexcept {
     }
     if(!constructed_) return false;
     const auto R=identity_.renderer;
+    if(pc==0x4b3d0 && turnover_.phase==5 && s.x[0]==turnover_.wrapper &&
+       s.x[0]!=R && !command_wrapper_ && !spans_[2].begin) {
+        // Collision checks precede token consumption. No native reads here.
+        bool alias=s.x[0]==wrapper_ || s.x[0]==marker_ || s.x[0]==resource_ || s.x[0]==creation_;
+        for(const auto& c:recordings_)alias=alias || c.command==s.x[0];
+        for(const auto& span:spans_)alias=alias || (span.begin && s.x[0]>=span.begin && s.x[0]-span.begin<span.size);
+        if(alias || !wrapper_epoch_.retire(s))return fail(pc);
+        turnover_.phase=6;return true; // only W storage, all settlement debt intact
+    }
+    if(pc==0x4b3d0 && turnover_.phase && s.sp==turnover_.sp && s.x[30]==base_+0x2a23c0)return fail(pc);
     // Generic free observes the allocation identity, not just command members.
     // Revoke retained renderer/wrapper dependencies before native deletion.
     if((pc==0x4b3d0 || pc==0x3003d0) && s.x[0] &&
-       (s.x[0]==R || s.x[0]==command_wrapper_ || s.x[0]==turnover_.wrapper))return fail(pc);
+       (s.x[0]==R || s.x[0]==command_wrapper_ || s.x[0]==turnover_.wrapper ||
+        (turnover_.phase && s.x[0]==turnover_.command) ||
+        (wrapper_epoch_.active() && s.x[0]==wrapper_epoch_.command()) ||
+        s.x[0]==wrapper_epoch_.factory() || wrapper_epoch_.dead(s.x[0])))return fail(pc);
+    if(pc==0x305308 && wrapper_epoch_.active()) {
+        bool alias=s.x[0]==wrapper_ || s.x[0]==marker_ || s.x[0]==resource_ || s.x[0]==creation_;
+        for(const auto& c:recordings_)alias=alias || c.command==s.x[0];
+        for(const auto& span:spans_)alias=alias || (span.begin && s.x[0]>=span.begin && s.x[0]-span.begin<span.size);
+        if(alias)return fail(pc);
+    }
+    if(wrapper_epoch_.active() && WrapperEpoch::site(pc) && wrapper_epoch_.matches(pc,s) &&
+       !wrapper_epoch_.event(pc,s))return fail(pc);
     if(pc==0x301808 || pc==0x30180c || pc==0x300a08 || pc==0x300a38 ||
        pc==0x300b20 || pc==0x300c54 || pc==0x3003d0 || pc==0x311648 || pc==0x4b3d0 ||
        pc==0x305260 || pc==0x2953a0 || pc==0x3018b0 || pc==0x2a1e18 || pc==0x2a2230 ||
        pc==0x2a2320 || pc==0x2987d8 || pc==0x298840 || pc==0x2a23f4 || pc==0x2a23f8 ||
-       (dormant_stock() && (pc==0x300a28 || pc==0x2a1e3c || pc==0x2a1f64 ||
-         pc==0x3052e0 || pc==0x3052ec || pc==0x3052f0))) return recording_event(pc,s);
+       pc==0x3052e0 || pc==0x3052ec || pc==0x3052f0 ||
+       (dormant_stock() && (pc==0x300a28 || pc==0x2a1e3c || pc==0x2a1f64))) return recording_event(pc,s);
     if(pc==0x29bd18 || pc==0x29c238) {
         if(s.x[0]!=R) return false;
         fail(pc);return true; // revoke before native teardown, never retire native objects
@@ -183,6 +204,7 @@ bool Evidence::event_impl(uint64_t pc,const arena::Saved &s) noexcept {
     if(pc==0x29a528) { // before STR x1,[R+1380]; newly returned 16-byte wrapper
         if(ready_ || s.x[19]!=R || command_wrapper_ || !add(2,s.x[1],0x10)) return fail(pc);
         command_wrapper_=s.x[1];
+        if(!wrapper_epoch_.seed(command_wrapper_))return fail(pc);
         uint64_t command=0;
         if(!at(command_wrapper_+8,command)) return fail(pc);
         trace_command(command);

@@ -74,6 +74,7 @@ bool NativeStockFactCollector::bootstrap(uint64_t b,const render::Identity &i,ui
         auto *m=member(c);
         if(active_pc_!=0x29a528 || current_w_ || !m || !m->made || !m->begun || m->vk!=vk || !ptr(w,0x10))return deny(active_pc_);
         // Existing qualified bootstrap W/C/Device/Vk borrow, not a new walk.
+        if(!wrapper_epoch_.seed(w))return deny(active_pc_);
         current_w_=w;current_c_=c;return field(c+0x50,m->p);
     }
     if(active_pc_!=0x7fdbc || !i.device_generation || current_w_!=w || current_c_!=c || vk)return deny(active_pc_);
@@ -240,6 +241,9 @@ bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexce
         return bad();
     }
     if(observed>0)return unrelated();
+    if(pc==0x305308 && (s.x[0]==R || member(s.x[0]) || s.x[0]==current_w_))return bad();
+    if(pc!=0x302790 && wrapper_epoch_.active() && WrapperEpoch::site(pc) && wrapper_epoch_.matches(pc,s) &&
+       !wrapper_epoch_.event(pc,s))return bad();
     // These hooks are process-global. Entry qualifies a new command by device;
     // descendants can only describe an existing owned invocation/member. Never
     // ask Evidence to read a missing scalar for an unrelated native invocation.
@@ -342,6 +346,8 @@ bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexce
         if(s.x[0]!=current_w_)return bad();
         current_w_=0;current_c_=0;publication_={}; // revoke before any future C/P load
         if(turn_.phase!=4 || dispose_.phase || s.x[0]!=turn_.w || s.x[19]!=R || s.sp!=turn_.entry.sp-0xd0 || s.x[30]!=base_+0x2a23b4)return bad();
+        if(s.x[20]!=turn_.w || !member(turn_.c) ||
+           !wrapper_epoch_.begin(base_,R,turn_.w,turn_.c,member(turn_.c)->p,s.sp))return bad();
         dispose_={turn_.w,0,0,active_,1};return true;
     case 0x3052e0:
         if(dispose_.phase!=1 || s.sp!=dispose_.entry.sp-0x30 || s.x[19]!=dispose_.w || s.x[1]!=turn_.c)return bad();
@@ -374,7 +380,7 @@ bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexce
     case 0x3053f8:
         // Bootstrap wrapper identity uses the existing qualified initializer
         // borrow. This collector's factory path is the authenticated turnover.
-        if(factory_.phase || turn_.phase!=5 || s.sp<0xe0 || !ptr(s.sp,0xa0) || s.sp!=turn_.entry.sp-0xd0 || s.x[30]!=base_+0x2a23e8 || s.x[8]!=s.sp+0x98 || !s.x[0])return bad();
+        if(factory_.phase || turn_.phase!=6 || s.sp<0xe0 || !ptr(s.sp,0xa0) || s.sp!=turn_.entry.sp-0xd0 || s.x[30]!=base_+0x2a23e8 || s.x[8]!=s.sp+0x98 || !s.x[0])return bad();
         factory_={};factory_.owner=s.x[0];factory_.slot=s.x[8];factory_.name=s.x[1];factory_.entry=active_;factory_.phase=1;return true;
     case 0x305308:
         if(factory_.phase!=1 || s.sp!=factory_.entry.sp-0x30 || s.x[30]!=base_+0x30548c || s.x[1]!=factory_.owner || s.x[2]!=factory_.name || !ptr(s.x[0],0x10))return bad();
@@ -397,6 +403,7 @@ bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexce
         if(s.x[8]!=factory_.w+8)return reject(4);
         if(s.x[1]!=factory_.name)return reject(5);
         if(!ptr(s.x[0],0xd0))return reject(6);
+        if(!wrapper_epoch_.event(pc,s))return bad();
         factory_.p=s.x[0];factory_.acquire=active_;factory_.phase=3;return true;
     }
     case 0x304e60:
@@ -425,12 +432,19 @@ bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexce
     case 0x2a23f4:return true; // pre-store never publishes or supplies fields
     case 0x2a23f8: {
         auto *m=member(factory_.c);
-        if(factory_.phase!=8 || turn_.phase!=5 || dispose_.phase || s.sp!=factory_.entry.sp || s.x[19]!=R || s.x[0]!=factory_.w || s.x[30]!=factory_.entry.lr || !m || !m->made || !m->begun || m->reset)return bad();
+        if(factory_.phase!=8 || turn_.phase!=6 || dispose_.phase || s.sp!=factory_.entry.sp || s.x[19]!=R || s.x[0]!=factory_.w || s.x[30]!=factory_.entry.lr || !m || !m->made || !m->begun || m->reset)return bad();
         current_w_=s.x[0];current_c_=m->c;
         const bool ok=field(current_w_+8,m->c) && command_fields(*m);
         publication_=factory_;factory_={};turn_={};return ok;
     }
     case 0x3003d0:case 0x4b3d0: {
+        if(pc==0x4b3d0 && turn_.phase==5 && s.x[0]==turn_.w &&
+           s.x[0]!=R && !current_w_ && !factory_.phase && !dispose_.phase &&
+           !member(s.x[0]) && wrapper_epoch_.retire(s)) {
+            turn_.phase=6;return true; // W storage only, never erase C or debt
+        }
+        if(pc==0x4b3d0 && turn_.phase && s.sp==turn_.entry.sp-0xd0 && s.x[30]==base_+0x2a23c0)return bad();
+        if(wrapper_epoch_.dead(s.x[0]))return bad();
         if(s.x[0] && (s.x[0]==R || s.x[0]==current_w_ || s.x[0]==turn_.w || s.x[0]==factory_.w))return bad();
         auto *m=member(s.x[0]);if(!m)return true;
         const bool live=m->c==current_c_ || m->c==ctor_.c || m->c==begin_.c || m->c==turn_.c || m->c==factory_.c;

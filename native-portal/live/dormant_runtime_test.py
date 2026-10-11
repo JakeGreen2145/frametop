@@ -149,7 +149,7 @@ def main():
     if not args.baseline_red:
         modes += ['cold-seal', 'connect', 'engage-race']
     if args.current:
-        modes = ['empty-cold', 'empty-bypass', 'empty-warm', 'empty-warm-retained', 'empty-q1', 'retained-bypass', 'retained-connected-zero', 'retained-clamp', 'cold', 'warm', 'stock-render', 'update-three', 'missing-hook', 'partial-upload', 'rejected-enqueue',
+        modes = ['empty-cold', 'empty-cold-retained', 'empty-bypass', 'empty-warm', 'empty-warm-retained', 'empty-q1', 'retained-bypass', 'retained-connected-zero', 'retained-clamp', 'cold', 'warm', 'stock-render', 'update-three', 'missing-hook', 'partial-upload', 'rejected-enqueue',
                  'source-uncertainty', 'identity-migration', 'actual-return', 'no-gpu', 'no-cpu', 'no-source']
         modes += ['source-negative-' + name for name in ('4', '5', '7', 'unpaired', 'no-ret')]
         modes += ['missing-alt-' + site['module'] + '-' + site['pc'][2:] for site in requested]
@@ -188,6 +188,7 @@ def main():
                        'shared-bad-cleanup-call': '0x3052f0', 'shared-bad-cleanup-result': '0x3052f0',
                        'shared-bad-cleanup-current': '0x3052e0',
                        **{'shared-bad-free-' + role: '0x4b3d0' for role in ('r', 'w', 'c')}}
+    retired_faults: dict[str, str] = {}
     if args.current:
         modes += shared_modes + list(shared_negative) + ['shared-chain-cold', 'shared-chain-warm']
         modes += [f'initializer-chain-{state}-{result}' for state in ('cold', 'warm') for result in ('positive', 'null')]
@@ -196,6 +197,11 @@ def main():
         modes += [f'initializer-chain-vectors-{case}-{state}-{result}' for case in range(2)
                   for state in ('cold', 'warm') for result in ('positive', 'null')]
         modes += factory_modes
+        modes += ['retired-cold', 'retired-warm', 'retired-different', 'retired-repeated', 'retired-engaged', 'retired-settled', 'retired-owned-missing-return', 'retired-lock-paths']
+        retired_faults = {key: '0x4b3d0' for key in ('early', 'size', 'sp', 'lr', 'r', 'w', 'command', 'renderer', 'duplicate', 'factory-free', 'current-free', 'free-subject')}
+        retired_faults.update({'pc': '0x3003d0', 'missing-entry': '0x3052f0', 'missing-result': '0x4b3d0',
+                              'failed-result': '0x3052f0', 'missing-free': '0x3053f8', 'factory-c': '0x305308', 'factory-r': '0x305308'})
+        modes += [prefix + fault for prefix in ('retired-bad-', 'retired-engaged-bad-') for fault in retired_faults]
     if args.modes:
         requested = args.modes.split(',')
         assert requested and all(mode in modes or (args.current and mode in factory_modes) for mode in requested)
@@ -239,6 +245,14 @@ def main():
             passed = exact_red
         if args.current:
             passed = code == 0 and text.count('stereo=1 pending-Off=1 exact-settlement=1 disconnects=0 clean-teardown=1') == 2
+            if mode.startswith(('retired-bad-', 'retired-engaged-bad-')):
+                engaged_bad = mode.startswith('retired-engaged-')
+                expected = retired_faults[mode[20 if engaged_bad else 12:]]
+                live = [dict(word.split('=', 1) for word in line.split()[1:])
+                        for line in text.splitlines() if line.startswith('ft-native-live ')]
+                passed = (code == 0 and text.count('CURRENT ' + mode + ' refused=1 clean-teardown=1') == 2
+                          and any(row.get('first_evidence_pc') == expected and
+                                  row.get('first_stock_pc') == ('0x0' if engaged_bad else expected) for row in live))
             if mode.startswith('initializer-chain-'):
                 passed = passed and text.count('INITIALIZER direct-before-wrapper=1 before-29a528=1') == 2
             if mode.startswith('vectors-'):
@@ -294,7 +308,7 @@ def main():
                     'bootstrap-return-lr': ('0x311648', '0x311648'),
                     'bootstrap-return-duplicate': ('0x311648', '0x311648'),
                     'bootstrap-reset-subject': ('0x300c54', '0x300c54'),
-                    'bootstrap-disposal-subject': ('0x311648', '0x0'),
+                    'bootstrap-disposal-subject': ('0x311648', '0x311648'),
                     'bootstrap-known-destroy': ('0x3003d0', '0x3003d0'),
                     'bootstrap-constructor-fault': ('0x303d10', '0x0'),
                     'bootstrap-vtable': ('0x0', '0x7fda0'),
@@ -310,7 +324,7 @@ def main():
             if mode == 'missing-hook' or mode.startswith('missing-alt-'):
                 passed = code == 0 and text.count('CURRENT missing-hook refused=1 clean-teardown=1') == 2
             if mode.startswith('source-negative-') or mode in ('partial-upload', 'rejected-enqueue', 'source-uncertainty', 'identity-migration',
-                        'actual-return', 'no-gpu', 'no-cpu', 'no-source',
+                        'actual-return', 'no-gpu', 'no-cpu', 'no-source', 'retired-owned-missing-return',
                         'initializer-chain-no-gpu', 'initializer-chain-no-cpu', 'initializer-chain-no-source'):
                 passed = (code == -6 and 'CURRENT pending cleanup negative=' + mode + ' native_cleanup=0' in text
                           and fields.get('event') == '0x000000000008b020'

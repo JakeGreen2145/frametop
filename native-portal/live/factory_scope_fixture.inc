@@ -62,7 +62,7 @@ static int factory_scope_probe(const std::string& mode,Chain *existing=nullptr,b
         const auto sp=s.sp;s={};s.sp=sp+0xd0;s.x[0]=addr(f->r);s.x[30]=Chain::base+FT_BOOT_DISPATCH_LR;
         emit(0x2a1e18,s);s.sp=sp;s.x[19]=addr(f->r);s.x[1]=addr(f->command);emit(0x2a1e3c,s);
         emit(0x2a2230,s);emit(0x2a2320,s);
-        s.x[0]=addr(f->command);s.x[30]=Chain::base+FT_BOOT_RELEASE_LR;emit(0x305260,s);
+        s.x[0]=s.x[20]=addr(f->command);s.x[30]=Chain::base+FT_BOOT_RELEASE_LR;emit(0x305260,s);
         if(mode=="factory-selected-sibling") {
             // A disjoint receipt cannot erase the open selected cleanup.
             auto q=acquire;q.sp=sp-0x400;q.x[8]=q.sp+0x80;q.x[19]=addr(f->r);
@@ -74,14 +74,17 @@ static int factory_scope_probe(const std::string& mode,Chain *existing=nullptr,b
         s.x[0]=addr(f->bootstrap_pool)+0xd0;emit(0x3052ec,s);
         s.x[30]=Chain::base+FT_BOOT_POOL_LR;emit(0x311648,s);
         s.x[0]=1;emit(0x3052f0,s);
+        s.sp=sp;s.x[0]=s.x[20]=addr(f->command);s.x[19]=addr(f->r);
+        s.x[1]=0x10;s.x[30]=Chain::base+0x2a23c0;emit(0x4b3d0,s);
         if(mode=="factory-diag-phase") {
             s={};s.sp=sp;s.x[0]=pool;s.x[1]=uint64_t(guard);s.x[8]=sp+0x80;s.x[30]=Chain::base+0x297b70;
         } else {
-            s={};s.sp=sp;s.x[0]=addr(f->r);s.x[1]=uint64_t(guard);s.x[8]=sp+0x98;
+            s={};s.sp=sp;s.x[19]=addr(f->r);s.x[0]=s.x[20]=addr(f->r);s.x[1]=uint64_t(guard);s.x[8]=sp+0x98;
             s.x[30]=Chain::base+0x2a23e8;emit(0x3053f8,s);
             s.sp-=0x30;s.x[0]=addr(f->bootstrap_wrapper);s.x[1]=addr(f->r);s.x[2]=uint64_t(guard);
             s.x[30]=Chain::base+0x30548c;emit(0x305308,s);
             s.sp-=0x20;s.x[0]=pool;s.x[1]=uint64_t(guard);s.x[8]=addr(f->bootstrap_wrapper)+8;
+            s.x[19]=addr(f->bootstrap_wrapper);s.x[3]=addr(f->r);
             s.x[30]=Chain::base+0x305330;
         }
         if(mode=="factory-diag-sp")++s.sp;
@@ -113,7 +116,7 @@ static int factory_scope_probe(const std::string& mode,Chain *existing=nullptr,b
             s.x[20]=F+0x98;s.x[22]=addr(f->bootstrap_wrapper);
             if(mode!="factory-selected-null-output")emit(0x305490,s);
             s.sp=F;s.x[0]=F+0x98;s.x[30]=Chain::base+0x2a23e8;emit(0x305470,s);
-            s.x[19]=addr(f->r);s.x[0]=addr(f->bootstrap_wrapper);
+            s.x[19]=addr(f->r);s.x[0]=addr(f->bootstrap_wrapper);s.x[20]=0;
             put(f->bootstrap_wrapper,8,addr(f->bootstrap_command));put(f->r,0x1380,addr(f->bootstrap_wrapper));
             emit(0x2a23f8,s);
         }

@@ -57,6 +57,23 @@ struct DormantFixture:Fixture {
         s.x[0]=0;s.x[30]=base+0x300a38;event(0x300a38);
         s.sp=addr(stack)+0x100;s.x[20]=addr(executable);s.x[0]=1;s.x[30]=base+0x30180c;event(0x30180c);
         s.x[19]=addr(r);s.x[1]=addr(command);event(0x29a528);s.x[24]=addr(r);s.x[0]=1;event(0x7fdbc);
+        // Complete ordinary stock turnover before Run, including mandatory
+        // sized delete and a fresh same-address wrapper. Native bodies modeled.
+        const auto B=addr(stack)+0x100,C=addr(executable),W=addr(command),P=addr(pool);
+        s={};s.sp=B+0xd0;s.x[0]=addr(r);s.x[30]=base+0x15a9bc;event(0x2a1e18);
+        s.sp=B;s.x[19]=addr(r);s.x[1]=W;event(0x2a1e3c);event(0x2a2230);event(0x2a2320);
+        put(r,0x1380,uint64_t(0));s.x[0]=s.x[20]=W;s.x[30]=base+0x2a23b4;event(0x305260);
+        s.sp-=0x30;s.x[19]=W;s.x[1]=C;event(0x3052e0);s.x[0]=P+0xd0;event(0x3052ec);
+        s.x[30]=base+0x3052f0;event(0x311648);s.x[0]=1;event(0x3052f0);
+        s.sp=B;s.x[0]=s.x[20]=W;s.x[19]=addr(r);s.x[1]=0x10;s.x[30]=base+0x2a23c0;event(0x4b3d0);
+        s={};s.sp=B;s.x[0]=s.x[19]=C;s.x[20]=P;s.x[30]=base+0x2a9cdc;event(0x300b20);
+        s.sp-=0x20;s.x[0]=0;s.x[30]=base+0x300c54;event(0x300c54);
+        s.sp+=0x20;s.x[0]=C;s.x[30]=base+0x2a9cdc;event(0x300a08);
+        s.sp-=0x30;s.x[0]=0xc001;event(0x300a28);s.x[0]=0;s.x[30]=base+0x300a38;event(0x300a38);
+        wrapper_factory_model(base,addr(r),W,C,P,B,[&](uint64_t pc,arena::Saved call) {
+            if(pc==0x2a23f8)put(r,0x1380,W);
+            const auto saved=call;router.event(pc,call);assert(!std::memcmp(&call,&saved,sizeof call));
+        });
         s.x[19]=addr(worker);s.x[21]=addr(context);event(0x14099c);s.x[0]=addr(worker);event(0x140dbc);
     }
     void run() {

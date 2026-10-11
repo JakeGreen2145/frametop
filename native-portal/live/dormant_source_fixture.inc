@@ -6,18 +6,29 @@
     std::array<uint64_t,2> source_headers{11,12};
     void* source_vtable=nullptr;void* empty_page=nullptr;
     unsigned modeled_acquires=0,modeled_returns=0,modeled_empty=0;
+    static void* reserve_source_vtable() {
+        struct Reservation {
+            void* page=mmap(reinterpret_cast<void*>(client_base+0x60f000),4096,
+                PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
+            Reservation(){assert(page==reinterpret_cast<void*>(client_base+0x60f000));}
+            ~Reservation(){assert(!munmap(page,4096));}
+        };
+        // Keep the low address occupied between Runtime instances, otherwise
+        // the process heap can grow into it before the next source_map call.
+        static Reservation reservation;
+        return reservation.page;
+    }
     void source_map() {
-        source_vtable=mmap(reinterpret_cast<void*>(client_base+0x60f000),4096,
-            PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
-        assert(source_vtable==reinterpret_cast<void*>(client_base+0x60f000));
+        source_vtable=reserve_source_vtable();
+        std::memset(source_vtable,0,4096);
         // Reserve the fixed modeled vtable before an anonymous PROT_NONE page.
-        // On a second Runtime Linux may reuse the just-freed low-address hole.
+        // Its process-lifetime reservation also excludes heap growth between runs.
         empty_page=mmap(nullptr,4096,PROT_NONE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);assert(empty_page!=MAP_FAILED);
         auto store=[&](size_t offset,uint64_t value){std::memcpy(static_cast<unsigned char*>(source_vtable)+offset,&value,8);};
         store(0x110,client_base+0x32a270);store(0x118,client_base+0x328380);
         store(0x138,client_base+0x3280a8);store(0x140,client_base+0x327640);
     }
-    void source_unmap(){if(source_vtable)assert(!munmap(source_vtable,4096));if(empty_page)assert(!munmap(empty_page,4096));}
+    void source_unmap(){source_vtable=nullptr;if(empty_page)assert(!munmap(empty_page,4096));empty_page=nullptr;}
     std::array<std::array<std::byte,0x200>,2> metadata_objects{},metadata_headers{},metadata_values{};
     void source_metadata(uint64_t entry_sp,unsigned q,bool release,int raw=0,bool bypass=false) {
         const uint64_t local_sp=entry_sp-0x360,manager=reinterpret_cast<uint64_t>(&provider);

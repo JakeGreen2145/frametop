@@ -97,6 +97,7 @@ static uint64_t admission_scalar(const char* name,uint64_t pc,unsigned word) {
 #include "factory_arguments_fixture.inc"
 #include "factory_scope_fixture.inc"
 #include "shared_factory_fixture.inc"
+#include "retired_wrapper_fixture.inc"
 static void initializer_factory_observe(Chain &f) {
     // After renderer qualification, before 29a528 and before the initial
     // wrapper factory. The earlier direct acquisition has a clobbered x24.
@@ -106,7 +107,9 @@ static void initializer_factory_observe(Chain &f) {
     std::fputs("INITIALIZER direct-before-wrapper=1 before-29a528=1\n",stderr);
 }
 static void scenario() {
-    updates=0;source_fault_active=false;const unsigned connects_before=connect_calls;
+    updates=0;source_fault_active=false;
+    const bool retired_bad=current_mode.rfind("retired-bad-",0)==0 || current_mode.rfind("retired-engaged-bad-",0)==0;
+    const unsigned connects_before=connect_calls;
     auto f=std::make_unique<Chain>();active=f.get();f->source_map();f->borrowed_fixture=true;
     f->alternative_render=current_mode;
     auto saved=f->s;f->s={};f->s.sp=addr(f->stack);f->s.x[19]=addr(f->app);
@@ -126,9 +129,14 @@ static void scenario() {
         s={};s.x[0]=addr(f->other);f->router.event(0x4b3d0,s);
         assert(native_reads.load()==before);
     }
-    postbootstrap_observe(*f);f->publish_worker();
+    postbootstrap_observe(*f);
+    retired_turnover(*f,true); // mandatory pre-Run stock cleanup includes sized delete
+    if(current_mode=="retired-different") {retired_turnover(*f,false);retired_turnover(*f,false);}
+    if(current_mode=="retired-lock-paths")for(uint64_t lr:{0x2a23b4u,0x30528cu,0x3052c4u,0x3052dcu})retired_turnover(*f,true,"",lr,0x101);
+    f->publish_worker();
     std::thread owner([&]{
         f->run_enter();
+        if(current_mode=="retired-repeated")for(unsigned i=0;i<8;++i)retired_turnover(*f,(i&1)==0);
         if(shared_chain) {
             for(unsigned c=0;c<2;++c)for(unsigned i=0;i<6;++i)for(const auto result:{"positive","null"}) {
                 argument_vector=&factory_saved_vectors[c][i];
@@ -140,7 +148,13 @@ static void scenario() {
                                  "shared-cleanup-unknown","shared-cleanup-null","shared-cleanup-known"})
                 shared_factory_sequence(*f,mode);
         }
-        if(current_mode=="bound-known-delete" || current_mode=="bound-known-destroy") {
+        if(retired_bad) {
+            const bool engaged=current_mode.rfind("retired-engaged-",0)==0;
+            if(engaged){f->frame_start();f->frame_end();assert(f->router.diagnostics().capable);}
+            retired_turnover(*f,true,current_mode.substr(engaged?20:12));
+            f->frame_start();f->frame_end();
+            assert(!f->router.diagnostics().capable && !f->router.diagnostics().pending && !f->enqueues);
+        } else if(current_mode=="bound-known-delete" || current_mode=="bound-known-destroy") {
             const auto binding=f->router.camera_binding_diagnostics();
             assert(binding.run_authenticated && binding.runtime_bound && binding.barrier_retained);
             f->s={};f->s.x[0]=addr(f->executable);
@@ -149,7 +163,15 @@ static void scenario() {
             f->frame_start();f->frame_end();
             assert(!f->router.diagnostics().capable && !f->router.diagnostics().pending && !f->enqueues);
         } else {
-        const bool warm=current_mode.rfind("empty-warm",0)==0 || current_mode=="warm" || current_mode=="shared-chain-warm" ||
+        if(current_mode=="retired-engaged" || current_mode=="retired-settled") {
+            f->frame_start();f->frame_end();assert(f->router.diagnostics().capable);
+            if(current_mode=="retired-engaged")for(unsigned i=0;i<8;++i)retired_turnover(*f,(i&1)==0);
+            else f->settled_observe=[](Chain& chain) {
+                for(unsigned i=0;i<8;++i)retired_turnover(chain,(i&1)==0);
+                chain.frame_start();chain.frame_end();assert(chain.router.diagnostics().capable && !chain.router.diagnostics().pending);
+            };
+        }
+        const bool warm=current_mode.rfind("empty-warm",0)==0 || current_mode=="warm" || current_mode=="retired-warm" || current_mode=="shared-chain-warm" ||
             (initializer_chain && current_mode.find("-warm-")!=std::string::npos);
         if(warm) {
             put(f->camera,0x34a,uint8_t(1));put(f->camera,0x360,uint8_t(1));
@@ -157,7 +179,7 @@ static void scenario() {
         }
         arena::Saved scheduled{};scheduled.sp=addr(f->camera_stack)+0x360;scheduled.x[30]=Chain::base+0xfeed;scheduled.x[0]=addr(f->camera);
         f->router.event(0x15fcc0,scheduled);assert(scheduled.pad==arena::SkipOwned && scheduled.x[0]==(current_mode=="update-three"?0x103u:current_mode.rfind("empty-",0)==0?2u:0u));
-        if(negative && !no_gpu && !no_cpu && !no_source) {
+        if(negative && !no_gpu && !no_cpu && !no_source && current_mode!="retired-owned-missing-return") {
             f->frame_start();f->frame_end();assert(f->router.diagnostics().capable);
             Client client;Request request;Reply reply;
             assert(client.connect(f->directory+"/frametop-native-portal/control.sock"));
@@ -202,6 +224,7 @@ static void scenario() {
         }
         const auto chain_mode=no_gpu?"--repeated-owned-no-wait":no_cpu?"--repeated-owned-no-disposal":
             no_source?"--repeated-owned-no-source":"--current-first";
+        if(current_mode=="retired-owned-missing-return")assert(!setenv("FT_RETIRED_MISSING_RETURN","1",1));
         assert(run_chain(*f,chain_mode,true)==0);
         const auto d=f->router.diagnostics();
         assert(d.uploads[0]==1 && d.uploads[1]==1 && d.encoded[0]==1 && d.encoded[1]==1 && d.queue_success==1 && d.pending==negative);
@@ -228,7 +251,7 @@ static void scenario() {
     if(negative){std::fputs("CURRENT unexpected cleanup return\n",stderr);_Exit(71);}
     f->s={};f->s.x[0]=addr(f->camera);f->event(0x15df70);assert(f->s.pad==arena::SkipOwned && f->s.x[0]==0xabcdef);
     f->source_unmap();f.reset();active=nullptr;
-    if(current_mode.rfind("bound-known-",0)==0)std::printf("CURRENT %s refused=1 clean-teardown=1\n",current_mode.c_str());
+    if(retired_bad || current_mode.rfind("bound-known-",0)==0)std::printf("CURRENT %s refused=1 clean-teardown=1\n",current_mode.c_str());
     else if((current_mode=="missing-hook" || missing_alternative))std::puts("CURRENT missing-hook refused=1 clean-teardown=1");
     else std::printf("CURRENT %s stereo=1 pending-Off=1 exact-settlement=1 disconnects=0 clean-teardown=1\n",current_mode.c_str());
 }
@@ -260,10 +283,11 @@ int main(int argc,char** argv){
     no_cpu=current_mode=="no-cpu" || current_mode=="initializer-chain-no-cpu";
     no_source=current_mode=="no-source" || current_mode=="initializer-chain-no-source";
     negative=current_mode.rfind("source-negative-",0)==0 || current_mode=="partial-upload" || current_mode=="rejected-enqueue" || current_mode=="actual-return" ||
-        current_mode=="source-uncertainty" || current_mode=="identity-migration" || no_gpu || no_cpu || no_source;
+        current_mode=="source-uncertainty" || current_mode=="identity-migration" || current_mode=="retired-owned-missing-return" || no_gpu || no_cpu || no_source;
     if(current_mode=="partial-upload")assert(!setenv("FT_CURRENT_PARTIAL_UPLOAD","1",1));
     if(current_mode=="rejected-enqueue")assert(!setenv("FT_ADMISSION_BAD_SELECTION","1",1));
     if(current_mode=="actual-return")assert(!setenv("FT_CURRENT_BAD_RETURN","1",1));
     if(no_source)assert(!setenv("FT_SOURCE_FAULT","missing",1));
+    Chain::reserve_source_vtable(); // before Runtime allocations, retained across both instances
     scenario();scenario();
 }

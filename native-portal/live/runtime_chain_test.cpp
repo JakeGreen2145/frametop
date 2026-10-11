@@ -42,6 +42,7 @@ struct Chain:Fixture {
     std::array<float,12> origin_matrix{1,0,0,0,0,1,0,1.6f,0,0,1,0};
     std::string alternative_render;
     unsigned enqueues=0,lookups=0,native_acquires=0,native_releases=0,native_clears=0,policy_fault=0;
+    void (*settled_observe)(Chain&)=nullptr;
     unsigned held_releases=0;bool fail_native_release=false;
     bool pinned_camera=false,borrowed_fixture=false;size_t camera_step=0;
     std::array<uint64_t,5> camera_state() const {
@@ -85,6 +86,27 @@ struct Chain:Fixture {
     }
     ~Chain(){std::filesystem::remove_all(directory);}
     void event(uint64_t pc) {router.event(pc,s);}
+    void completed_wrapper_cleanup(uint64_t W,uint64_t C,uint64_t B) {
+        s={};s.sp=B-0x30;s.x[19]=W;s.x[1]=C;s.x[30]=base+0x2a23b4;event(0x3052e0);
+        s.x[0]=addr(bootstrap_pool)+0xd0;event(0x3052ec);
+        s.x[30]=base+0x3052f0;event(0x311648);s.x[0]=1;
+        if(!std::getenv("FT_RETIRED_MISSING_RETURN"))event(0x3052f0);
+        s.sp=B;s.x[19]=addr(r);s.x[0]=s.x[20]=W;s.x[1]=0x10;s.x[30]=base+0x2a23c0;
+        const auto saved=s;event(0x4b3d0);assert(!std::memcmp(&saved,&s,sizeof s));
+    }
+    void replacement_factory(uint64_t W,uint64_t C,uint64_t B,bool bad_sp=false) {
+        const uint64_t A=addr(r)+0x1300,P=addr(bootstrap_pool),name=base+0x478dc0;
+        s={};s.sp=B;s.x[19]=addr(r);s.x[0]=s.x[20]=A;s.x[1]=name;s.x[8]=B+0x98;s.x[30]=base+0x2a23e8;event(0x3053f8);
+        s.sp-=0x30;s.x[0]=W;s.x[1]=A;s.x[2]=name;s.x[30]=base+0x30548c;event(0x305308);
+        s.sp-=0x20;s.x[0]=P;s.x[1]=name;s.x[3]=A;s.x[19]=W;s.x[8]=W+8;s.x[30]=base+0x305330;event(0x302790);
+        s.sp-=0x30;s.x[30]=base+0x3027b0;event(0x304e60);
+        s.sp-=0x60;s.x[19]=P;s.x[21]=W+8;s.x[22]=C;event(0x304ec8);event(0x304ecc);
+        s.sp=B-0x30;s.x[30]=base+0x30548c;event(0x3053a8);
+        s.x[20]=B+0x98;s.x[22]=W;event(0x305490);
+        s.sp=B;s.x[0]=B+0x98;s.x[30]=base+0x2a23e8;event(0x305470);
+        s.x[19]=addr(r);s.x[20]=0;s.x[0]=W;if(bad_sp)++s.sp;
+        event(0x2a23f4);put(r,0x1380,W);event(0x2a23f8);
+    }
     std::array<std::byte,0x7b0> bootstrap_command{};
     std::array<std::byte,0x10> bootstrap_wrapper{};
     std::array<std::byte,0x400> bootstrap_pool{};
@@ -137,29 +159,31 @@ struct Chain:Fixture {
         if(mode=="--bootstrap-bad-renderer")s.x[0]+=8;
         event(0x2a1e18);
         const auto dispatch=s;
+        s.sp-=0xd0;s.x[19]=addr(r);s.x[1]=addr(bootstrap_wrapper);event(0x2a1e3c);s=dispatch;
         s.sp-=0xd0;s.x[0]=0xbeef;s.x[1]=addr(bootstrap_command);s.x[30]=base+FT_BOOT_QUEUE_LR;
         const auto queue=s;event(0x3018b0);assert(!std::memcmp(&queue,&s,sizeof s));
         s.x[19]=addr(bootstrap_command);s.x[0]=0xa005;event(0x3021d4);
         s.x[0]=0;event(0x3021d8);assert(!router.diagnostics().queue_success);
         s=dispatch;s.sp-=0xd0;s.x[19]=addr(r);event(0x2a2230);event(0x2a2320);
-        put(r,0x1380,uint64_t(0));s.x[0]=addr(bootstrap_wrapper);s.x[30]=base+FT_BOOT_RELEASE_LR;
+        put(r,0x1380,uint64_t(0));s.x[0]=s.x[20]=addr(bootstrap_wrapper);s.x[30]=base+FT_BOOT_RELEASE_LR;
         if(mode=="--bootstrap-bad-generation")put(bootstrap_command,0x738,uint64_t(0xb002));
         if(mode=="--bootstrap-bad-release")s.x[30]+=4;
         event(0x305260);
         if(mode=="--bootstrap-turnover")assert(router.diagnostics().initialized);
-        s.sp-=0x30;s.x[0]=addr(bootstrap_pool)+0xd0;s.x[1]=addr(bootstrap_command);
-        s.x[19]=addr(bootstrap_wrapper);s.x[30]=base+FT_BOOT_POOL_LR;
+        s.sp-=0x30;s.x[1]=addr(bootstrap_command);s.x[19]=addr(bootstrap_wrapper);event(0x3052e0);
+        s.x[0]=addr(bootstrap_pool)+0xd0;event(0x3052ec);s.x[30]=base+FT_BOOT_POOL_LR;
         if(mode=="--bootstrap-bad-pool")s.x[30]+=4;
         if(mode!="--publication-phase")event(0x311648);
+        s.x[0]=1;event(0x3052f0);
+        s.sp+=0x30;s.x[19]=addr(r);s.x[0]=s.x[20]=addr(bootstrap_wrapper);s.x[1]=0x10;s.x[30]=base+0x2a23c0;event(0x4b3d0);
         if(mode=="--publication-unbegun")put(command,8,addr(bootstrap_command));
         if(mode=="--publication-read")put(command,8,uint64_t(1));
         if(mode=="--publication-null-vk")put(executable,0x738,uint64_t(0));
         if(mode=="--publication-handle")put(executable,0x738,uint64_t(0xc099));
         if(mode=="--publication-owner")put(executable,8,uint64_t(1));
         if(mode=="--publication-member")put(command,8,addr(other));
-        s.sp+=0x30;s.x[19]=addr(r);s.x[0]=addr(command);
-        if(mode=="--publication-sp")++s.sp;
-        event(0x2a23f4);put(r,0x1380,addr(command));
+        const auto candidate=mode=="--publication-unbegun"?addr(bootstrap_command):mode=="--publication-member"?addr(other):addr(executable);
+        replacement_factory(addr(command),candidate,dispatch.sp-0xd0,mode=="--publication-sp");
         if(post_run) {
             // Later ignored publications cannot overwrite the first refusal.
             const bool good=mode=="--publication-good" || mode=="--publication-alternate" || mode=="--publication-pool-live";
@@ -216,10 +240,11 @@ struct Chain:Fixture {
         // and actual replacement publication coordinates. No owned settlement.
         put(r,0x15a8,addr(passes));
         s={};s.x[0]=addr(r);s.sp=0x900000;s.x[30]=base+FT_BOOT_DISPATCH_LR;event(0x2a1e18);
-        s.sp-=0xd0;s.x[19]=addr(r);event(0x2a2230);event(0x2a2320);
-        put(r,0x1380,uint64_t(0));s.x[0]=W;s.x[30]=base+FT_BOOT_RELEASE_LR;event(0x305260);
-        s.sp-=0x30;s.x[0]=addr(bootstrap_pool)+0xd0;s.x[1]=C;s.x[19]=W;s.x[30]=base+FT_BOOT_POOL_LR;event(0x311648);
-        s.sp+=0x30;s.x[19]=addr(r);s.x[0]=next;event(0x2a23f4);put(r,0x1380,next);
+        s.sp-=0xd0;s.x[19]=addr(r);s.x[1]=W;event(0x2a1e3c);event(0x2a2230);event(0x2a2320);
+        put(r,0x1380,uint64_t(0));s.x[0]=s.x[20]=W;s.x[30]=base+FT_BOOT_RELEASE_LR;event(0x305260);
+        completed_wrapper_cleanup(W,C,0x8fff30);
+        uint64_t nextC=0;std::memcpy(&nextC,reinterpret_cast<void*>(next+8),8);
+        replacement_factory(next,nextC,0x8fff30);
     }
     void repeated_stock(const std::string &fault="") {
         // Start with executable published and bootstrap_command returned. Repeat
@@ -367,7 +392,7 @@ struct Chain:Fixture {
 #ifdef FT_DORMANT_CURRENT_TEST
         s={};s.sp=addr(camera_stack)+0x460;s.x[0]=addr(camera);s.x[30]=base+0x9f400;event(0x160be8);
         s.sp-=0x460;s.x[27]=addr(camera);
-        const bool retained=alternative_render.rfind("retained-",0)==0 || alternative_render=="empty-warm-retained";
+        const bool retained=alternative_render.rfind("retained-",0)==0 || alternative_render=="empty-cold-retained" || alternative_render=="empty-warm-retained";
         // Replay actual captured scalars. Binding/K/SP and original external
         // services stay explicit Runtime source models, not native execution.
         const char* mode_vector=alternative_render=="retained-bypass"?"mode-0-connected-0":
@@ -909,10 +934,14 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     put(f.r,0x15a8,addr(f.passes));put(f.r,0x15b8,addr(f.passes));put(f.r,0x15c0,addr(f.passes)+f.passes.size());f.event(0x2a2320);
     // The real dispatcher relinquishes its current command wrapper after the
     // transfer. That does not destroy the pooled executable retained by lifecycle.
-    put(f.r,0x1380,uint64_t(0));f.s.x[0]=addr(f.command);f.s.x[30]=Chain::base+FT_BOOT_RELEASE_LR;f.event(0x305260);
+    put(f.r,0x1380,uint64_t(0));f.s.x[0]=f.s.x[20]=addr(f.command);f.s.x[30]=Chain::base+FT_BOOT_RELEASE_LR;f.event(0x305260);
     put(f.executable,0x50,addr(f.bootstrap_pool));
-    f.s.sp-=0x30;f.s.x[0]=addr(f.bootstrap_pool)+0xd0;f.s.x[1]=addr(f.executable);
-    f.s.x[19]=addr(f.command);f.s.x[30]=Chain::base+FT_BOOT_POOL_LR;f.event(0x311648);
+    f.completed_wrapper_cleanup(addr(f.command),addr(f.executable),0x8fff30);
+    if(std::getenv("FT_RETIRED_MISSING_RETURN")) {
+        assert(f.router.diagnostics().pending);
+        ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
+        return 0; // joined production cleanup below must refuse, not a fixture abort
+    }
     if(!cycle) {
     put(next_command,8,addr(f.r)+0x50);put(next_command,0x738,uint64_t(0xc002));put(next_wrapper,8,addr(next_command));
     put(next_command,0x428,uint64_t(&f.signal_pointer));put(next_command,0x430,uint64_t(&f.signal_pointer)+8);
@@ -923,7 +952,7 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     f.s.sp-=0x30;put(f.stack,0x98,uint64_t(Chain::base+0x300ae0));f.s.x[0]=0;f.event(0x300a38);
     f.s.sp=addr(f.stack)+0x100;f.s.x[20]=addr(next_command);f.s.x[0]=1;f.event(0x30180c);
     }
-    f.s.sp=0x8fff30;f.s.x[19]=addr(f.r);f.s.x[0]=addr(next_wrapper);f.event(0x2a23f4);put(f.r,0x1380,addr(next_wrapper));
+    f.replacement_factory(addr(next_wrapper),addr(next_command),0x8fff30);
     if(mode=="--pool-owned-retained") {
         f.stock_pool_return("");
         assert(f.router.diagnostics().pending && f.router.diagnostics().queue_success==1);
@@ -972,7 +1001,13 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     f.s.x[0]=1;f.event(0x9ee5c);f.s.x[27]=0;f.event(0x9ee98);assert(f.native_releases==(f.borrowed_fixture?0:cycle+1));put(f.app,0x2568c,uint8_t(0));f.frame_end();
     if(source_rejected){std::puts("real Runtime: exact rejected pair, no source sampling, exact upload queue/wait/CPU settlement PASS");return 0;}
 #ifdef FT_DORMANT_CURRENT_TEST
-    if(mode=="--current-first")return 0;
+    if(mode=="--current-first") {
+        if(f.settled_observe) {
+            f.stock_turnover(addr(next_command),addr(next_wrapper),addr(f.command));
+            f.settled_observe(f);
+        }
+        return 0;
+    }
 #endif
     if(!repeated)break;
     // Lifecycle has settled both eyes and released its retained command. The

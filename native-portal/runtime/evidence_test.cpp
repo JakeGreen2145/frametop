@@ -26,7 +26,7 @@ struct Fixture {
     std::array<std::byte,0x28> marker{};
     std::array<std::byte,0x10> command{};
     std::array<std::byte,0x7b0> executable{},other{};
-    std::array<std::byte,0x200> stack{};
+    alignas(16) std::array<std::byte,0x200> stack{};
     Evidence evidence;
     arena::Saved s{};
     static constexpr uint64_t base=0x70000000;

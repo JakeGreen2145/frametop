@@ -86,26 +86,26 @@ struct StockFixture:StagingFixture {
         if(fault==3)++s.sp;
         evidence.graph_event(0x2a2230,s);evidence.event(0x2a2230,s);evidence.graph_event(0,s);
         if(fault!=4){evidence.graph_event(0x2a2320,s);evidence.event(0x2a2320,s);evidence.graph_event(0,s);}
-        put(r,0x1380,uint64_t(0));s.x[0]=old_wrapper;s.x[30]=base+0x2a23b4;
+        put(r,0x1380,uint64_t(0));s.x[0]=s.x[20]=old_wrapper;s.x[30]=base+0x2a23b4;
         evidence.event(0x305260,s);
         s.sp-=0x30;s.x[1]=old_command;s.x[19]=old_wrapper;
-        if(stock_mode)evidence.event(0x3052e0,s);
+        evidence.event(0x3052e0,s);
         s.x[0]=addr(pool)+0xd0;
         if(fault==5)++s.x[0];
-        if(stock_mode)evidence.event(0x3052ec,s);
+        evidence.event(0x3052ec,s);
         s.x[30]=base+0x3052f0;
         evidence.event(0x311648,s);
-        if(stock_mode) {s.x[0]=1;evidence.event(0x3052f0,s);}
-        s.sp+=0x30;s.x[19]=addr(r);s.x[0]=new_wrapper;
+        s.x[0]=1;evidence.event(0x3052f0,s);
+        s.sp+=0x30;s.x[19]=addr(r);s.x[0]=s.x[20]=old_wrapper;s.x[1]=0x10;s.x[30]=base+0x2a23c0;
+        evidence.event(0x4b3d0,s);
         if(fault==6)put(next,8,addr(executable)); // returned but not re-begun
         if(fault==7)put(other,0x738,uint64_t(0xc099));
         if(fault==8)put(next,8,addr(resource)); // readable raw pointer, no creation/Begin
-#ifdef FT_STOCK_COLLECTOR_API
-        const auto before=reads;evidence.event(0x2a23f4,s);assert(reads==before);
-        put(r,0x1380,new_wrapper);evidence.event(0x2a23f8,s);
-#else
-        evidence.event(0x2a23f4,s);put(r,0x1380,new_wrapper);
-#endif
+        uint64_t nextC=0;std::memcpy(&nextC,reinterpret_cast<void*>(new_wrapper+8),8);
+        wrapper_factory_model(base,addr(r),new_wrapper,nextC,addr(pool),s.sp,[&](uint64_t pc,arena::Saved call) {
+            if(pc==0x2a23f8)put(r,0x1380,new_wrapper);
+            evidence.event(pc,call);
+        });
         return evidence.initialized();
     }
     void recycle(uint64_t c,unsigned fault=0) {
@@ -276,10 +276,16 @@ template<class FixtureType=StockFixture> static void recovery() {
     // Modeled native move, not a synthesized disposal certificate.
     put(f.r,0x15a8,addr(passes));put(f.r,0x15b8,addr(passes));put(f.r,0x15c0,addr(passes)+passes.size());
     assert(f.evidence.graph_event(0x2a2320,f.s));assert(f.evidence.event(0x2a2320,f.s));assert(f.evidence.graph_event(0,f.s));
-    put(f.r,0x1380,uint64_t(0));f.s.x[0]=addr(f.command);f.s.x[30]=Fixture::base+0x2a23b4;assert(f.evidence.event(0x305260,f.s));
-    f.s.sp-=0x30;f.s.x[0]=addr(f.pool)+0xd0;f.s.x[1]=addr(f.executable);f.s.x[19]=addr(f.command);f.s.x[30]=Fixture::base+0x3052f0;
-    assert(f.evidence.event(0x311648,f.s));f.s.sp+=0x30;f.s.x[0]=addr(f.next);f.s.x[19]=addr(f.r);
-    assert(f.evidence.event(0x2a23f4,f.s));put(f.r,0x1380,addr(f.next));
+    put(f.r,0x1380,uint64_t(0));f.s.x[0]=f.s.x[20]=addr(f.command);f.s.x[30]=Fixture::base+0x2a23b4;assert(f.evidence.event(0x305260,f.s));
+    f.s.sp-=0x30;f.s.x[1]=addr(f.executable);f.s.x[19]=addr(f.command);assert(f.evidence.event(0x3052e0,f.s));
+    f.s.x[0]=addr(f.pool)+0xd0;assert(f.evidence.event(0x3052ec,f.s));f.s.x[30]=Fixture::base+0x3052f0;
+    assert(f.evidence.event(0x311648,f.s));f.s.x[0]=1;assert(f.evidence.event(0x3052f0,f.s));
+    f.s.sp+=0x30;f.s.x[0]=f.s.x[20]=addr(f.command);f.s.x[19]=addr(f.r);f.s.x[1]=0x10;f.s.x[30]=Fixture::base+0x2a23c0;
+    assert(f.evidence.event(0x4b3d0,f.s));
+    wrapper_factory_model(Fixture::base,addr(f.r),addr(f.next),addr(f.other),addr(f.pool),f.s.sp,[&](uint64_t pc,arena::Saved call) {
+        if(pc==0x2a23f8)put(f.r,0x1380,addr(f.next));
+        f.evidence.event(pc,call);f.s=call;
+    });
     f.s.x[22]=addr(f.r);assert(f.evidence.graph_event(0x2987d8,f.s));assert(f.evidence.event(0x2987d8,f.s));assert(f.evidence.graph_event(0,f.s));
     put(f.r,0x15c0,addr(passes));assert(f.evidence.graph_event(0x298840,f.s));assert(f.evidence.event(0x298840,f.s));assert(f.evidence.graph_event(0,f.s));
     assert(!f.evidence.release_lifecycle()); // disposed + GPU is not executable reset

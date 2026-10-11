@@ -132,9 +132,9 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         }
         return fail(pc); // bounded exhaustion cannot become partial tracking
     }
-    // Stock mode needs the committed store, not the legacy pre-store observer.
-    // The installer must add 2a23f8. Missing it leaves phase 5 and blocks engage.
-    if((pc==0x2a23f4 && dormant_stock()) || (pc==0x2a23f8 && !dormant_stock()))return false;
+    // Every mode requires the committed native store and the complete paired
+    // replacement factory. Pre-store intent cannot publish a new W epoch.
+    if(pc==0x2a23f4)return false; // all modes require the actual committed store
     if(pc==0x2a23f4 || pc==0x2a23f8) {
         PublicationDiagnostic d{};d.phase=turnover_.phase;d.caller=turnover_.caller;
         d.return_pc=s.x[30]>=base_ && s.x[30]-base_<0x600000?s.x[30]-base_:0;
@@ -152,7 +152,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         };
         if(!check(ready_,1) || !check(s.x[19]==identity_.renderer,2) ||
            !check(!command_wrapper_,3) || !check(s.x[0],4))return false;
-        if(!check(turnover_.phase==5,5) || !check(s.sp==turnover_.sp,6) ||
+        if(!check(turnover_.phase==6 && !wrapper_epoch_.active() && wrapper_epoch_.current()==s.x[0],5) || !check(s.sp==turnover_.sp,6) ||
            !check(dormant_stock() || !run_ || transferred_,7))return fail(pc);
         uint64_t C=0,D=0,vk=0;
         if(!check(recording_read(pc,s.x[0]+8,&C,8),8) || !check(recording_read(pc,C+8,&D,8),9) ||
@@ -165,6 +165,9 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         auto &c=*candidate;d.generation=c.generation;d.renewal=c.renewal;
         d.flags|=uint64_t(c.begun)<<6 | uint64_t(c.vk==vk)<<7;
         if(!check(c.vk==vk,14) || !check(c.begun,15))return fail(pc);
+        if(C!=wrapper_epoch_.command())return fail(pc);
+        uint64_t actual_pool=0;
+        if(!stock_publication_pool(pc,C,actual_pool) || actual_pool!=wrapper_epoch_.pool())return fail(pc);
         if(dormant_stock() && !stock_publication_pool(pc,C,c.native_pool))return fail(pc);
         if(lifecycle_ && spans_[6].begin==lifecycle_owner_.command && C!=spans_[6].begin)spans_[7]=spans_[6];
         if(!check(add(2,s.x[0],0x10),16) || !check(add(6,C,0x7b0),17))return fail(pc);
@@ -180,6 +183,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
             if(pc!=0x305260 || turnover_.phase!=3 || s.sp!=turnover_.sp ||
                s.x[19]!=identity_.renderer || s.x[30]!=base_+0x2a23b4 ||
                recording_!=turnover_.generation || command_wrapper_!=turnover_.wrapper)return fail(pc);
+            if(s.x[20]!=turnover_.wrapper || !wrapper_epoch_.begin(base_,identity_.renderer,turnover_.wrapper,turnover_.command,turnover_.pool,s.sp))return fail(pc);
             spans_[2]={};command_wrapper_=0;turnover_.phase=4;return true;
         }
         uint64_t C=0,vk=0,published=1,D=0;bool generation=false;
@@ -195,11 +199,12 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
            ((!lifecycle_ && !graph_owned_) || (run_ && lifecycle_ && lifecycle_->state().current && !lifecycle_->state().unsupported))) {
             // Native cleared R+1380 before calling the wrapper destructor. The
             // nested pool return is a separate event, not executable destruction.
+            if(s.x[20]!=turnover_.wrapper || !wrapper_epoch_.begin(base_,identity_.renderer,turnover_.wrapper,turnover_.command,turnover_.pool,s.sp))return fail(pc);
             spans_[2]={};command_wrapper_=0;turnover_.phase=4;return true;
         }
         fail(pc);return true; // any other release remains unsupported
     }
-    if(dormant_stock() && (pc==0x3052e0 || pc==0x3052ec || pc==0x3052f0)) {
+    if((pc==0x3052e0 || pc==0x3052ec || pc==0x3052f0) && turnover_.phase) {
         if(s.sp+0x30!=turnover_.sp || s.x[19]!=turnover_.wrapper)return fail(pc);
         if(pc==0x3052e0) {
             if(turnover_.phase!=4 || s.x[1]!=turnover_.command)return fail(pc);
@@ -209,12 +214,12 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
             turnover_.phase=12;
         } else {
             if(turnover_.phase!=13 || s.x[30]!=base_+0x3052f0 || (s.x[0]&255)!=1)return fail(pc);
-            for(auto &c:recordings_)if(c.command==turnover_.command)c.stock_pool=turnover_.pool;
+            if(dormant_stock())for(auto &c:recordings_)if(c.command==turnover_.command)c.stock_pool=turnover_.pool;
             turnover_.phase=5;
         }
         return true;
     }
-    if(pc==0x311648 && turnover_.phase==(dormant_stock()?12u:4u) && s.x[1]==turnover_.command) {
+    if(pc==0x311648 && turnover_.phase==12 && s.x[1]==turnover_.command) {
         uint64_t pool=0,vk=0;
         if(s.sp+0x30!=turnover_.sp || s.x[30]!=base_+0x3052f0 || s.x[19]!=turnover_.wrapper ||
            !recording_at(pc,turnover_.command+0x50,pool) || pool!=turnover_.pool || s.x[0]!=pool+0xd0 ||
@@ -225,7 +230,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
             c.begun=false;
         }
         if(dormant_stock())spans_[6]={}; // no retained integration read role
-        turnover_.phase=dormant_stock()?13:5;return true;
+        turnover_.phase=13;return true;
     }
     if(pc==0x311648 || pc==0x4b3d0 || pc==0x3003d0) {
         const auto command=pc==0x311648?s.x[1]:s.x[0];
