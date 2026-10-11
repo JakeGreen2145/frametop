@@ -50,7 +50,7 @@ bool Evidence::engage_stock(const render::Identity &i,uint64_t generation) noexc
        wrapper_ || marker_ || call_ || staging_ticket_ || staging_writer_ || staging_poisoned_.load() ||
        stock_native_scope_ || dispatch_ || graph_scope_ || graph_owned_)return false;
     for(const auto &c:recordings_)if(c.renewal)return false;
-    if(!stock_command_facts().command)return false;
+    if(!stock_command_facts().command || (stock_reader_.complete && !stock_reader_.complete(stock_reader_.user)))return false;
     read_mode_=ReadMode::Engaged;return true;
 }
 bool Evidence::pin(uint64_t base,const char *sha) noexcept {
@@ -127,6 +127,7 @@ bool Evidence::event_impl(uint64_t pc,const arena::Saved &s) noexcept {
         if(!add(0,s.x[24],0x16c0)) return fail(pc);
         uint64_t vtable=0;
         if(!at(s.x[24],vtable) || vtable!=base_+0x599c38) return fail(pc);
+        if(dormant_stock() && stock_reader_.bootstrap && !stock_reader_.bootstrap(stock_reader_.user,base_,identity_,0,0,0))return fail(pc);
         return true;
     }
     if(!constructed_) return false;
@@ -134,7 +135,9 @@ bool Evidence::event_impl(uint64_t pc,const arena::Saved &s) noexcept {
     if(pc==0x301808 || pc==0x30180c || pc==0x300a08 || pc==0x300a38 ||
        pc==0x300b20 || pc==0x300c54 || pc==0x3003d0 || pc==0x311648 || pc==0x4b3d0 ||
        pc==0x305260 || pc==0x2953a0 || pc==0x3018b0 || pc==0x2a1e18 || pc==0x2a2230 ||
-       pc==0x2a2320 || pc==0x2987d8 || pc==0x298840 || pc==0x2a23f4 || pc==0x2a23f8) return recording_event(pc,s);
+       pc==0x2a2320 || pc==0x2987d8 || pc==0x298840 || pc==0x2a23f4 || pc==0x2a23f8 ||
+       (dormant_stock() && (pc==0x300a28 || pc==0x2a1e3c || pc==0x2a1f64 ||
+         pc==0x3052e0 || pc==0x3052ec || pc==0x3052f0))) return recording_event(pc,s);
     if(pc==0x29bd18 || pc==0x29c238) {
         if(s.x[0]!=R) return false;
         fail(pc);return true; // revoke before native teardown, never retire native objects
@@ -183,6 +186,7 @@ bool Evidence::event_impl(uint64_t pc,const arena::Saved &s) noexcept {
             if(!add(6,command,0x7b0)) return fail(pc);
             uint64_t vk=0,D=0;
             if(!at(command+0x738,vk) || vk!=c.vk || !at(command+8,D) || D!=R+0x50) return fail(pc);
+            if(dormant_stock() && stock_reader_.bootstrap && !stock_reader_.bootstrap(stock_reader_.user,base_,identity_,command_wrapper_,command,vk))return fail(pc);
             if(dormant_stock() && !stock_publication_pool(pc,command,c.native_pool))return fail(pc);
             // Issue only for the published owner, not the last-created pool member.
             c.generation=generations_.issue();if(!c.generation) return fail(pc);
@@ -202,6 +206,7 @@ bool Evidence::event_impl(uint64_t pc,const arena::Saved &s) noexcept {
            !at(R+0xf04+8*type_index_,type_flags_)) return fail(pc);
         map_=a.map;buffer_=a.buffer;
         if(ft_pipeline_generation) identity_.device_generation=ft_pipeline_generation(reinterpret_cast<void*>(identity_.device));
+        if(dormant_stock() && stock_reader_.bootstrap && !stock_reader_.bootstrap(stock_reader_.user,base_,identity_,command_wrapper_,a.command,0))return fail(pc);
         ready_=true;return true;
     }
     return false;

@@ -1,5 +1,7 @@
 # Stock command facts component
 
+Historical base-component handoff. The current native collector, corrected dormant event order, final native branch/return corrections, and install inventory are documented in [native-stock-facts-handoff.md](native-stock-facts-handoff.md). Its current request table supersedes the unqualified scalar requests below; they must not be backfilled from later observations.
+
 ## Delivered and not activated
 
 Evidence now has an explicit pre-pin DORMANT stock mode and a one-way ENGAGED boundary. Default construction keeps the existing production behavior. No Runtime, camera owner, source admission, hook manifest, emitter or installer was changed.

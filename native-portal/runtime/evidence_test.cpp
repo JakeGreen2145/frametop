@@ -51,7 +51,7 @@ struct Fixture {
         std::memcpy(marker.data()+8,words.data(),32);
         s.sp=addr(stack);s.x[24]=R;
     }
-    bool bootstrap(bool recording=false,arena::Bridge *bridge=nullptr,unsigned pooled=0) {
+    bool bootstrap(bool recording=false,arena::Bridge *bridge=nullptr,unsigned pooled=0,bool native_load=false) {
         assert(evidence.pin(base,elf_sha256));
         auto event=[&](uint64_t pc){return bridge?evidence.route(*bridge,pc,s):evidence.event(pc,s);};
         assert(event(0x7fda0));
@@ -69,7 +69,9 @@ struct Fixture {
             assert(evidence.event(0x301808,s));
             s.sp-=0x40;s.x[19]=addr(*object);s.x[30]=base+0x300ae0;
             assert(evidence.event(0x300a08,s));
-            s.sp-=0x30;put(stack,0x98,uint64_t(base+0x300ae0));s.x[0]=0;
+            s.sp-=0x30;
+            if(native_load) {s.x[0]=object==&executable?0xc001:0xc002;assert(evidence.event(0x300a28,s));}
+            put(stack,0x98,uint64_t(base+0x300ae0));s.x[0]=0;
             assert(evidence.event(0x300a38,s));
             s.sp=addr(stack)+0x100;s.x[20]=addr(*object);s.x[0]=1;
             assert(evidence.event(0x30180c,s));s=old;

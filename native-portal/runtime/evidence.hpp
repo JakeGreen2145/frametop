@@ -56,6 +56,9 @@ class Evidence {
     struct StockFactReader {
         void *user=nullptr;
         bool (*scalar)(void *,uint64_t pc,uint64_t address,uint64_t &value) noexcept=nullptr;
+        // Qualified existing bootstrap values only. No new pointer walk.
+        bool (*bootstrap)(void *,uint64_t base,const render::Identity &,uint64_t wrapper,uint64_t command,uint64_t vk) noexcept=nullptr;
+        bool (*complete)(void *) noexcept=nullptr;
     };
     bool begin_dormant_stock(StockFactReader) noexcept;
     uint64_t unsupported_stock_pc() const noexcept {return owner()?stock_unsupported_pc_:0;}

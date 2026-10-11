@@ -1,0 +1,306 @@
+{
+  "base": "33439d7bc553cf3fde85179cae778d1beaed2091",
+  "scope": "actual NativeStockFactCollector/Evidence/Adapter/PassGate/Command/Lifecycle CPU components; pinned saved-text factory records; modeled installed coverage, bootstrap and remaining native/GPU outcomes",
+  "not_claimed": [
+    "installed loader coverage",
+    "whole Runtime native provider acceptance",
+    "GPU or headset proof",
+    "independent review"
+  ],
+  "runs": [
+    {
+      "name": "baseline_begin_red",
+      "log": "native-portal/runtime/build/native-stock-facts/red/results.json",
+      "log_sha256": "f1a942412e00da363b7beec543c176999fbe64b42e84446103a1c0130bda46ba",
+      "expected_terminal_result": -6,
+      "memory_peak_bytes": 87367680,
+      "executed": [
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/red/native_stock_begin_red"
+          ],
+          "returncode": -6,
+          "output": "native_stock_begin_red: /home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/red/baseline/native-portal/runtime/native_stock_begin_red.cpp:21: int main(): Assertion `f.evidence.event(0x300a08,f.s) && \"Begin entry must not demand a future native load\"' failed.\n"
+        }
+      ]
+    },
+    {
+      "name": "native_normal",
+      "log": "native-portal/runtime/build/native-stock-facts/green/results.json",
+      "log_sha256": "53b781e80d11be9ce5bc11603123ffc023d12c8080e4376f6906ed9d6ee99ca1",
+      "expected_terminal_result": 0,
+      "memory_peak_bytes": 100470784,
+      "executed": [
+        {
+          "argv": [
+            "python3",
+            "-B",
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/native_stock_witness.py",
+            "--output",
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/green"
+          ],
+          "returncode": 0,
+          "output": "native stock saved-text witness: actual hidden output, constructor/factory RET, Begin Vk/raw, turnover W and disposal C/P PASS\n"
+        },
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/green/native_stock_begin_red"
+          ],
+          "returncode": 0,
+          "output": ""
+        },
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/green/native_stock_facts_test"
+          ],
+          "returncode": 0,
+          "output": "stock facts: pool reuse -> engagement -> stereo commit/backend -> exact queue/wait/disposal/reset and lifecycle release PASS\nnative stock facts: register-derived creation/pool reuse/turnover -> engagement -> real Adapter/Command/Lifecycle PASS; modeled coverage and callback schedule\n"
+        },
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/green/stock_facts_test"
+          ],
+          "returncode": 0,
+          "output": "stock facts: pool reuse -> engagement -> stereo commit/backend -> exact queue/wait/disposal/reset and lifecycle release PASS\nstock facts: protected graph and read counters, strict history negatives PASS\n"
+        },
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/green/evidence_test"
+          ],
+          "returncode": 0,
+          "output": "evidence: real self-read, scoped begin/publication, Bridge bootstrap, bounded staging with 35 synthetic cases, Adapter descriptor capture, Lifecycle bind/refusal and fail-closed PassGate passed\n"
+        }
+      ]
+    },
+    {
+      "name": "native_asan_ubsan",
+      "log": "native-portal/runtime/build/native-stock-facts/asan/results.json",
+      "log_sha256": "e05e082a690913816c0e28ae3656d8a83ff2abe653c7f7b8d490c73a8e0a0854",
+      "expected_terminal_result": 0,
+      "memory_peak_bytes": 119156736,
+      "executed": [
+        {
+          "argv": [
+            "python3",
+            "-B",
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/native_stock_witness.py",
+            "--output",
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/asan"
+          ],
+          "returncode": 0,
+          "output": "native stock saved-text witness: actual hidden output, constructor/factory RET, Begin Vk/raw, turnover W and disposal C/P PASS\n"
+        },
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/asan/native_stock_begin_red"
+          ],
+          "returncode": 0,
+          "output": ""
+        },
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/asan/native_stock_facts_test"
+          ],
+          "returncode": 0,
+          "output": "stock facts: pool reuse -> engagement -> stereo commit/backend -> exact queue/wait/disposal/reset and lifecycle release PASS\nnative stock facts: register-derived creation/pool reuse/turnover -> engagement -> real Adapter/Command/Lifecycle PASS; modeled coverage and callback schedule\n"
+        },
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/asan/stock_facts_test"
+          ],
+          "returncode": 0,
+          "output": "stock facts: pool reuse -> engagement -> stereo commit/backend -> exact queue/wait/disposal/reset and lifecycle release PASS\nstock facts: protected graph and read counters, strict history negatives PASS\n"
+        },
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/native-stock-facts/asan/evidence_test"
+          ],
+          "returncode": 0,
+          "output": "evidence: real self-read, scoped begin/publication, Bridge bootstrap, bounded staging with 35 synthetic cases, Adapter descriptor capture, Lifecycle bind/refusal and fail-closed PassGate passed\n"
+        }
+      ]
+    },
+    {
+      "name": "existing_asan_ubsan_runtime_smoke",
+      "log": "native-portal/runtime/build/stock-facts/asan/results.json",
+      "log_sha256": "594bc3b9ba635d9c53d8c0c9c78908cfbd4f91b118c382e3257367fe26ac7979",
+      "expected_terminal_result": 0,
+      "memory_peak_bytes": 221626368,
+      "executed": [
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/stock-facts/asan/stock_facts_test"
+          ],
+          "returncode": 0,
+          "output": "stock facts: pool reuse -> engagement -> stereo commit/backend -> exact queue/wait/disposal/reset and lifecycle release PASS\nstock facts: protected graph and read counters, strict history negatives PASS\n"
+        },
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/stock-facts/asan/evidence_test"
+          ],
+          "returncode": 0,
+          "output": "evidence: real self-read, scoped begin/publication, Bridge bootstrap, bounded staging with 35 synthetic cases, Adapter descriptor capture, Lifecycle bind/refusal and fail-closed PassGate passed\n"
+        },
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/stock-facts/asan/evidence-no-layer"
+          ],
+          "returncode": 0,
+          "output": "evidence: no-layer initialization refusal and existing self-read/lifetime negatives passed; positive staging skipped without the synthetic layer export\n"
+        },
+        {
+          "argv": [
+            "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/build/stock-facts/asan/runtime-smoke"
+          ],
+          "returncode": 0,
+          "output": "runtime: default stock continuation, exact pin, unsupported ownership, bounded real-memory queue payload parsing PASS\n"
+        }
+      ]
+    }
+  ],
+  "additional_observed_reds": [
+    "unscoped bootstrap callback admitted before capture, assertion failed before repair",
+    "304ec8 omitted while304ecc carried a known C: turn unexpectedly accepted, assertion failed before positive-store repair",
+    "factory name mismatch at305308 accepted, assertion failed before tuple-pair repair"
+  ],
+  "witnesses": [
+    {
+      "log": "native-portal/runtime/build/native-stock-facts/green/witness.json",
+      "sha256": "703f0339ad3b3c064031e3dfe01c8daa05c4faa0a76269152b20ba5bbe82218a",
+      "status": "PASS",
+      "source_sha256": {
+        "pass4/ins-0x3053f8.asm": "fd103ae55fe226360eacdc75c127363a600b1490cb565ad055448b47ff79d570",
+        "pass4/ins-0x305308.asm": "730a23fc359e9331da74042dbbf85f0dc5a9019986e05d8395decdea8b344465",
+        "pass5/ins-0x302790.asm": "cb0f34471de2cb16b6b315a6bdeac7405889c0404b818c1f8cd57278c8f0a310",
+        "pass7/ins-0x304e60.asm": "b7b14b2171e6b1711a14c9623ca91efa2cf68891380c8876db664a6b3d3290d6",
+        "pass4/ins-0x300a08.asm": "183a5d93af7b7038f1ac575311af0f14144b48b0c6ec2fa8fb199000f25dad2a",
+        "pass4/ins-0x2a1e18.asm": "512df2e491f0d5f1d72f01b1aca4513d6effeb3a3bb2a97f6400e12da185b3f1",
+        "pass4/ins-0x305260.asm": "2a742dc41ef7061ec0680d96cf277131dfa6bac93c516552d1e33c1cb872b9c7",
+        "source-instruction-witnesses/elf-304e60-184.asm": "a436d204eabfbb23ba79ab53115849bb0ca72e8074ecbe82459e427cfd042a51"
+      },
+      "factory_pcs": [
+        "0x3053f8",
+        "0x305308",
+        "0x302790",
+        "0x304e60",
+        "0x304ec8",
+        "0x304ecc",
+        "0x3053a8",
+        "0x305490",
+        "0x305470"
+      ],
+      "failed_factory_pcs": [
+        "0x3053f8",
+        "0x305308",
+        "0x302790",
+        "0x304e60",
+        "0x304ecc",
+        "0x3053a8",
+        "0x305490",
+        "0x305470"
+      ],
+      "synthetic_boundaries": [
+        "0x14b490",
+        "0x4010d8",
+        "0x410ca8",
+        "0x410cf8",
+        "0x14b490",
+        "0x404c68",
+        "0x410ca8",
+        "0x410cf8",
+        "0x1800000",
+        "0x411648"
+      ]
+    },
+    {
+      "log": "native-portal/runtime/build/native-stock-facts/asan/witness.json",
+      "sha256": "703f0339ad3b3c064031e3dfe01c8daa05c4faa0a76269152b20ba5bbe82218a",
+      "status": "PASS",
+      "source_sha256": {
+        "pass4/ins-0x3053f8.asm": "fd103ae55fe226360eacdc75c127363a600b1490cb565ad055448b47ff79d570",
+        "pass4/ins-0x305308.asm": "730a23fc359e9331da74042dbbf85f0dc5a9019986e05d8395decdea8b344465",
+        "pass5/ins-0x302790.asm": "cb0f34471de2cb16b6b315a6bdeac7405889c0404b818c1f8cd57278c8f0a310",
+        "pass7/ins-0x304e60.asm": "b7b14b2171e6b1711a14c9623ca91efa2cf68891380c8876db664a6b3d3290d6",
+        "pass4/ins-0x300a08.asm": "183a5d93af7b7038f1ac575311af0f14144b48b0c6ec2fa8fb199000f25dad2a",
+        "pass4/ins-0x2a1e18.asm": "512df2e491f0d5f1d72f01b1aca4513d6effeb3a3bb2a97f6400e12da185b3f1",
+        "pass4/ins-0x305260.asm": "2a742dc41ef7061ec0680d96cf277131dfa6bac93c516552d1e33c1cb872b9c7",
+        "source-instruction-witnesses/elf-304e60-184.asm": "a436d204eabfbb23ba79ab53115849bb0ca72e8074ecbe82459e427cfd042a51"
+      },
+      "factory_pcs": [
+        "0x3053f8",
+        "0x305308",
+        "0x302790",
+        "0x304e60",
+        "0x304ec8",
+        "0x304ecc",
+        "0x3053a8",
+        "0x305490",
+        "0x305470"
+      ],
+      "failed_factory_pcs": [
+        "0x3053f8",
+        "0x305308",
+        "0x302790",
+        "0x304e60",
+        "0x304ecc",
+        "0x3053a8",
+        "0x305490",
+        "0x305470"
+      ],
+      "synthetic_boundaries": [
+        "0x14b490",
+        "0x4010d8",
+        "0x410ca8",
+        "0x410cf8",
+        "0x14b490",
+        "0x404c68",
+        "0x410ca8",
+        "0x410cf8",
+        "0x1800000",
+        "0x411648"
+      ]
+    }
+  ],
+  "sources_sha256": {
+    "native-portal/runtime/native_stock_facts.cpp": "87d44b09593319838af6a0b0a3a23d0143e05ae21215c7f824a4131224195100",
+    "native-portal/runtime/native_stock_facts.hpp": "6e72ec44c7fee8e4fc723407bdd7087c45c10d69dd6c77262608cb7acfe700a9",
+    "native-portal/runtime/native_stock_facts_test.cpp": "e3bf6a9703dfd8498f615ce9f79792cd50638d8aa2462e05bed6b1490603587b",
+    "native-portal/runtime/native_stock_facts_test.py": "80c3984234d30161b0ffbd6e7d5b7d897d09232e8e4caf1a79cdadea6b59d8bc",
+    "native-portal/runtime/native_stock_witness.py": "81681102605d98792af89fec01436d7f2c0857133d4dc068c310b5940278daca",
+    "native-portal/runtime/native_stock_begin_red.cpp": "b7796259037afff90659e15a04ad15bbd29fc6649f070f82c9f1c2d682e09362",
+    "native-portal/runtime/evidence.cpp": "4aa15a0f08bbb1b48f51320866c853366d57d2246a9466dd848bfeda6c1b8826",
+    "native-portal/runtime/evidence.hpp": "7c7bb932b05a1416832ba4af59ebc72f2c9fe871aa5079037250b96debea3380",
+    "native-portal/runtime/recording.cpp": "3a0c81d35379106835df334f1ebf657b47f4cc983c0ff57e8689050dfefa4d7e",
+    "native-portal/runtime/evidence_test.cpp": "942e5e73eb91eb1431c61b0d3a2002d49635181918cbee85063501057adbb916",
+    "native-portal/runtime/stock_facts_test.cpp": "bbdd7a2974904dfce6e8aeb1e1e428853ff434bee37985ae9ca3295928a3f112",
+    "native-portal/runtime/HOOK-REQUEST.json": "d962eb2a851161f2471c4a8deaa73db4527580fe7965468aad7e8d164b43b7a4",
+    "native-portal/runtime/native-stock-facts-handoff.md": "ffa5f503c3bf2e08ad893addec782c7461ce5f04c18304491199ef83a7f0a6be"
+  },
+  "coverage": {
+    "required_unique": 40,
+    "missing_from_base_manifest": [
+      "0x2a1e3c",
+      "0x2a23f8",
+      "0x300a28",
+      "0x301800",
+      "0x301804",
+      "0x302790",
+      "0x303d10",
+      "0x303d70",
+      "0x304e60",
+      "0x304ec8",
+      "0x304ecc",
+      "0x3052e0",
+      "0x3052ec",
+      "0x3052f0",
+      "0x305308",
+      "0x3053a8",
+      "0x3053f8",
+      "0x305470",
+      "0x305490"
+    ],
+    "required_missing_count": 19,
+    "optional": "0x2a1f64",
+    "fixture_installed_coverage": "MODELED, not installed"
+  }
+}

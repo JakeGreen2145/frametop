@@ -12,13 +12,13 @@ bool Evidence::recording_read(uint64_t pc,uint64_t address,void *out,size_t n) n
     std::memcpy(out,&value,8);return true;
 }
 bool Evidence::stock_publication_pool(uint64_t pc,uint64_t C,uint64_t &pool) noexcept {
-    uint64_t device=0,actual=0;
-    if(!C || C>UINT64_MAX-0x7b0 || !recording_read(pc,identity_.renderer+0xa78,&device,8) || !device || (ready_ && device!=identity_.device) ||
+    uint64_t actual=0;
+    if(!C || C>UINT64_MAX-0x7b0 ||
        !recording_read(pc,C+0x50,&actual,8) || !actual || actual>UINT64_MAX-0xd0 || (pool && pool!=actual))return false;
     pool=actual;return true;
 }
 bool Evidence::stock_turnover_owner(uint64_t pc,StockCommandFacts &out) noexcept {
-    // Only invoked at authenticated 2a1e18. Each field is copied NOW; the
+    // Invoked after native W load at 2a1e3c. Each field is copied NOW; the
     // historical ledger proves membership, never permission to chase its C.
     out={};uint64_t wrapper=0,C=0,D=0,vk=0,pool=0;
     const auto R=identity_.renderer;
@@ -43,8 +43,9 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         if(!caller || turnover_.phase || s.sp<0xd0 || (!dormant_stock() && !command_owner(o)) ||
            (!run_ && (handoff_.load() || lifecycle_ || wrapper_ || marker_ || staging_ticket_ || call_)))return fail(pc);
         if(dormant_stock()) {
-            if(!stock_turnover_owner(pc,facts) || lifecycle_ || wrapper_ || marker_ || staging_ticket_ || call_)return fail(pc);
-            o.command=facts.command;o.vk_command=facts.vk;o.generation=facts.generation;
+            if(lifecycle_ || wrapper_ || marker_ || staging_ticket_ || call_)return fail(pc);
+            turnover_={};turnover_.sp=s.sp-0xd0;turnover_.phase=10;turnover_.caller=s.x[30]-base_;
+            return true; // no W/C or future-load requests at native entry
         }
         uint64_t pool=facts.pool;
         if((!dormant_stock() && !recording_at(pc,o.command+0x50,pool)) || !pool || pool>UINT64_MAX-0xd0)return fail(pc);
@@ -52,6 +53,17 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         turnover_={s.sp-0xd0,o.command,command_wrapper_,o.vk_command,o.generation,pool,1};
         turnover_.caller=s.x[30]-base_;
         return true;
+    }
+    if(dormant_stock() && pc==0x2a1e3c) {
+        StockCommandFacts f{};
+        if(turnover_.phase!=10 || s.sp!=turnover_.sp || s.x[0]!=identity_.renderer ||
+           !stock_turnover_owner(pc,f) || s.x[1]!=f.wrapper)return fail(pc);
+        turnover_.command=f.command;turnover_.wrapper=f.wrapper;turnover_.vk=f.vk;
+        turnover_.generation=f.generation;turnover_.pool=f.pool;turnover_.phase=1;return true;
+    }
+    if(dormant_stock() && pc==0x2a1f64) {
+        if(turnover_.phase!=1 || s.sp!=turnover_.sp || s.x[19]!=identity_.renderer || s.x[20]!=turnover_.command)return fail(pc);
+        return true; // branch-local observation, never required on bypass
     }
     if((pc==0x2a2230 || pc==0x2a2320) && turnover_.phase) {
         if(s.x[19]!=identity_.renderer || s.sp!=turnover_.sp ||
@@ -85,13 +97,27 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
     if(pc==0x300a08 && creation_) {
         if(begin_open_ || begin_success_ || s.x[0]!=creation_ || s.x[19]!=creation_ ||
            s.sp!=creation_sp_-0x40 || s.x[30]!=base_+0x300ae0 ||
-           !recording_read(pc,creation_+0x738,&begin_vk_,8) || !begin_vk_) return fail(pc);
+           (!dormant_stock() && (!recording_read(pc,creation_+0x738,&begin_vk_,8) || !begin_vk_))) return fail(pc);
+        if(dormant_stock())begin_vk_=0;
         begin_sp_=s.sp;begin_open_=true;return true;
+    }
+    if(dormant_stock() && pc==0x300a28) {
+        if(creation_) {
+            if(!begin_open_ || begin_vk_ || s.sp+0x30!=begin_sp_ || s.x[19]!=creation_ ||
+               !recording_read(pc,creation_+0x738,&begin_vk_,8) || !begin_vk_ || s.x[0]!=begin_vk_)return fail(pc);
+            return true;
+        }
+        for(auto &c:recordings_)if(c.command==s.x[19]) {
+            uint64_t vk=0;
+            if(c.renewal!=3 || s.sp+0x30!=c.reset_sp || !recording_read(pc,c.command+0x738,&vk,8) || vk!=c.vk || s.x[0]!=vk)return fail(pc);
+            c.renewal=4;return true;
+        }
+        return fail(pc);
     }
     if(pc==0x300a38 && creation_) {
         uint64_t lr=0,vk=0;
         if(!begin_open_ || s.sp!=begin_sp_-0x30 || s.x[19]!=creation_ ||
-           !recording_read(pc,s.sp+8,&lr,8) || lr!=base_+0x300ae0 ||
+           (!dormant_stock() && (!recording_read(pc,s.sp+8,&lr,8) || lr!=base_+0x300ae0)) || !begin_vk_ ||
            !recording_read(pc,creation_+0x738,&vk,8) || vk!=begin_vk_) return fail(pc);
         begin_open_=false;begin_success_=static_cast<uint32_t>(s.x[0])==0;
         return begin_success_;
@@ -150,6 +176,12 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
     }
     if(pc==0x305260 || pc==0x2953a0) {
         if(s.x[0]!=command_wrapper_) return false;
+        if(dormant_stock()) {
+            if(pc!=0x305260 || turnover_.phase!=3 || s.sp!=turnover_.sp ||
+               s.x[19]!=identity_.renderer || s.x[30]!=base_+0x2a23b4 ||
+               recording_!=turnover_.generation || command_wrapper_!=turnover_.wrapper)return fail(pc);
+            spans_[2]={};command_wrapper_=0;turnover_.phase=4;return true;
+        }
         uint64_t C=0,vk=0,published=1,D=0;bool generation=false;
         for(const auto &c:recordings_)if(c.command==turnover_.command && c.vk==turnover_.vk &&
             c.generation==turnover_.generation && c.begun)generation=true;
@@ -167,7 +199,22 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         }
         fail(pc);return true; // any other release remains unsupported
     }
-    if(pc==0x311648 && turnover_.phase==4 && s.x[1]==turnover_.command) {
+    if(dormant_stock() && (pc==0x3052e0 || pc==0x3052ec || pc==0x3052f0)) {
+        if(s.sp+0x30!=turnover_.sp || s.x[19]!=turnover_.wrapper)return fail(pc);
+        if(pc==0x3052e0) {
+            if(turnover_.phase!=4 || s.x[1]!=turnover_.command)return fail(pc);
+            turnover_.phase=11;
+        } else if(pc==0x3052ec) {
+            if(turnover_.phase!=11 || s.x[1]!=turnover_.command || s.x[0]!=turnover_.pool+0xd0)return fail(pc);
+            turnover_.phase=12;
+        } else {
+            if(turnover_.phase!=13 || s.x[30]!=base_+0x3052f0 || (s.x[0]&255)!=1)return fail(pc);
+            for(auto &c:recordings_)if(c.command==turnover_.command)c.stock_pool=turnover_.pool;
+            turnover_.phase=5;
+        }
+        return true;
+    }
+    if(pc==0x311648 && turnover_.phase==(dormant_stock()?12u:4u) && s.x[1]==turnover_.command) {
         uint64_t pool=0,vk=0;
         if(s.sp+0x30!=turnover_.sp || s.x[30]!=base_+0x3052f0 || s.x[19]!=turnover_.wrapper ||
            !recording_at(pc,turnover_.command+0x50,pool) || pool!=turnover_.pool || s.x[0]!=pool+0xd0 ||
@@ -176,10 +223,9 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         // plus Begin. Owned settlement remains exclusively Lifecycle-issued.
         for(auto &c:recordings_)if(c.command==turnover_.command) {
             c.begun=false;
-            if(dormant_stock())c.stock_pool=pool;
         }
         if(dormant_stock())spans_[6]={}; // no retained integration read role
-        turnover_.phase=5;return true;
+        turnover_.phase=dormant_stock()?13:5;return true;
     }
     if(pc==0x311648 || pc==0x4b3d0 || pc==0x3003d0) {
         const auto command=pc==0x311648?s.x[1]:s.x[0];
@@ -236,7 +282,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
                 if(c.renewal!=2 || s.sp!=c.reset_sp || s.x[30]!=c.reset_lr)return fail(pc);
                 c.renewal=3;
             } else {
-                if(c.renewal!=3 || s.sp+0x30!=c.reset_sp || uint32_t(s.x[0]))return fail(pc);
+                if(c.renewal!=(dormant_stock()?4u:3u) || s.sp+0x30!=c.reset_sp || uint32_t(s.x[0]))return fail(pc);
                 // Publication belongs to the executable generation, not C's
                 // lifetime. Only the paired successful reset+Begin reaches here.
                 // Owned debt is still guarded by current/retained roles, the

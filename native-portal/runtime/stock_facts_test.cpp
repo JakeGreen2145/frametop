@@ -40,6 +40,7 @@ static void dormant(Evidence &e) {
 #endif
 }
 struct StockFixture:StagingFixture {
+    bool stock_mode=true;
     std::array<std::byte,0x100> worker{},context{},scheduler{};
     std::array<std::byte,0x200> context_full{};
     std::array<std::byte,0x25700> app{};
@@ -57,8 +58,12 @@ struct StockFixture:StagingFixture {
         return static_cast<StockFixture*>(u)->evidence.settled(b,a,c,t);
     }
     explicit StockFixture(bool stock=true) {
+        stock_mode=stock;
         if(stock)dormant(evidence);
         put(executable,0x50,addr(pool));put(other,0x50,addr(pool));put(next,8,addr(other));
+    }
+    bool bootstrap(bool recording=false,arena::Bridge *bridge=nullptr,unsigned pooled=0) {
+        return Fixture::bootstrap(recording,bridge,pooled,stock_mode);
     }
     void run() {
         put(worker,0,uint64_t(base+0x5a1428));put(worker,0x48,addr(context_full));
@@ -73,18 +78,24 @@ struct StockFixture:StagingFixture {
         s={};s.x[0]=addr(r);s.sp=addr(stack)+0x1d0;s.x[30]=base+0x6caf0;
         if(fault==1)++s.x[30];
         if(fault==2)put(old_command==addr(executable)?executable:other,8,addr(r)+0x58);
-        if(fault==9)put(r,0xa78,uint64_t(0x1235));
+        if(fault==9)++s.x[0]; // wrong actual native renderer, not an unseen memory mutation
         if(fault==10)put(old_command==addr(executable)?executable:other,0x50,addr(pool)+8);
         evidence.graph_event(0x2a1e18,s);evidence.event(0x2a1e18,s);
         s.sp-=0xd0;s.x[19]=addr(r);
+        if(stock_mode) {s.x[1]=old_wrapper;evidence.event(0x2a1e3c,s);}
         if(fault==3)++s.sp;
         evidence.graph_event(0x2a2230,s);evidence.event(0x2a2230,s);evidence.graph_event(0,s);
         if(fault!=4){evidence.graph_event(0x2a2320,s);evidence.event(0x2a2320,s);evidence.graph_event(0,s);}
         put(r,0x1380,uint64_t(0));s.x[0]=old_wrapper;s.x[30]=base+0x2a23b4;
         evidence.event(0x305260,s);
-        s.sp-=0x30;s.x[0]=addr(pool)+0xd0;s.x[1]=old_command;s.x[19]=old_wrapper;s.x[30]=base+0x3052f0;
+        s.sp-=0x30;s.x[1]=old_command;s.x[19]=old_wrapper;
+        if(stock_mode)evidence.event(0x3052e0,s);
+        s.x[0]=addr(pool)+0xd0;
         if(fault==5)++s.x[0];
+        if(stock_mode)evidence.event(0x3052ec,s);
+        s.x[30]=base+0x3052f0;
         evidence.event(0x311648,s);
+        if(stock_mode) {s.x[0]=1;evidence.event(0x3052f0,s);}
         s.sp+=0x30;s.x[19]=addr(r);s.x[0]=new_wrapper;
         if(fault==6)put(next,8,addr(executable)); // returned but not re-begun
         if(fault==7)put(other,0x738,uint64_t(0xc099));
@@ -102,7 +113,9 @@ struct StockFixture:StagingFixture {
         if(fault==1)++s.x[30];
         evidence.event(0x300b20,s);s.sp-=0x20;s.x[0]=fault==2?uint32_t(-4):0;evidence.event(0x300c54,s);
         s.sp+=0x20;s.x[0]=c;evidence.event(0x300a08,s);
-        s.sp-=0x30;s.x[0]=fault==3?uint32_t(-4):0;put(stack,0xd8,uint64_t(base+0x2a9cdc));evidence.event(0x300a38,s);
+        s.sp-=0x30;
+        if(stock_mode) {s.x[0]=c==addr(executable)?0xc001:0xc002;evidence.event(0x300a28,s);}
+        s.x[0]=fault==3?uint32_t(-4):0;put(stack,0xd8,uint64_t(base+0x2a9cdc));evidence.event(0x300a38,s);
     }
 };
 static void no_graph_turnover() {
@@ -169,8 +182,8 @@ static void negatives() {
 static bool pipeline_positive(void *u,const render::Provenance &p,render::Registers &r) noexcept {
     auto &f=*static_cast<StockFixture*>(u);++f.pipelines;f.provenance[p.eye]=p;r.x[0]=0xa003;return true;
 }
-static void recovery() {
-    auto storage=std::make_unique<StockFixture>();auto &f=*storage;
+template<class FixtureType=StockFixture> static void recovery() {
+    auto storage=std::make_unique<FixtureType>();auto &f=*storage;
     arena::Bridge bridge(f.evidence.bridge_memory());assert(f.bootstrap(true,&bridge,1));f.run();
     // No native graph storage is readable at these historical addresses.
     for(unsigned i=0;i<4;++i) {
@@ -182,6 +195,7 @@ static void recovery() {
     const auto facts=f.evidence.stock_command_facts();assert(facts.command==addr(f.executable) && facts.generation>1);
     const auto before=reads;assert(f.evidence.engage_stock(f.evidence.identity(),facts.generation));assert(reads==before);
     assert(!f.evidence.begin_dormant_stock({}));assert(!f.evidence.engage_stock(f.evidence.identity(),facts.generation));
+    f.stock_mode=false; // subsequent lifecycle keeps the unchanged ENGAGED path
 #endif
     std::array<std::byte,0x130> passes{};std::array<std::byte,0x560> packets{};
     std::array<std::byte,0x40> cache{};std::array<std::byte,0x150> target{};
@@ -318,7 +332,9 @@ static void unsupported_collector() {
     assert(!f->evidence.engage_stock(f->evidence.identity(),1));
 #endif
 }
+#ifndef FT_STOCK_TEST_LIBRARY
 int main() {
     unsupported_collector();no_graph_turnover();negatives();pending_pool_before_run();stock_arena_and_retained();recovery();
     std::puts("stock facts: protected graph and read counters, strict history negatives PASS");
 }
+#endif
