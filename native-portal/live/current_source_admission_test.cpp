@@ -11,7 +11,9 @@ template<class Base=Fixture> struct CurrentFixture: Base {
     static bool identity(void* p,const CameraBinding& b,SourceIdentity& out) noexcept {
         auto& f=*static_cast<CurrentFixture*>(p);
         if(!f.auth_live || !(b==f.b))return false;
-        out={1,1,client};return true;
+        out={1,1,client};
+        if(f.abort_in_identity){f.abort_in_identity=false;f.render.abort();}
+        return true;
     }
     static bool owner(void* p) noexcept {return static_cast<CurrentFixture*>(p)->fold_owner==std::this_thread::get_id();}
     static bool render_covered(void* p,ClientSourceBinding::Module,uint64_t pc) noexcept {
@@ -21,6 +23,8 @@ template<class Base=Fixture> struct CurrentFixture: Base {
     CurrentRenderCollector render{this->gate,this,identity,render_covered};
     uint64_t fault_pc=0,fault_value=0;unsigned fault_reg=0;bool fault_sp=false;
     unsigned borrow_fault=0;std::optional<CurrentRenderSelection> escaped;
+    bool revoke_at_selection_auth=false,abort_in_identity=false;
+    unsigned selection_callbacks=0;
     render::NativeBorrow escaped_borrow{};
     std::map<uint64_t,arena::Saved> vectors;
     bool capture(uint64_t pc,arena::Saved s) {
@@ -53,8 +57,10 @@ template<class Base=Fixture> struct CurrentFixture: Base {
         n.invocation_sp=s.sp;
         auto sample=render.sample();assert(sample && sample->resource_index==n.resource_index &&
             sample->slot==n.slot && sample->selected_texture==n.selected_texture && sample->upload_ticket==n.provenance.ticket);
+        abort_in_identity=revoke_at_selection_auth;
         const bool result=render.with_selection(n,[](void* p,const CurrentRenderSelection& selection,render::NativeBorrow value) noexcept {
             auto& f=*static_cast<CurrentFixture*>(p);f.escaped=selection;f.escaped_borrow=value;
+            ++f.selection_callbacks;
             switch(f.borrow_fault) {
             case 1:++value.command;break;case 2:++value.provenance.recording_generation;break;
             case 3:++value.provenance.frame;break;case 4:++value.provenance.origin;break;
@@ -77,6 +83,16 @@ template<class Base=Fixture> struct CurrentFixture: Base {
         render.finish(invocation,this->entry());return result;
     }
 };
+void identity_revocation_cannot_open_selection() {
+    CurrentFixture<> f;f.connect();assert(f.admission.fold_stock_history(f.transport));
+    f.permitted=false;f.memory.clear();f.revoke_at_selection_auth=true;
+    const auto n=f.borrow();assert(!f.select(n,1));
+    assert(f.selection_callbacks==0 && !f.escaped);
+    render::Recorded record;record.prefix=n.replacement;
+    assert(!f.admission.backend(f.b,n.provenance.ticket,record,n.command,n.provenance.recording_generation));
+    const auto ready=f.admission.bootstrap_eligible(f.b);
+    assert(ready.available && !ready.needs_connect); // no phantom one-eye debt
+}
 void cold_connect() {
     CurrentFixture<SourceFixture<CurrentConnectCollector>> f;
     assert(f.admission.bootstrap_eligible(f.b).needs_connect);
@@ -236,7 +252,7 @@ int main(int argc,char** argv) {
     if(argc==2){replay_current_vectors(argv[1]);return 0;}
     no_op_update_before_bootstrap();render_return_scope();current_connect_negatives();selection_negatives();
     warm_without_new_update();current_update_optional(false);current_update_optional(true);
-    cold_connect();
+    identity_revocation_cannot_open_selection();cold_connect();
     CurrentFixture<> f;
     f.permitted=false;
     const auto e=f.admission.bootstrap_eligible(f.b);

@@ -143,7 +143,10 @@ public:
     // Invoke from the existing NativeBorrow callback inside Adapter::enqueue.
     // The packet is already copied; this one-shot certificate dies on return.
     bool with_selection(render::NativeBorrow n,Borrow callback,void* context) noexcept {
-        if(!owner() || !active_ || failed_ || !held() || window_->active || stage_!=9 || !callback ||
+        if(!owner() || !active_ || failed_ || !held())return reject();
+        // held() calls external authentication, which may revoke this scope.
+        // Revalidate after it returns before publishing any borrow authority.
+        if(!active_ || failed_ || window_->active || stage_!=9 || !callback ||
            n.camera!=binding_.camera || n.invocation_sp!=entry_sp_-0x460 || n.resource_index!=index_ ||
            n.slot!=slot_ || n.selected_texture!=texture_ || n.provenance.ticket!=upload_)return reject();
         uint64_t texture=0;std::memcpy(&texture,n.original.data()+0x80,8);
