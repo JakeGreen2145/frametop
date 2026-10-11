@@ -12,7 +12,7 @@ import re
 import struct
 import unittest
 import loader_test as L
-from stock_observer_test import EXPECTED, HANDOFF
+from stock_observer_test import EXPECTED, HANDOFF, ADDITIONAL
 from unicorn import Uc, UC_ARCH_ARM64, UC_MODE_ARM, UC_HOOK_CODE
 import unicorn.arm64_const as A
 
@@ -91,14 +91,24 @@ class StockMachineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.m=Machine()
 
+    def test_module_scoped_inventory_api_exists(self):
+        self.assertTrue(hasattr(self.m.dll,'ft_native_portal_installed_sites'),
+                        'collector needs actual installed PCs, not required_sites as authority')
+        inventory=self.m.dll.ft_native_portal_installed_sites
+        inventory.argtypes=[ctypes.c_uint32,ctypes.c_uint64,ctypes.c_void_p,ctypes.c_size_t]
+        inventory.restype=ctypes.c_size_t
+        self.assertEqual(inventory(1,0,None,0),0) # unloaded fixture lifetime
+        self.assertEqual(inventory(1,1<<63,None,0),0)
+
     def test_every_primary_and_guard_instruction(self):
         checks=0
         for base in (0,0x100000000,0x7000000000):
             for module,pc,pin in EXPECTED:
                 for zero in (False,True):
-                    vals=values(base);vals[30]=base+0x790100
+                    vals=values(base);vals[30]=base+0x790100;vals[-3]=0x40000000 if zero else 0xa0000000
                     word=L.prepare.number(pin['word'])
-                    if pin['kind']==3:vals[word&31]=0 if zero else DATA+0x8000
+                    if pin['kind']==2:vals[(word>>5)&31]=base+0x790000
+                    if pin['kind']==3 and word&0x7e000000==0x34000000:vals[word&31]=0 if zero else DATA+0x8000
                     if pc==0x2584c4:vals[0]=int(not zero);vals[30]=base+pc
                     actual=emulator(base,vals);expected=emulator(base,vals)
                     expected.mem_write(base+pc,self.m.at[module](pc,4))
@@ -152,7 +162,7 @@ class StockMachineTests(unittest.TestCase):
         # checked, but it is NOT a queue/GPU/settlement or installed RET proof.
         code=self.m.witness('compositor','native/pass4/ins-0x305260.asm',0x100000)
         wrapper=DATA+0x2000;owner=DATA+0x3000;command=DATA+0x4000;pool=DATA+0x5000
-        for nonnull in (False,True):
+        for nonnull,raw in ((False,0),(True,0),(True,1)):
             outputs=[];traces=[]
             for installed in (False,True):
                 vals=values(base);vals[0]=wrapper;vals[30]=outer
@@ -164,13 +174,14 @@ class StockMachineTests(unittest.TestCase):
                 # The RET word is authenticated from the delivered destructor.
                 u.mem_write(base+0x311648,self.m.at['compositor'](0x3052fc,4))
                 if installed:
-                    for pc in (0x3052e0,0x3052ec):self.m.install(u,'compositor',pc,base,callback)
+                    for pc in (0x3052e0,0x3052ec,0x3052f0):self.m.install(u,'compositor',pc,base,callback)
                 events=[];native=[]
                 def hook(m,address,n,_):
                     if address==callback:events.append(self.m.callback(m))
                     elif address==base+0x311648:
                         native.append((m.reg_read(A.UC_ARM64_REG_X0),m.reg_read(A.UC_ARM64_REG_X1),m.reg_read(A.UC_ARM64_REG_X30)))
                         self.assertEqual(native[-1],(pool+0xd0,command,base+0x3052f0))
+                        m.reg_write(A.UC_ARM64_REG_X0,raw) # modeled pool raw outcome
                     elif address==base+0x3052f0:native.append(('actual-return' if nonnull else 'null-branch',m.reg_read(A.UC_ARM64_REG_SP)))
                     elif address==outer:m.emu_stop()
                 h=u.hook_add(UC_HOOK_CODE,hook);u.emu_start(base+0x305260,base+0x7ffffc,count=2000)
@@ -178,12 +189,95 @@ class StockMachineTests(unittest.TestCase):
                 self.assertEqual(u.reg_read(A.UC_ARM64_REG_SP),SP)
                 self.assertEqual(bytes(u.mem_read(owner+0x30,8)),bytes(8))
                 if installed:
-                    self.assertEqual([e[1] for e in events],[0x3052e0]+([0x3052ec] if nonnull else []))
+                    self.assertEqual([e[1] for e in events],[0x3052e0]+([0x3052ec] if nonnull else [])+[0x3052f0])
+                    returned=struct.unpack_from('<32Q',events[-1][2])
+                    self.assertEqual((returned[19],returned[31]),(wrapper,SP-0x30))
+                    if nonnull:self.assertEqual((returned[0],returned[30]),(raw,base+0x3052f0))
                     r=struct.unpack_from('<32Q',events[0][2]);self.assertEqual((r[1],r[19],r[31]),(command if nonnull else 0,wrapper,SP-0x30))
                 outputs.append([u.reg_read(r) for r in REGS]);traces.append(native)
                 u.hook_del(h);del u;gc.collect()
             self.assertEqual(outputs[0],outputs[1]);self.assertEqual(traces[0],traces[1])
         print('PASS committed producer stores and pinned destructor null/pool-call/native-return paths')
+
+    def test_positive_output_store_is_not_failure_join(self):
+        base=0x100000000;callback=base+0x780000
+        w=next(w for w in ADDITIONAL['native_source_windows'] if w['elf_start']=='0x304e60')
+        data=bytes.fromhex(w['source_bytes_hex'])
+        self.assertEqual(L.prepare.digest(data),w['source_bytes_sha256'])
+        self.assertEqual(self.m.at['compositor'](0x304e60,len(data)),data)
+        for success in (False,True):
+            vals=values(base);u=emulator(base,vals);u.mem_write(base+0x304e60,data)
+            for pc in (0x304ec8,0x304ecc):self.m.install(u,'compositor',pc,base,callback)
+            events=[]
+            def hook(m,address,n,_):
+                if address==callback:
+                    events.append(self.m.callback(m))
+                    if events[-1][1]==0x304ecc:m.emu_stop()
+            h=u.hook_add(UC_HOOK_CODE,hook)
+            u.emu_start(base+(0x304ec8 if success else 0x304f9c),base+0x7ffffc,count=2000)
+            self.assertEqual([e[1] for e in events],([0x304ec8] if success else [])+[0x304ecc])
+            self.assertEqual(struct.unpack('<Q',u.mem_read(vals[21],8))[0],vals[22] if success else 0)
+            # Failure leaves a nonzero but UNPROVEN x22 at the same join. The
+            # collector must require the actual preceding store observation.
+            self.assertEqual(struct.unpack_from('<Q',events[-1][2],22*8)[0],vals[22])
+            u.hook_del(h);del u;gc.collect()
+        print('PASS actual 304f9c/304fa0 failure join omits positive 304ec8 witness')
+
+    def test_wrapper_factory_real_nested_returns(self):
+        base=0x100000000;callback=base+0x780000
+        requested=(0x3053f8,0x305308,0x302790,0x304e60,0x304ec8,0x304ecc,0x3053a8,0x305490,0x305470,0x2a23f8)
+        starts=(0x2a23a0,0x3053f8,0x305308,0x302790,0x304e60)
+        windows=[w for w in ADDITIONAL['native_source_windows'] if int(w['elf_start'],0) in starts]
+        self.assertEqual(len(windows),len(starts))
+        renderer=DATA+0x1000;wrapper=DATA+0x3000;owner=DATA+0x4000;pool=DATA+0x5000
+        command=DATA+0x6000;resource=DATA+0x7000;deque=DATA+0x8000
+        outcomes=[]
+        for installed in (False,True):
+            vals=values(base);vals[19]=renderer;vals[20]=owner;vals[30]=base+0x7a0000
+            u=emulator(base,vals)
+            for w in windows:
+                data=bytes.fromhex(w['source_bytes_hex']);pc=int(w['elf_start'],0)
+                self.assertEqual(L.prepare.digest(data),w['source_bytes_sha256'])
+                self.assertEqual(self.m.at['compositor'](pc,len(data)),data);u.mem_write(base+pc,data)
+            for address,value in [(renderer+0x1380,0),(SP+0xb0,DATA+0x9000),(SP+0x98,0),
+                                  (owner+0x30,0),(owner+0x38,pool),(owner+0x50,resource),
+                                  (pool+0x90,deque),(pool+0xb0,deque+8),(pool+0xb8,deque),
+                                  (pool+0x190,0),(deque,command),(base+0x5ae2f0,0)]:putq(u,address,value)
+            if installed:
+                self.assertTrue(all(('compositor',pc) in self.m.ids for pc in requested), 'complete factory chain not selected')
+                for pc in requested:self.m.install(u,'compositor',pc,base,callback)
+            events=[];returns=[];native=[]
+            # Explicit opaque boundaries: allocation, naming, and two resource
+            # state methods. None is a modeled constructor/factory return.
+            external={base+0x4b490:'allocate',base+0x3010d8:'name',base+0x310ca8:'resource-a',base+0x310cf8:'resource-b'}
+            def hook(m,address,n,_):
+                if address==callback:
+                    event=self.m.callback(m);events.append(event)
+                    if event[1]==0x305490:self.assertEqual(struct.unpack('<Q',m.mem_read(SP+0x98,8))[0],wrapper)
+                elif address in external:
+                    lr=m.reg_read(A.UC_ARM64_REG_X30);native.append((external[address],lr))
+                    m.reg_write(A.UC_ARM64_REG_X0,wrapper if external[address]=='allocate' else 0)
+                    m.reg_write(A.UC_ARM64_REG_PC,lr)
+                elif address in [base+pc for pc in (0x3027b0,0x305330,0x30548c,0x2a23e8)]:
+                    returns.append((address-base,m.reg_read(A.UC_ARM64_REG_SP),m.reg_read(A.UC_ARM64_REG_X30)))
+                elif address==base+0x2a242c:m.emu_stop()
+            h=u.hook_add(UC_HOOK_CODE,hook);u.emu_start(base+0x2a23d8,base+0x7ffffc,count=8000)
+            self.assertEqual(u.reg_read(A.UC_ARM64_REG_PC),base+0x2a242c)
+            self.assertEqual(struct.unpack('<Q',u.mem_read(renderer+0x1380,8))[0],wrapper)
+            self.assertEqual(struct.unpack('<Q',u.mem_read(wrapper+8,8))[0],command)
+            self.assertEqual(returns,[(0x3027b0,SP-0x80,base+0x3027b0),(0x305330,SP-0x50,base+0x305330),
+                                      (0x30548c,SP-0x30,base+0x30548c),(0x2a23e8,SP,base+0x2a23e8)])
+            if installed:
+                self.assertEqual([e[1] for e in events],list(requested))
+                captured={e[1]:struct.unpack_from('<32Q',e[2]) for e in events}
+                self.assertEqual((captured[0x304ec8][21],captured[0x304ec8][22]),(wrapper+8,command))
+                self.assertEqual((captured[0x305490][20],captured[0x305490][22]),(SP+0x98,wrapper))
+                self.assertEqual(captured[0x305470][0],SP+0x98) # SLOT, never W
+                self.assertEqual((captured[0x2a23f8][19],captured[0x2a23f8][0]),(renderer,wrapper))
+            outcomes.append(([u.reg_read(r) for r in REGS],native,bytes(u.mem_read(DATA,0xe000))))
+            u.hook_del(h);del u;gc.collect()
+        self.assertEqual(outcomes[0],outcomes[1])
+        print('PASS pinned wrapper factory, nested actual returns, positive output and committed renderer store')
 
     def test_metadata_actual_entry_lock_return_revoke(self):
         base=0x100000000;callback=base+0x780000

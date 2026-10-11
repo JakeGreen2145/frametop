@@ -48,6 +48,17 @@ static _Atomic int enabled;
 #include "stock_observer_coverage.h"
 _Static_assert(sizeof(struct ft_stock_observer_coverage_v1)==40,"stock coverage v1 ABI");
 _Static_assert(SOURCE_CLIENT_TAG==FT_STOCK_OBSERVER_CLIENT_TAG,"callback module tag ABI");
+EXPORT size_t ft_native_portal_installed_sites(uint32_t version,uint64_t module_tag,
+        uint64_t *pcs,size_t capacity) {
+    uint64_t comp=0,client=0;
+    if(version!=FT_INSTALLED_SITES_VERSION || (module_tag && module_tag!=SOURCE_CLIENT_TAG) ||
+       !ft_native_portal_source_modules(&comp,&client) || !comp || !client)return 0;
+    const struct site *selected=module_tag?client_sites:sites;
+    const size_t count=module_tag?CLIENT_SITE_COUNT:SITE_COUNT;
+    if(pcs && capacity>=count)
+        for(size_t i=0;i<count;++i)pcs[i]=selected[i].offset|module_tag;
+    return count;
+}
 EXPORT int ft_native_portal_stock_observer_coverage(uint32_t version,
         struct ft_stock_observer_coverage_v1 *out,size_t size) {
     if(!out || version!=FT_STOCK_OBSERVER_COVERAGE_VERSION || size!=sizeof(*out))return 0;

@@ -10,6 +10,29 @@ static void test_stock_coverage(uintptr_t comp,uintptr_t client,uintptr_t ci,int
     image_islands=comp+0x600000;client_islands=ci;
     client_handle=&s;client_fd=fd;assert(!fstat(fd,&client_stat));
     atomic_store(&enabled,1);
+    // Inventory comes from the selected module table AFTER installation. Check
+    // its exact patch destinations as well as count, tag and bounded copy ABI.
+    for(unsigned module=0;module<2;++module) {
+        const uint64_t tag=module?SOURCE_CLIENT_TAG:0;
+        const size_t n=module?CLIENT_SITE_COUNT:SITE_COUNT;
+        const struct site *table=module?client_sites:sites;
+        uint64_t pcs[ALL_SITE_COUNT+2],prior_pcs[ALL_SITE_COUNT+2];
+        memset(pcs,0xa5,sizeof pcs);memcpy(prior_pcs,pcs,sizeof pcs);
+        assert(ft_native_portal_installed_sites(1,tag,NULL,0)==n);
+        assert(ft_native_portal_installed_sites(1,tag,pcs+1,n-1)==n);
+        assert(!memcmp(pcs,prior_pcs,sizeof pcs));
+        assert(!ft_native_portal_installed_sites(2,tag,pcs+1,n));
+        assert(!ft_native_portal_installed_sites(1,1,pcs+1,n));
+        assert(!memcmp(pcs,prior_pcs,sizeof pcs));
+        assert(ft_native_portal_installed_sites(1,tag,pcs+1,n)==n);
+        assert(pcs[0]==prior_pcs[0] && pcs[n+1]==prior_pcs[n+1]);
+        for(size_t i=0;i<n;++i) {
+            assert(pcs[i+1]==(table[i].offset|tag));
+            uint32_t word;uintptr_t pc=(module?client:comp)+table[i].offset;
+            assert(branch_word(pc,(module?ci:image_islands)+i*STRIDE,&word));
+            assert(*(uint32_t*)pc==word);
+        }
+    }
 #ifndef FT_TEST_STOCK_MASK
 #define FT_TEST_STOCK_MASK FT_STOCK_OBSERVER_REQUIRED
 #endif

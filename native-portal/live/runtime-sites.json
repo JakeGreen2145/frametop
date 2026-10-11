@@ -8,6 +8,440 @@
   "requires_explicit_shutdown_fail_stop": true,
   "sites": [
     {
+      "relative_pc": 3167376,
+      "pc": "0x305490",
+      "guard": "f0ffff179b19f597f40300aa05000014",
+      "guard_sha256": "9ab5bcb9c6f6209dc8d234c3fbf88a5c0a65fa83b3f4b4bf9b430bfd78b4ee57",
+      "word": "0x17fffff0",
+      "kind": 4,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x305450",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440252,
+      "pc": "0x15f9fc",
+      "guard": "0004005460824d39a0040035d02a0494",
+      "guard_sha256": "1d3b89779eaff406e2317dadddd1ad8d4cdfe04f582d7da6bd8d0b10e2250551",
+      "word": "0x54000400",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fa00",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440352,
+      "pc": "0x15fa60",
+      "guard": "6000003460824d398001003500008052",
+      "guard_sha256": "c67e9ce9e366ab012fb0196081b5010c6ab354ea0f87755bf72c355e25dbe691",
+      "word": "0x34000060",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fa64",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440404,
+      "pc": "0x15fa94",
+      "guard": "c0feff3420008052f35341a9fd7bc2a8",
+      "guard_sha256": "fd5a515cba343931c49a783917f85971685210f6454b8e584ae397dbee9d9228",
+      "word": "0x34fffec0",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fa98",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440708,
+      "pc": "0x15fbc4",
+      "guard": "c0000035200080527f260d39f30b40f9",
+      "guard_sha256": "adcc7ea2799d9c019eb6aae13f6c5e97529f674f713eb402e15c7b3afee13433",
+      "word": "0x350000c0",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fbc8",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1441072,
+      "pc": "0x15fd30",
+      "guard": "60060d39001c001254030034610e4d39",
+      "guard_sha256": "c4643c6c2c4e231bd052c309710e320907a2179b2919b6c538eb6947b2117d6f",
+      "word": "0x390d0660",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fd34",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440260,
+      "pc": "0x15fa04",
+      "guard": "a0040035d02a049474620d91030040f9",
+      "guard_sha256": "509ee128354fb302fd4c1e8bdd947ff03dcf00157d26570b20a96f587a51884d",
+      "word": "0x350004a0",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fa08",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440396,
+      "pc": "0x15fa8c",
+      "guard": "e0fbff34602a4d39c0feff3420008052",
+      "guard_sha256": "d2566b5e8e963cbbe2d7a39c817ffa80347ce7ab5dcec9a793f58017a7512b12",
+      "word": "0x34fffbe0",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fa90",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440444,
+      "pc": "0x15fabc",
+      "guard": "f5ffff17e103002a801700b000200c91",
+      "guard_sha256": "f7a8ec2a40ce599ee0c0c0f95593f4be5601f1709cdd87871c8bc15355d3079d",
+      "word": "0x17fffff5",
+      "kind": 4,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fac0",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440704,
+      "pc": "0x15fbc0",
+      "guard": "7f2a0d39c0000035200080527f260d39",
+      "guard_sha256": "adfe9562306ce8232e13a41e73dd8e03598953e8f0a073374f1c14d6fa937c78",
+      "word": "0x390d2a7f",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fbc4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440844,
+      "pc": "0x15fc4c",
+      "guard": "612a4d39edffff171f2003d5211c0072",
+      "guard_sha256": "8373ab17cc5b25d8bdabc0cb772473a88e6c74adcebdb1fd1f0502779e36fb40",
+      "word": "0x394d2a61",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fc50",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1441096,
+      "pc": "0x15fd48",
+      "guard": "210400340004003561fa4c3960164d39",
+      "guard_sha256": "231e1c7ebe923eba84b2b333b040fb6a4eccb129fa4a0de40095c59de67c5203",
+      "word": "0x34000421",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fd4c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1441168,
+      "pc": "0x15fd90",
+      "guard": "80000034740e4d39f4010035f403002a",
+      "guard_sha256": "9d9a1f37bf278a6fafe74f4af2b8b4af461cdde16270e165bcf1c92b7b84bc1d",
+      "word": "0x34000080",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fd94",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440720,
+      "pc": "0x15fbd0",
+      "guard": "f30b40f9fd7bc2a8c0035fd65b2a0494",
+      "guard_sha256": "60cb748f53506f0f19fd0478aff6c2ad4cef02d25edbbc7d71ff86b1f096d018",
+      "word": "0xf9400bf3",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fbd4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1440776,
+      "pc": "0x15fc08",
+      "guard": "0000805221feff3560824d39f30b40f9",
+      "guard_sha256": "ee7631c1b4a0555ffc52f8efa7bbeb767a4f4dbe56d288cacfea254a64c895f7",
+      "word": "0x52800000",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x15fc0c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1442108,
+      "pc": "0x16013c",
+      "guard": "8017009000001691f3500094e03b40f9",
+      "guard_sha256": "ca543a98f5d34517deb02f81844fe05954b80395eeb0faaa5bb2cc2af2629636",
+      "word": "0x90001780",
+      "kind": 6,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x160140",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3167224,
+      "pc": "0x3053f8",
+      "guard": "fd7bbda9fd030091f35301a9531500b0",
+      "guard_sha256": "f6cf3bf9048a8808f1ff993342eb3b662e884dd6fda7057de7b0393f523fe3c7",
+      "word": "0xa9bd7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x3053fc",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3155856,
+      "pc": "0x302790",
+      "guard": "fd7bbda9fd030091f35301a9f30308aa",
+      "guard_sha256": "62a8f1725b3020256554750a57e15829e559eb6751d4fe00facc3a3839134299",
+      "word": "0xa9bd7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x302794",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3165792,
+      "pc": "0x304e60",
+      "guard": "fd7bbaa9fd030091f35301a9541500d0",
+      "guard_sha256": "42e7f51932a8995dfe1ede948845d997711d4a13cc8df5105c881e40ae674437",
+      "word": "0xa9ba7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x304e64",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2760252,
+      "pc": "0x2a1e3c",
+      "guard": "613200b4f76305a9f96b06a9fb7307a9",
+      "guard_sha256": "d9c860c53d9d2b3f078984f59fdb2e031aa47316dc67fc22817b03f748bc3648",
+      "word": "0xb4003261",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2a1e40",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 2760548,
+      "pc": "0x2a1f64",
+      "guard": "6b78fb97e24340f9e00314aae15b40f9",
+      "guard_sha256": "2a6a9b899349fe423fa09c62711f2f41a74ffd985d09e118864c4b2a0c56d08c",
+      "word": "0x97fb786b",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2a1f68",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3148328,
+      "pc": "0x300a28",
+      "guard": "e31300b9420040f9ff7f02a940003fd6",
+      "guard_sha256": "70d69618e016b4210998f5df2777f2caa0f2bda3902c195942bc600255e68ae2",
+      "word": "0xb90013e3",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x300a2c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3151872,
+      "pc": "0x301800",
+      "guard": "38090094e00314aa9afcff971f1c0072",
+      "guard_sha256": "e61503088226add9f71831c8d1b1d2f61c71f9dfee234f0f39919ff67d00678a",
+      "word": "0x94000938",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x301804",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3151876,
+      "pc": "0x301804",
+      "guard": "e00314aa9afcff971f1c007201020054",
+      "guard_sha256": "e2967fc212b1937db2c4e7bef1cecc5dc8b82910b3e747455f850e8bf7e38b6f",
+      "word": "0xaa1403e0",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x301808",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3161360,
+      "pc": "0x303d10",
+      "guard": "7f7e01a97f8200397fa20039641a00f9",
+      "guard_sha256": "b31993a7d2dba8318a5bb52b857ac20efc6731d37d7eb5d55d125702ff3c447d",
+      "word": "0xa9017e7f",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x303d14",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3161456,
+      "pc": "0x303d70",
+      "guard": "21e02391018405f874020891011480d2",
+      "guard_sha256": "6efa9d565beef72a1522f17365080d2f69ce13562ed55d2a37c65f38f5de347d",
+      "word": "0x9123e021",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x303d74",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3166960,
+      "pc": "0x3052f0",
+      "guard": "f35341a9f51340f9fd7bc3a8c0035fd6",
+      "guard_sha256": "40fc455251cc53ffeb0d5a2e12abac542e2ac3a706f824c4fbd1522ff59d1978",
+      "word": "0xa94153f3",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x3052f4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3166984,
+      "pc": "0x305308",
+      "guard": "fd7bbea9e30301aae80300aafd030091",
+      "guard_sha256": "1832f47798c5952b26a5d337c6b69c77ad49c9f925e0305d9e4e7c7fb8e065e9",
+      "word": "0xa9be7bfd",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x30530c",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3167144,
+      "pc": "0x3053a8",
+      "guard": "c0035fd6b98ff997250c00d0210c00d0",
+      "guard_sha256": "de19e2c3f86e7c09a5af95a3ef4a047eeab1229e9533fc24898290fbb9784af2",
+      "word": "0xd65f03c0",
+      "kind": 5,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x3053ac",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3167344,
+      "pc": "0x305470",
+      "guard": "c0035fd6000280d20618f597e20316aa",
+      "guard_sha256": "363bd28c0b752a52b3339fe6c71ea6eca39c8ea2be7d74ff2d5d772ecf72fb00",
+      "word": "0xd65f03c0",
+      "kind": 5,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x305474",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3165896,
+      "pc": "0x304ec8",
+      "guard": "b60200f9947a41f9740000b4e00318aa",
+      "guard_sha256": "97bec7377a6738d13593ef3f3305690f5e64c5eb557432babb8e59921e4aa0e6",
+      "word": "0xf90002b6",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x304ecc",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
       "relative_pc": 2761720,
       "pc": "0x2a23f8",
       "guard": "b40100b4e00314aa988b0194e00314aa",

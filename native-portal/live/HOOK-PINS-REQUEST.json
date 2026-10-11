@@ -1,0 +1,18 @@
+{
+  "status": "resolved by exact RX16 read from existing whole-hash-authenticated local ELF; no decompilation or inferred bytes",
+  "collector_request": "/home/jakeg/.hermes/work/frametop-native-native-stock-facts/native-portal/runtime/HOOK-REQUEST.json",
+  "module": "compositor",
+  "elf_sha256": "9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265",
+  "pc": "0x305490",
+  "known_word": "0x17fffff0",
+  "known_bytes": "f0ffff179b19f597",
+  "missing_bytes_at": ["0x305498", "0x30549c"],
+  "reason": "Delivered elf-3053f8-a0 window ends at 0x305498 exclusive. Complete guard was subsequently checked directly in the existing immutable local ELF; supplied first eight bytes match.",
+  "local_elf": "/home/jakeg/.hermes/work/frame-native-reuse/camera-analysis/vrcompositor",
+  "guard": "f0ffff179b19f597f40300aa05000014",
+  "guard_sha256": "9ab5bcb9c6f6209dc8d234c3fbf88a5c0a65fa83b3f4b4bf9b430bfd78b4ee57",
+  "kind": 4,
+  "covered_additional_required_entries": ["0x3053f8", "0x302790", "0x304e60"],
+  "positive_predecessor": "0x304ec8 guard mechanically derived from complete pinned 304e60 window and installed alongside 304ecc",
+  "dormant_ready": false
+}
