@@ -45,6 +45,38 @@ EXPORT uint64_t ft_native_portal_original(uint64_t pc) {
 static uint64_t deadline;
 static _Atomic int enabled;
 #include "source_loader.inc"
+#include "stock_observer_coverage.h"
+_Static_assert(sizeof(struct ft_stock_observer_coverage_v1)==40,"stock coverage v1 ABI");
+_Static_assert(SOURCE_CLIENT_TAG==FT_STOCK_OBSERVER_CLIENT_TAG,"callback module tag ABI");
+EXPORT int ft_native_portal_stock_observer_coverage(uint32_t version,
+        struct ft_stock_observer_coverage_v1 *out,size_t size) {
+    if(!out || version!=FT_STOCK_OBSERVER_COVERAGE_VERSION || size!=sizeof(*out))return 0;
+    memset(out,0,sizeof(*out));
+#ifdef FT_STOCK_OBSERVER_SELECTED_MASK
+    uint64_t comp=0,client=0;
+    if(strcmp(EXE_SHA,FT_STOCK_OBSERVER_COMP_SHA) || strcmp(CLIENT_SHA,FT_STOCK_OBSERVER_CLIENT_SHA) ||
+       !ft_native_portal_source_modules(&comp,&client) || !comp || !client)return 0;
+    uint64_t mask=0;
+    _Static_assert(sizeof(stock_observer_pins)/sizeof(*stock_observer_pins)==FT_STOCK_OBSERVER_SITE_COUNT,"stock v1 bit count");
+    for(unsigned k=0;k<FT_STOCK_OBSERVER_SITE_COUNT;++k) {
+        const struct site *pin=stock_observer_pins+k;unsigned matches=0,exact=0;
+        for(unsigned i=0;i<ALL_SITE_COUNT;++i) {
+            const struct site *s=site_at(i);
+            if((s->offset|(i>=SITE_COUNT?SOURCE_CLIENT_TAG:0))!=pin->offset)continue;
+            ++matches;
+            exact=s->word==pin->word && s->kind==pin->kind &&
+                !s->emitter && !s->index && !memcmp(s->guard,pin->guard,16);
+        }
+        if(matches==1 && exact)mask|=UINT64_C(1)<<k;
+    }
+    *out=(struct ft_stock_observer_coverage_v1){version,sizeof(*out),
+        mask&FT_STOCK_OBSERVER_SELECTED_MASK,FT_STOCK_OBSERVER_REQUIRED,comp,client};
+    return 1;
+#else
+    // Older generated inventories remain buildable, never silently capable.
+    return 0;
+#endif
+}
 EXPORT uint64_t ft_native_portal_camera_coverage(void) {
     static const uint64_t pcs[]={0x8dc1c,0x8b020,0x15e1c8,0x15df70,0x162360,0x6d6e0,0x6d6f0,0x1366b0,0x136118,0x13a100,0x15d730,0x15d198,0x15d248,0x15f9e0,0x15fba8,0x15f938,0x15faf8,0x15fcc0,0x15fbb8,0x15fb20};
     if(getpid()!=self_pid || !image_islands || !atomic_load_explicit(&enabled,memory_order_acquire))return 0;

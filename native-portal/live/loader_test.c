@@ -64,6 +64,16 @@ static void native_execution(void) {
 }
 #endif
 #include "source_loader_test.inc"
+// Exact host dispatcher boundary used by the A64 observer replay. The real
+// Runtime is deliberately not linked here; every byte of Saved must survive.
+EXPORT int ft_loader_test_observe(unsigned id,struct saved *r,uint64_t pc) {
+    if(!r || id>=ALL_SITE_COUNT)return 0;
+    struct saved before=*r;unsigned count=calls;
+    self_pid=getpid();deadline=now_ns()+UINT64_C(1000000000);
+    atomic_store(&enabled,1);expected_pc=pc;errno=42;dispatch(r,id);
+    assert(calls==count+1 && errno==42 && !memcmp(r,&before,sizeof before));
+    expected_pc=0;atomic_store(&enabled,0);return 1;
+}
 int main(int argc,char **argv) {
     if(argc==2)test_file_map(argv[1]);
 #if defined(__aarch64__)

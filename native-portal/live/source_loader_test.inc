@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // CPU-only mapping/install tests. No dlopen of the ARM DSO on the host.
+#include "stock_observer_test.inc"
 EXPORT int ft_loader_test_dual(const char *path) {
     int fd=open(path,O_RDONLY|O_CLOEXEC);assert(fd>=0);
     Elf64_Ehdr eh;Elf64_Phdr ph[8];assert(pread(fd,&eh,sizeof eh,0)==sizeof eh);
@@ -64,6 +65,7 @@ EXPORT int ft_loader_test_dual(const char *path) {
         assert(branch_word(cb+client_sites[i].offset,(uintptr_t)ci+i*STRIDE,&word));
         assert(*(uint32_t*)(cb+client_sites[i].offset)==word);
     }
+    test_stock_coverage(comp,cb,(uintptr_t)ci,fd);
     self_pid=getpid();deadline=now_ns()+UINT64_C(1000000000);atomic_store(&enabled,1);
     struct saved s={0};unsigned before=calls;expected_pc=SOURCE_CLIENT_TAG|client_sites[0].offset;
     errno=42;dispatch(&s,SITE_COUNT);assert(calls==before+1 && errno==42);

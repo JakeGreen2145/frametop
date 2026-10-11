@@ -8,6 +8,62 @@
   "requires_explicit_shutdown_fail_stop": true,
   "sites": [
     {
+      "relative_pc": 2761720,
+      "pc": "0x2a23f8",
+      "guard": "b40100b4e00314aa988b0194e00314aa",
+      "guard_sha256": "99ab9034c07e091adce802de651996a9f76c2741e66e5d381b5096c533ccfd32",
+      "word": "0xb40001b4",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x2a23fc",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3165900,
+      "pc": "0x304ecc",
+      "guard": "947a41f9740000b4e00318aaae1cf597",
+      "guard_sha256": "9d7d603d2b73ca47d4323da29622d325f287bbf4e8bdfc5b26d9377d5dbbc30a",
+      "word": "0xf9417a94",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x304ed0",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3166944,
+      "pc": "0x3052e0",
+      "guard": "810000b4202840f900400391d7300094",
+      "guard_sha256": "adf4485ddf063997a942f80d82a41f7f4c7036b26e1c6eb889023ccd673d5269",
+      "word": "0xb4000081",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x3052e4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 3166956,
+      "pc": "0x3052ec",
+      "guard": "d7300094f35341a9f51340f9fd7bc3a8",
+      "guard_sha256": "3cb7eed8b0bbaf6f870dea8208d1476865e9bfd8a62e520bf7122a9ab8f68047",
+      "word": "0x940030d7",
+      "kind": 1,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x3052f0",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
       "relative_pc": 1126568,
       "pc": "0x1130a8",
       "guard": "fd7bbea93f1c0072fd030091f30b00f9",
