@@ -52,6 +52,12 @@ public:
         RetainedCaller& operator=(RetainedCaller&&) noexcept;
         explicit operator bool() const noexcept {return ticket_!=0;}
         bool binding(CameraBinding&) const; // immutable scalars via this real ticket
+        using Observer=std::function<void(CameraAccessGate&,uint64_t,const CameraBinding&)>;
+        // Synchronous existing-ticket borrow for an invocation-local collector.
+        // Keep this handle alive/unmoved/unreleased throughout fn. Do not release
+        // its ticket through gate or retain the binding reference. No new ticket,
+        // native field read permission, mutation authority or owner work is issued.
+        bool observe_scope(const Observer& fn) const;
         bool release() noexcept; // false preserves a live handle/accounting for retry
     private:
         friend class CameraOwner;

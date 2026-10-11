@@ -74,13 +74,23 @@ static void blocked_owner_original_lifetime() {
         CameraBinding b;assert(call.binding(b) && b==ids);
         assert(std::this_thread::get_id()!=owner_thread);
         assert(!owner.retained_binding(b)); // old owner-only API remains restricted
-        entered.set_value();
-        { // Wait for the complete modeled original invocation, not just entry.
-            std::unique_lock<std::mutex> lock(original_mutex);
-            original_returned.wait(lock,[&]{return returned;});
-        }
-        assert(call.binding(b) && b==ids); // still retained across close
+        unsigned scopes=0;uint64_t seen_ticket=0;
+        assert(!call.observe_scope({}));
+        assert(call.observe_scope([&](CameraAccessGate& gate,uint64_t ticket,const CameraBinding& held) {
+            ++scopes;seen_ticket=ticket;
+            assert(held==ids && ticket && gate.lookup(ticket,b) && b==ids);
+            assert(std::this_thread::get_id()!=owner_thread);
+            entered.set_value();
+            { // Hold this existing ticket through the complete modeled original.
+                std::unique_lock<std::mutex> lock(original_mutex);
+                original_returned.wait(lock,[&]{return returned;});
+            }
+            assert(gate.lookup(ticket,b) && b==ids); // close cannot retire it
+        }));
+        assert(scopes==1 && seen_ticket && call.binding(b) && b==ids);
         assert(call.release());assert(!call && !call.release());
+        assert(!call.observe_scope([&](CameraAccessGate&,uint64_t,const CameraBinding&){++scopes;}));
+        assert(scopes==1);
     });
     assert(entered.get_future().wait_for(2s)==std::future_status::ready);
     assert(owner.begin_close());assert(!owner.retain_caller(epoch,generation));

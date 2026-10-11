@@ -48,6 +48,13 @@ bool CameraOwner::RetainedCaller::binding(CameraBinding& out) const {
     out={};
     return ticket_ && owner_->process_==getpid() && owner_->gate_.lookup(ticket_,out);
 }
+bool CameraOwner::RetainedCaller::observe_scope(const Observer& fn) const {
+    // binding() checks PID before the gate mutex and uses this actual retained
+    // ticket. No caller-accounting or gate mutex spans the observer/native call.
+    CameraBinding held;
+    if(!fn || !binding(held))return false;
+    fn(owner_->gate_,ticket_,held);return true;
+}
 bool CameraOwner::RetainedCaller::release() noexcept {
     // Gate release is deliberately not issuer-thread-only. On failure preserve
     // BOTH the exact ticket and owner accounting so explicit retry remains real.
