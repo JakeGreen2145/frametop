@@ -1,0 +1,638 @@
+{
+  "base_commit": "6674da53a3d319f9de360655a0f6ed17182a66de",
+  "producer_dependency": {
+    "original_commit": "35a2d779916012bc3ebe77b903ec49c89a621f89",
+    "local_cherry_pick": "801bb1966217da143c2a9c98f582745a7688a814",
+    "independent_review_sha256": "bbcd132da21ebfda64674ce9f2d55e52a268601bd68f29c5afa472b4b80a8ac2",
+    "status": "Parent-reported independent PASS, hash checked in consumer"
+  },
+  "source_model": true,
+  "new_native_execution_in_consumer": false,
+  "canonical_inventory_used": true,
+  "installed_api_in_runtime": "Modeled API containing only merged canonical producer PCs, no consumer additive injection",
+  "consumer_independent_review": "Parent review pending",
+  "memory_max": "256MiB",
+  "memory_swap_max": 0,
+  "cpu_execution": "serial",
+  "native_input_sha256": {
+    "REPORT.md": "ff2c967309a9d3348d59dd71fc93ab2af7f62b8a1bd440cc07a29182262ce11d",
+    "CONTRACT.json": "6f195fd4ffe1b49d146f423deb4958448fc8b48e683d740bed59700094f812db",
+    "HOOK-INVENTORY.json": "553f5cdfcd24d2afc7eae74d90bd5dad0fcc4157cf8b9cfe8291994d29347e91",
+    "REGRESSION-RESULTS.json": "5cf1ca85235ada5e84fdd076558ed2c40af44561bb9f14ae8eade3f0b86150d1"
+  },
+  "frozen_producer_vectors": {
+    "path": "native-portal/build/admission-frozen/admission-native-vectors.json",
+    "sha256": "bca7a1da598b555baec2dd8790aba8a900afaf839849850f93019b5448f06b39",
+    "vectors": 29,
+    "full_saved_events": 63,
+    "scope": "Captured scalar words replayed into modeled Runtime binding/K/SP; no claim of complete native method execution"
+  },
+  "consumer_site_counts": {
+    "source_old": 75,
+    "source_new": 80,
+    "render_old": 12,
+    "render_new": 17,
+    "combined_old": 87,
+    "combined_new": 97,
+    "new_required": 10,
+    "all_old_preserved": true,
+    "diagnostic_328170_excluded": true
+  },
+  "canonical_counts": {
+    "compositor": 205,
+    "client": 37
+  },
+  "static_scan": {
+    "shell_injection": [],
+    "unsafe_deserialization": [],
+    "hardcoded_secret": []
+  },
+  "source_sha256": {
+    "native-portal/live/current_source_selection.hpp": "b7f300300d8077e5610f509a7ea5e8f61ae51b4023045661d4b6c59eaf6cd7c6",
+    "native-portal/live/native_source_admission.hpp": "f197cfc35e6ef30ec527330df797114af405c35457423869b0811ed9bc061326",
+    "native-portal/live/source_metadata.inc": "0dbf455d0a2534e2c2d2fb795f2e557166357595b13167c1d5290b89079a20c8",
+    "native-portal/live/source_provider.cpp": "676fdf6f07d1f2f49b2baba851adebe5bb176b684430b4feb8398772fded993e",
+    "native-portal/live/source_provider.hpp": "ac76bacb21c84a1b6d9b2dd3685f1c60961706f68a5c8bd0833fcf123a9770d8",
+    "native-portal/live/source_router.inc": "17ce75ba36dc1529dce55b4c82927164af15a4ce86b04cefc7822ceeb850a152",
+    "native-portal/live/stock_native_boundary.hpp": "725ff81ff98462e220b70889a5f907f5cec3f9bc880d5e0ecf374cce56bf6a78"
+  },
+  "reports": {
+    "current": {
+      "path": "native-portal/build/dormant-runtime/current/acceptance.json",
+      "sha256": "9de90b56166ee216d2623de5166032000dbbda6928ba9fd89bdfe9e30da5dfef",
+      "passed": 178,
+      "total": 178,
+      "new_acceptance_cases": [
+        {
+          "mode": "empty-cold",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "empty-bypass",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "empty-warm",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "empty-warm-retained",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "empty-q1",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "retained-bypass",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "retained-connected-zero",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "retained-clamp",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "source-negative-4",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001a4e77",
+            "owner_tid": "0x00000000001a4e7a",
+            "bootstrap_tid": "0x00000000001a4e77",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "source-negative-5",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001a4e7c",
+            "owner_tid": "0x00000000001a4e7f",
+            "bootstrap_tid": "0x00000000001a4e7c",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "source-negative-7",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001a4e81",
+            "owner_tid": "0x00000000001a4e84",
+            "bootstrap_tid": "0x00000000001a4e81",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "source-negative-unpaired",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001a4e86",
+            "owner_tid": "0x00000000001a4e89",
+            "bootstrap_tid": "0x00000000001a4e86",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "source-negative-no-ret",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001a4e8b",
+            "owner_tid": "0x00000000001a4e8e",
+            "bootstrap_tid": "0x00000000001a4e8b",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "missing-alt-client-3280e0",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-client-32766c",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-client-328148",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-client-3276d0",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-client-327e60",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-compositor-160ca0",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-compositor-160db0",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-compositor-160e34",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-compositor-1621c4",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-compositor-160e60",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        }
+      ]
+    },
+    "current_sanitize": {
+      "path": "native-portal/build/dormant-runtime/current/sanitize/acceptance.json",
+      "sha256": "f90fd63950093180447e537f28be70c837fbeeca9957efe42a9f5345826b1a07",
+      "passed": 178,
+      "total": 178,
+      "new_acceptance_cases": [
+        {
+          "mode": "empty-cold",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "empty-bypass",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "empty-warm",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "empty-warm-retained",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "empty-q1",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "retained-bypass",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "retained-connected-zero",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "retained-clamp",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "source-negative-4",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001a56a6",
+            "owner_tid": "0x00000000001a56a9",
+            "bootstrap_tid": "0x00000000001a56a6",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "source-negative-5",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001a56ab",
+            "owner_tid": "0x00000000001a56ae",
+            "bootstrap_tid": "0x00000000001a56ab",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "source-negative-7",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001a56b0",
+            "owner_tid": "0x00000000001a56b3",
+            "bootstrap_tid": "0x00000000001a56b0",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "source-negative-unpaired",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001a56b5",
+            "owner_tid": "0x00000000001a56b8",
+            "bootstrap_tid": "0x00000000001a56b5",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "source-negative-no-ret",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001a56ba",
+            "owner_tid": "0x00000000001a56bf",
+            "bootstrap_tid": "0x00000000001a56ba",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "missing-alt-client-3280e0",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-client-32766c",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-client-328148",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-client-3276d0",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-client-327e60",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-compositor-160ca0",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-compositor-160db0",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-compositor-160e34",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-compositor-1621c4",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-alt-compositor-160e60",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        }
+      ]
+    },
+    "dormant": {
+      "path": "native-portal/build/dormant-runtime/acceptance.json",
+      "sha256": "8d7f4a86fcac935fb0a3bf3476301ca28bb4366e175e13c4e4b555f7bb5ef07f",
+      "passed": 7,
+      "total": 7,
+      "new_acceptance_cases": []
+    },
+    "dormant_sanitize": {
+      "path": "native-portal/build/dormant-runtime/sanitize/acceptance.json",
+      "sha256": "1ef3c7e7549588254a85bd527df40c718663de02688fff7613d83a91f615dced",
+      "passed": 7,
+      "total": 7,
+      "new_acceptance_cases": []
+    },
+    "units_plain": {
+      "path": "native-portal/build/stock-source-receipts/plain/results.json",
+      "sha256": "773080e73a50349edb1525737f13dda5ac8b7b30ecb5fc7a5c84c5c7b3672b37",
+      "commands": 16,
+      "all_exit_zero": true,
+      "test_executables": [
+        "native-contract",
+        "stock-receipts",
+        "existing-admission",
+        "current-admission"
+      ]
+    },
+    "units_sanitize": {
+      "path": "native-portal/build/stock-source-receipts/sanitize/results.json",
+      "sha256": "c04a3afbc91ea5bec616d5720596739642f4138d19139c2b52a4ea2eac324739",
+      "commands": 16,
+      "all_exit_zero": true,
+      "test_executables": [
+        "native-contract",
+        "stock-receipts",
+        "existing-admission",
+        "current-admission"
+      ]
+    }
+  },
+  "limits": [
+    "No headset, SSH, opaque native analysis, downloads, or new package installation.",
+    "Producer loader installation/instruction evidence is separate, unchanged, and parent-reviewed; consumer does not rerun those native instruction tests.",
+    "No factory, graph, generic emitter, GPU/CPU/source settlement authority changed."
+  ],
+  "regressions_found_during_verification": [
+    "Frozen native scalar replay exposed an initial test/model SIMD indexing error: actual arena::Saved q[32][16] uses q[2] for s2 and q[8] for s8, not flattened u64 q[4]/q[16]. Corrected production and fixtures with RED then complete GREEN.",
+    "A repeated Runtime fixture could allocate its new anonymous protected page in the fixed-vtable address hole. Reserve the fixed mapping first. Final normal/sanitized suites pass."
+  ]
+}

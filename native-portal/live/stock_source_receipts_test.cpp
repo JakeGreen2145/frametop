@@ -106,6 +106,8 @@ template<class Collector=StockSourceCollector> struct SourceFixture {
         arena::Saved s{};s.sp=local_sp;s.x[19]=b.camera;s.x[0]=manager;s.x[1]=state.ids[q];
         s.x[2]=release?meta:local_sp+0x90;s.x[3]=release?client+manager_entry:local_sp+0x98;s.x[5]=client+manager_entry;
         event(M::Compositor,start,s);s.x[30]=start+4;event(M::Client,manager_entry,s);
+        s.sp=local_sp-mframe;s.x[19]=state.ids[q];s.x[20]=manager;s.x[22]=manager+8;s.x[0]=1;
+        guard(release?0x32766c:0x3280e0,s);
         if(!fail){
             s.sp=local_sp-mframe;s.x[0]=0;s.x[30]=client+(release?0x327678:0x3280ec);
             guard(release?0x327678:0x3280ec,s);
@@ -128,8 +130,11 @@ template<class Collector=StockSourceCollector> struct SourceFixture {
             event(M::Client,release?0x327590:0x327f74,s);
             g.sp=inner;g.x[0]=address;g.x[30]=client+(release?0x3275cc:0x327f80);guard(0x258508,g);
             s.sp=local_sp-mframe;s.x[0]=0;event(M::Client,call+4,s);
-            s.x[0]=manager+8;guard(release?0x3276d8:0x328150,s);
+        } else {
+            s.x[0]=0;s.x[30]=client+(release?0x327678:0x3280ec);guard(release?0x327678:0x3280ec,s);
         }
+        s.sp=local_sp-mframe;s.x[21]=1;s.x[22]=manager+8;guard(release?0x3276d0:0x328148,s);
+        s.x[0]=manager+8;guard(release?0x3276d8:0x328150,s);
         s.sp=local_sp;s.x[19]=b.camera;s.x[0]=fail?4:0;event(M::Compositor,start+4,s);
     }
     render::NativeBorrow borrow(unsigned eye=0) const {

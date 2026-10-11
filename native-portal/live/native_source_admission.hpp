@@ -61,11 +61,11 @@ public:
         SourceIdentity identity;
         if(!current_mode_ || !identity_lifetime(b,identity) || !current_update_ || !current_result(b,r) ||
            r.sequence_!=current_update_ || r.stream_!=current_update_) {uncertain_=true;return false;}
-        current_update_=0;
+        current_update_=0;last_=r.observation_;
         const auto& o=r.observation_;const auto& f=r.facts_;
         if(uncertain_ || !o.valid || o.action!=coordination::Action::None ||
            (provider_ && o.provider && provider_!=o.provider)) {uncertain_=true;return false;}
-        bool any=false,complete=true;
+        bool any=false,complete=true,classified=true;
         for(unsigned q=0;q<2;++q) {
             const auto& read=o.reads[q];const auto bit=q?NativeFieldFacts::ID1:NativeFieldFacts::ID0;
             if(journal_ && f.has(bit) && f.values.ids[q]!=ids_[q]) {uncertain_=true;return false;}
@@ -74,8 +74,9 @@ public:
                 read.release_observed && !read.release_result && read.increment && read.decrement &&
                 read.metadata_return_observed && read.metadata && read.data && read.ref_address &&
                 read.queue && read.header && f.has(bit) && read.id==f.values.ids[q];
-            if(attempted && !paired){uncertain_=true;return false;}
-            any|=attempted;complete&=paired;
+            const bool empty=recognized_no_grant(read) && f.has(bit) && read.id==f.values.ids[q];
+            if(attempted && !paired && !empty){uncertain_=true;return false;}
+            any|=attempted;complete&=paired;classified&=paired || empty;
         }
         if(any && (!f.has(NativeFieldFacts::ACTIVE|NativeFieldFacts::CONNECTED) || !f.values.active || !f.values.connected || !o.provider)) {
             uncertain_=true;return false;
@@ -84,7 +85,10 @@ public:
         // no journal, but cannot make bootstrap wait for a future image.
         if(!any)return true;
         if(!journal_) {
-            if(!complete || !f.values.ids[0] || !f.values.ids[1] || f.values.ids[0]==f.values.ids[1]) {uncertain_=true;return false;}
+            // A retired empty call, including q1 empty / paired q0, cannot
+            // seed warm history. It also creates no partial native obligation.
+            if(!complete){if(!classified)uncertain_=true;return classified;}
+            if(!f.values.ids[0] || !f.values.ids[1] || f.values.ids[0]==f.values.ids[1]) {uncertain_=true;return false;}
             apply_observation(f.values,o,true);
         }
         // With a good journal, q1 absent is a native conditional path, not failure.
@@ -266,6 +270,12 @@ private:
         return getpid()==stock_process_ && (stock_owner_check_?stock_owner_check_(context_):
             std::this_thread::get_id()==stock_constructor_owner_);
     }
+    static bool recognized_no_grant(const ClientSourceBinding::ReadCall& r) noexcept {
+        return r.disposition==ClientSourceBinding::AcquireDisposition::RecognizedNoGrant &&
+            r.acquire_observed && r.acquire_result==3 && r.id && r.queue && r.header &&
+            !r.release_observed && !r.returned && !r.increment && !r.decrement &&
+            !r.metadata_return_observed && !r.metadata && !r.data && !r.ref_address;
+    }
     void apply_observation(const State& s,const ClientSourceBinding::Observation& o,bool stock) noexcept {
         if(o.provider && provider_ && o.provider!=provider_){uncertain_=true;return;}
         if(o.provider)provider_=o.provider;
@@ -303,7 +313,7 @@ private:
             // An authentic existing Update may establish narrow warm use. Its
             // exact manager/header/ref observations do not imply a new owner or
             // a producer generation. Never recover an uncertain partial call.
-            bool complete=true,attempted=false;
+            bool complete=true,attempted=false,neutral=true;
             for(unsigned i=0;i<2;++i) {
                 const auto& r=o.reads[i];
                 attempted|=r.acquire_observed || r.release_observed;
@@ -311,8 +321,13 @@ private:
                     r.release_observed && !r.release_result && r.increment && r.decrement &&
                     r.queue && r.header && r.id==s.ids[i];
                 if(stock)complete&=r.metadata_return_observed && r.metadata && r.data && r.ref_address;
+                const bool paired=r.acquire_observed && !r.acquire_result && r.returned && r.release_observed &&
+                    !r.release_result && r.increment && r.decrement && r.queue && r.header && r.id==s.ids[i] &&
+                    r.metadata_return_observed && r.metadata && r.data && r.ref_address;
+                neutral&=paired || (recognized_no_grant(r) && r.id==s.ids[i]);
             }
             if(stock && complete && (!s.ids[0] || !s.ids[1] || s.ids[0]==s.ids[1])) {uncertain_=true;return;}
+            if(stock && !complete && neutral)return; // no new journal or ownership
             if(stock && !complete && (attempted || (!journal_ && (s.active || s.connected || s.ids[0] || s.ids[1])))) {
                 uncertain_=true;return;
             }

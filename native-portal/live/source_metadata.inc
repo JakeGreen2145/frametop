@@ -51,11 +51,17 @@ bool ClientSourceBinding::metadata_event(Module module,uint64_t pc,const arena::
                 uint64_t metadata=0,data=0;
                 if(!read(m.metadata_slot,&metadata,8) || metadata!=m.metadata || !metadata ||
                    !read(m.data_slot,&data,8) || !data)return refuse();
-                r.acquire_observed=true;r.increment=true;r.acquire_result=result;
+                r.acquire_observed=true;r.increment=true;r.acquire_result=result;r.disposition=AcquireDisposition::Granted;
                 r.metadata=metadata;r.data=data;r.id=m.id;r.queue=m.object;r.header=m.header;r.ref_address=m.ref_address;
             }
         } else if(m.releasing)r.release_result=result;
-        else {r.acquire_observed=true;r.acquire_result=result;r.id=m.id;}
+        else {
+            r.acquire_observed=true;r.acquire_result=result;r.id=m.id;
+            if(native_inputs_ && result==3 && m.inner_entered && m.inner_returned && m.empty_path && m.header &&
+               !m.property && !m.property_returned && !m.ref_before && !m.ref_after) {
+                r.disposition=AcquireDisposition::RecognizedNoGrant;r.queue=m.object;r.header=m.header;
+            }
+        }
         m={};return true;
     }
     if(!m.pending)return refuse();
@@ -91,9 +97,20 @@ bool ClientSourceBinding::metadata_event(Module module,uint64_t pc,const arena::
        s.x[m.releasing?21:20]!=m.object)return refuse();
     if(pc==(m.releasing?0x32750c:0x327e54)) {
         uint64_t id=0;
-        if(m.header || s.x[0]>UINT64_MAX-0x470 || !read(s.x[0],&id,8) || id!=m.id)return refuse();
+        if(m.header || !s.x[0] || s.x[0]>UINT64_MAX-0x470)return refuse();
+        // Acquire has not succeeded yet. Its native output and header may be
+        // stale. Associate the by-value pointer with this exact selected call.
+        if(m.releasing && (!read(s.x[0],&id,8) || id!=m.id))return refuse();
         m.header=s.x[0];return true;
     }
+    if(pc==0x327e60) {
+        if(m.releasing || !m.header || m.latest_observed || m.property || m.ref_before)return refuse();
+        m.latest_observed=true;
+        m.empty_path=uint32_t(s.x[19])==0x80 && (s.nzcv&0xf0000000)==0x60000000;
+        if((uint32_t(s.x[19])==0x80)!=bool(s.nzcv&0x40000000))return refuse();
+        return true;
+    }
+    if(m.empty_path)return refuse(); // no property/ref work exists on this path
     if(pc==(m.releasing?0x3275a0:0x327f2c)) {
         if(m.property || (m.releasing?s.x[1]!=m.metadata:s.x[1]!=m.metadata_slot))return refuse();
         m.property=true;return true;
@@ -101,7 +118,12 @@ bool ClientSourceBinding::metadata_event(Module module,uint64_t pc,const arena::
     if(pc==(m.releasing?0x3275a4:0x327f30)) {
         if(!m.property || m.property_returned)return refuse();
         m.property_returned=true;m.property_return=s.x[0];
-        if(!m.releasing && uint32_t(s.x[0])==0 && (!read(m.metadata_slot,&m.metadata,8) || !m.metadata))return refuse();
+        if(!m.releasing && uint32_t(s.x[0])==0) {
+            uint64_t id=0;
+            // Needed only for a real grant, with actual manager/shared locks.
+            if(!m.header || !read(m.header,&id,8) || id!=m.id)return refuse();
+            if(!read(m.metadata_slot,&m.metadata,8) || !m.metadata)return refuse();
+        }
         return true;
     }
     const uint64_t store=m.releasing?0x32758c:0x327f70;

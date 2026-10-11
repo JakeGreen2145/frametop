@@ -29,6 +29,7 @@ def main():
     p.add_argument('--current', action='store_true', help='Default Runtime first stereo and settlement')
     p.add_argument('--modes', help='Comma-separated focused cases from the selected suite')
     p.add_argument('--fixtures', type=Path, default=Path('/home/jakeg/.hermes/work/frametop-native-live-integration/native-portal/build/camera-runtime-asan'))
+    p.add_argument('--admission-vectors', type=Path, default=ROOT / 'build/admission-frozen/admission-native-vectors.json')
     p.add_argument('--factory-vectors', type=Path, default=Path('/home/jakeg/.hermes/work/desktop-compositor-re/factory-call-arguments-a374d89/SAVED-VECTORS.json'))
     args = p.parse_args()
     if not args.in_scope:
@@ -52,7 +53,7 @@ def main():
     # Modeled installed inventory from literal canonical inputs, NOT either
     # collector's required-sites list. Do not import prepare or open an ELF.
     prep = ast.parse((ROOT / 'live/prepare.py').read_text())
-    names = {'SOURCE_COMP', 'SOURCE_CLIENT', 'STOCK_OBSERVERS', 'ARENA', 'PASS', 'LIFECYCLE', 'EVIDENCE'}
+    names = {'SOURCE_COMP', 'SOURCE_CLIENT', 'STOCK_OBSERVERS', 'ADMISSION_CLIENT', 'ARENA', 'PASS', 'LIFECYCLE', 'EVIDENCE'}
     values = {}
     for node in prep.body:
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names:
@@ -67,8 +68,14 @@ def main():
     comp.update(row['relative_pc'] for row in manifest['sites'])
     client = set(values['SOURCE_CLIENT'])
     client.update(pc for _, module, pc, _, _ in values['STOCK_OBSERVERS'] if module == 'client')
-    assert (len(comp), len(client)) == (200, 32), 'canonical stock/current inventory changed; reconcile rather than guess'
-    inventory = ('// Modeled installation only, canonical PCs without ELF/loader execution.\n'
+    client.update(pc for pc, _, _, _ in values['ADMISSION_CLIENT'])
+    assert (len(comp), len(client)) == (205, 37), 'canonical merged inventory changed; reconcile rather than guess'
+    # Canonical producer 35a2d77, provisionally merged. No consumer-added PCs.
+    requested = json.loads((ROOT / 'live/admission-alternatives-hook-request.json').read_text())['new_required_sites']
+    assert len(requested) == 10
+    for site in requested:
+        assert int(site['pc'], 0) in (client if site['module'] == 'client' else comp)
+    inventory = ('// Canonical merged PCs; modeled installed API, no native loader execution in this Runtime fixture.\n'
                  + 'static constexpr uint64_t modeled_comp_sites[]={' + ','.join(map(hex, sorted(comp))) + '};\n'
                  + 'static constexpr uint64_t modeled_client_sites[]={' + ','.join(hex(pc | (1 << 63)) for pc in sorted(client)) + '};\n')
     (BUILD / 'dormant-inventory.private.hpp').write_text(inventory)
@@ -83,6 +90,8 @@ def main():
         flags += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
     private_hashes = {}
     if args.current:
+        from admission_vectors_data import header as admission_header, PIN as admission_pin
+        (BUILD / 'admission-native.private.hpp').write_text(admission_header(args.admission_vectors))
         from factory_arguments_data import header, PIN
         (BUILD / 'factory-arguments.private.hpp').write_text(header(args.factory_vectors))
         # Opaque frozen headers only. Do not import their native evidence runners.
@@ -95,6 +104,8 @@ def main():
             content = (args.fixtures / name).read_bytes()
             assert hashlib.sha256(content).hexdigest() == expected, 'frozen fixture changed: ' + name
             (BUILD / name).write_bytes(content)
+        private_hashes['admission-native-vectors.json'] = admission_pin
+        private_hashes['admission-native.private.hpp'] = hashlib.sha256((BUILD / 'admission-native.private.hpp').read_bytes()).hexdigest()
         private_hashes['SAVED-VECTORS.json'] = PIN
         private_hashes['factory-arguments.private.hpp'] = hashlib.sha256((BUILD / 'factory-arguments.private.hpp').read_bytes()).hexdigest()
         # Source-model coordinates already present in the owning fixture and
@@ -138,8 +149,10 @@ def main():
     if not args.baseline_red:
         modes += ['cold-seal', 'connect', 'engage-race']
     if args.current:
-        modes = ['cold', 'warm', 'stock-render', 'update-three', 'missing-hook', 'partial-upload', 'rejected-enqueue',
+        modes = ['empty-cold', 'empty-bypass', 'empty-warm', 'empty-warm-retained', 'empty-q1', 'retained-bypass', 'retained-connected-zero', 'retained-clamp', 'cold', 'warm', 'stock-render', 'update-three', 'missing-hook', 'partial-upload', 'rejected-enqueue',
                  'source-uncertainty', 'identity-migration', 'actual-return', 'no-gpu', 'no-cpu', 'no-source']
+        modes += ['source-negative-' + name for name in ('4', '5', '7', 'unpaired', 'no-ret')]
+        modes += ['missing-alt-' + site['module'] + '-' + site['pc'][2:] for site in requested]
         modes += ['prebootstrap-cause', 'prebootstrap-runtime-cause', 'prebootstrap-scope-guards', 'prebootstrap-delete', 'prebootstrap-zero', 'prebootstrap-reuse',
                   'prebootstrap-destroy', 'prebootstrap-return', 'prebootstrap-constructor',
                   'bootstrap-known-delete', 'bootstrap-known-destroy', 'bootstrap-constructor-fault', 'bootstrap-vtable',
@@ -294,9 +307,9 @@ def main():
                 pc = '0x4b3d0' if mode == 'bound-known-delete' else '0x3003d0'
                 passed = (code == 0 and text.count('CURRENT ' + mode + ' refused=1 clean-teardown=1') == 2
                           and ('first_stock_pc=' + pc) in text and ('first_evidence_pc=' + pc) in text)
-            if mode == 'missing-hook':
+            if mode == 'missing-hook' or mode.startswith('missing-alt-'):
                 passed = code == 0 and text.count('CURRENT missing-hook refused=1 clean-teardown=1') == 2
-            if mode in ('partial-upload', 'rejected-enqueue', 'source-uncertainty', 'identity-migration',
+            if mode.startswith('source-negative-') or mode in ('partial-upload', 'rejected-enqueue', 'source-uncertainty', 'identity-migration',
                         'actual-return', 'no-gpu', 'no-cpu', 'no-source',
                         'initializer-chain-no-gpu', 'initializer-chain-no-cpu', 'initializer-chain-no-source'):
                 passed = (code == -6 and 'CURRENT pending cleanup negative=' + mode + ' native_cleanup=0' in text

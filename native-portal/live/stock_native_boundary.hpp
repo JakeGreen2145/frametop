@@ -29,7 +29,8 @@ public:
         CLIENT(0x327640),CLIENT(0x3276c4),CLIENT(0x3276c8),CLIENT(0x327e18),CLIENT(0x327f2c),
         CLIENT(0x327f30),CLIENT(0x327f70),CLIENT(0x327f74),CLIENT(0x3274d8),CLIENT(0x32758c),
         CLIENT(0x327590),CLIENT(0x3275a0),CLIENT(0x3275a4),CLIENT(0x3280ec),CLIENT(0x327678),
-        CLIENT(0x328150),CLIENT(0x3276d8),CLIENT(0x258438),CLIENT(0x2584c4),CLIENT(0x258508)
+        CLIENT(0x328150),CLIENT(0x3276d8),CLIENT(0x258438),CLIENT(0x2584c4),CLIENT(0x258508),
+        CLIENT(0x3280e0),CLIENT(0x32766c),CLIENT(0x328148),CLIENT(0x3276d0),CLIENT(0x327e60)
 #undef COMP
 #undef CLIENT
     };
@@ -44,28 +45,60 @@ public:
     }
     bool callback(const StockSourceReadScope& scope,const C& c) noexcept {
         if(!matches(scope) || callback_)return false;
+        if(scope.module==M::Client && scope.pc==(c.releasing?0x3276c4:0x32813c) &&
+           (!manager_scope(c) || manager_.exit))return false;
+        if(scope.module==M::Client && scope.pc==(c.releasing?0x3276c8:0x328140)) {
+            if(!manager_scope(c) || !c.inner_entered || guard_.begun || manager_.inner_returned)return false;
+            manager_.inner_returned=true;
+        }
+        if(scope.module==M::Client && scope.pc==0x327e60 &&
+           (!manager_scope(c) || !guard_matches(c) || !guard_.result || !guard_.success))return false;
+        if(scope.module==M::Compositor && c.pending && scope.pc==c.return_pc) {
+            if(!manager_identity(c) || !manager_.completed || guard_.begun)return false;
+            if(uint32_t(scope.saved.x[0])==3 && !manager_.shared_success)return false;
+            manager_={};
+        }
         // Saved is borrowed only for this synchronous event. leave() always
         // revokes it, including every refusal path.
         callback_=&scope;context_=c;return true;
     }
     void leave() noexcept {callback_=nullptr;context_={};}
     void end() noexcept {leave();active_=false;manager_={};guard_={};}
-    bool clean() const noexcept {return !guard_.begun && !manager_.locked;}
+    bool clean() const noexcept {return !guard_.begun && !manager_.begun;}
     bool observe(const StockSourceReadScope& scope,const C& c) noexcept {
         if(!matches(scope) || scope.module!=M::Client || scope.method!=0x15fcc0 || !c.pending || !c.entered)return false;
         const auto& s=scope.saved;const uint64_t pc=scope.pc;
         const uint64_t mf=c.releasing?0x40:0x50,inf=c.releasing?0x60:0x70;
         if(c.sp<mf+inf || c.sp!=entry_sp_-0x360)return false;
         const uint64_t inner=c.sp-mf-inf;
+        if(pc==(c.releasing?0x32766c:0x3280e0)) {
+            if(manager_.begun || guard_.begun || c.inner_entered || s.sp!=c.sp-mf || s.x[20]!=c.provider ||
+               s.x[22]!=c.provider+8 || s.x[19]!=c.id)return false;
+            manager_={};manager_.begun=true;manager_.release=c.releasing;manager_.q=c.queue;
+            manager_.sp=c.sp;manager_.id=c.id;manager_.provider=c.provider;manager_.got=s.x[0];
+            manager_.mode=s.x[0]?ManagerMode::Unknown:ManagerMode::NativeBypassObserved;
+            return true;
+        }
         if(pc==(c.releasing?0x327678:0x3280ec)) {
-            if(manager_.locked || guard_.begun || s.sp!=c.sp-mf || s.x[30]!=client_+pc || uint32_t(s.x[0]))return false;
-            manager_={true,c.releasing,c.queue,c.sp,c.id,c.provider};return true;
+            if(!manager_identity(c) || !manager_.got || manager_.mode!=ManagerMode::Unknown ||
+               guard_.begun || s.sp!=c.sp-mf || s.x[30]!=client_+pc || uint32_t(s.x[0]))return false;
+            manager_.mode=ManagerMode::ActuallyLocked;return true;
+        }
+        if(pc==(c.releasing?0x3276d0:0x328148)) {
+            if(!manager_scope(c) || manager_.exit || (c.inner_entered && !manager_.inner_returned) || guard_.begun || s.sp!=c.sp-mf ||
+               s.x[22]!=c.provider+8 || s.x[21]!=manager_.got)return false;
+            manager_.exit=true;
+            if(manager_.mode==ManagerMode::NativeBypassObserved)manager_.completed=true;
+            return true;
         }
         if(pc==(c.releasing?0x3276d8:0x328150)) {
-            if(!manager_matches(c) || guard_.begun || s.sp!=c.sp-mf || s.x[0]!=c.provider+8)return false;
-            manager_={};return true;
+            if(!manager_matches(c) || !manager_.exit || manager_.completed || guard_.begun ||
+               s.sp!=c.sp-mf || s.x[0]!=c.provider+8)return false;
+            manager_.completed=true;return true;
         }
-        if(!manager_matches(c) || !c.inner_entered || !c.object)return false;
+        // Scalar observation is permitted in a positively observed bypass.
+        // This is NOT additional-read authority; manager_matches stays strict.
+        if(!manager_scope(c) || manager_.exit || !c.inner_entered || !c.object)return false;
         const uint64_t address=inner+(c.releasing?0x48:0x58);
         if(pc==0x258438) {
             if(guard_.begun || s.sp!=inner || s.x[0]!=address || s.x[30]!=client_+(c.releasing?0x327504:0x327e4c))return false;
@@ -84,7 +117,7 @@ public:
             const bool link=c.releasing?(lr==0x327558 || lr==0x3275cc):
                 (lr==0x327e84 || lr==0x327f80 || lr==0x327fa4 || lr==0x327fd8);
             if(s.sp!=inner || s.x[0]!=address || !link)return false;
-            guard_={};return true;
+            manager_.shared_success=guard_.result && guard_.success;guard_={};return true;
         }
         return false;
     }
@@ -119,7 +152,8 @@ public:
                 c.sp>=mf+inf && s.sp==c.sp-mf-inf && s.x[c.releasing?21:20]==c.object;
             if(inner && pc==0x327f30 && !c.releasing && !uint32_t(s.x[0]) && n==8 && address==c.sp+0x90)allowed=true;
             if(inner && manager_matches(c) && guard_matches(c) && guard_.result && guard_.success) {
-                if(pc==(c.releasing?0x32750c:0x327e54) && n==8 && address==s.x[0] && address<=UINT64_MAX-0x470)allowed=true;
+                if(pc==0x32750c && c.releasing && n==8 && address==s.x[0] && address<=UINT64_MAX-0x470)allowed=true;
+                if(pc==0x327f30 && !c.releasing && !uint32_t(s.x[0]) && n==8 && address==c.header)allowed=true;
                 const uint64_t store=c.releasing?0x32758c:0x327f70;
                 if((pc==store || pc==store+4) && n==4 && c.header && c.header<=UINT64_MAX-0x470 &&
                    address>=c.header+0x68 && address<c.header+0x468 && (address-c.header-0x68)%8==0) {
@@ -144,8 +178,10 @@ private:
         return active_ && identity(s) && s.binding==binding_ && s.ticket==ticket_ && s.version==version_ && s.sequence==sequence_ &&
             s.runtime==runtime_ && s.method==method_;
     }
-    bool manager_matches(const C& c) const noexcept {return manager_.locked && manager_.release==c.releasing && manager_.q==c.queue &&
+    bool manager_identity(const C& c) const noexcept {return manager_.begun && manager_.release==c.releasing && manager_.q==c.queue &&
         manager_.sp==c.sp && manager_.id==c.id && manager_.provider==c.provider;}
+    bool manager_scope(const C& c) const noexcept {return manager_identity(c) && !manager_.completed && manager_.mode!=ManagerMode::Unknown;}
+    bool manager_matches(const C& c) const noexcept {return manager_scope(c) && manager_.mode==ManagerMode::ActuallyLocked;}
     bool guard_matches(const C& c) const noexcept {return guard_.begun && guard_.release==c.releasing && guard_.q==c.queue &&
         guard_.id==c.id && guard_.provider==c.provider && guard_.object==c.object;}
     static bool read_self(uint64_t address,void* out,size_t n) noexcept {
@@ -157,7 +193,11 @@ private:
     bool active_=false;CameraBinding binding_{};
     uint64_t ticket_=0,version_=0,sequence_=0,runtime_=0,method_=0,entry_sp_=0,entry_lr_=0,client_=0;
     const StockSourceReadScope* callback_=nullptr;C context_{};
-    struct Manager {bool locked=false,release=false;unsigned q=0;uint64_t sp=0,id=0,provider=0;} manager_{};
+    enum class ManagerMode {Unknown,ActuallyLocked,NativeBypassObserved};
+    struct Manager {
+        bool begun=false,release=false,exit=false,completed=false,shared_success=false,inner_returned=false;
+        ManagerMode mode=ManagerMode::Unknown;unsigned q=0;uint64_t sp=0,id=0,provider=0,got=0;
+    } manager_{};
     struct Guard {bool begun=false,result=false,success=false,release=false;unsigned q=0;
         uint64_t id=0,provider=0,object=0,sp=0,address=0;} guard_{};
 };

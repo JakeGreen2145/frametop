@@ -2,6 +2,7 @@
 #pragma once
 #include "source_admission.hpp"
 #include <cstring>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <tuple>
@@ -18,6 +19,7 @@ using AuthenticateIdentity=bool(*)(void*,const CameraBinding&,SourceIdentity&) n
 // mutable camera reads. Collector coverage is a separate required callback.
 struct CurrentSourceContracts {AuthenticateIdentity authenticate=nullptr;};
 struct BootstrapEligibility {bool available=false,needs_connect=false;};
+enum class CurrentRenderPath {Unknown,ConnectedGate,RetainedTimeContinuation};
 class NativeSourceAdmission;
 class CurrentRenderCollector;
 class CurrentRenderSelection final {
@@ -55,6 +57,7 @@ private:
     }
     std::weak_ptr<Window> window_;
     uint64_t serial_=0,ticket_=0,invocation_=0,entry_sp_=0,caller_lr_=0;
+    CurrentRenderPath path_=CurrentRenderPath::Unknown;float native_opacity_=0;
     CameraBinding binding_{};SourceIdentity identity_{};render::NativeBorrow borrow_{};
 };
 // Observes the one native caller. Has NO native reader or native call callback.
@@ -66,7 +69,8 @@ public:
     using Covered=bool(*)(void*,M,uint64_t) noexcept;
     using Borrow=bool(*)(void*,const CurrentRenderSelection&,render::NativeBorrow) noexcept;
     inline static constexpr uint64_t required_sites[]={0x160be8,0x160ca8,0x161bc0,0x161be8,
-        0x161c74,0x161c78,0x161d64,0x161d68,0x161e40,0x161ed8,0x160dd4,0x161f30};
+        0x161c74,0x161c78,0x161d64,0x161d68,0x161e40,0x161ed8,0x160dd4,0x161f30,
+        0x160ca0,0x160db0,0x160e34,0x1621c4,0x160e60};
     CurrentRenderCollector(CameraAccessGate& gate,void* context,AuthenticateIdentity authenticate,Covered covered):
         gate_(gate),context_(context),authenticate_(authenticate),covered_(covered),window_(std::make_shared<CurrentRenderSelection::Window>()) {}
     CurrentRenderCollector(const CurrentRenderCollector&)=delete;
@@ -78,6 +82,7 @@ public:
         if(!authenticate_(context_,b,identity) || !identity.runtime || !identity.version || !identity.client_module)return reject();
         binding_=b;identity_=identity;ticket_=ticket;invocation_=last_invocation_=invocation;
         entry_sp_=s.sp;caller_lr_=s.x[30];compositor_=compositor;stage_=0;upload_=texture_=0;
+        path_=CurrentRenderPath::Unknown;ramp_=opacity_=0;
         active_=true;return held()?true:reject();
     }
     bool capture(uint64_t pc,const arena::Saved& s) noexcept {
@@ -88,11 +93,33 @@ public:
         if(!owner() || !active_ || failed_ || window_->active || !held() ||
            s.sp!=entry_sp_-0x460 || s.x[27]!=binding_.camera)return reject();
         switch(pc) {
-        case 0x160ca8:
+        case 0x160ca0:
             if(stage_!=0)return reject();
-            // Native connected0 is an ordinary no-sample branch. Observe it,
-            // grant nothing, and let its real return close the invocation.
-            stage_=uint8_t(s.x[0])?1:11;break;
+            stage_=uint32_t(s.x[7])?12:11;break;
+        case 0x160ca8:
+            if(stage_!=12)return reject();
+            path_=uint32_t(s.x[0])?CurrentRenderPath::ConnectedGate:CurrentRenderPath::Unknown;
+            stage_=11;break;
+        case 0x160db0: {
+            if(stage_!=11)return reject();
+            double time=0;std::memcpy(&time,&s.q[0],8);
+            // Native zero/nonfinite paths forward without granting optional use.
+            if(!std::isfinite(time) || time==0 || (s.nzcv&0x40000000)) {stage_=15;break;}
+            stage_=13;break;
+        }
+        case 0x160e34:
+            if(stage_!=13)return reject();
+            std::memcpy(&ramp_,&s.q[2],4); // Saved v2 low32 after the native store
+            stage_=std::isfinite(ramp_) && ramp_>0 && !(s.nzcv&0x80000000)?14:15;break;
+        case 0x1621c4: {
+            float clamp=0;std::memcpy(&clamp,&s.q[0],4);
+            if(stage_!=14 || ramp_<=1 || clamp!=1)return reject();
+            ramp_=clamp;stage_=16;break;
+        }
+        case 0x160e60:
+            if((stage_!=14 && stage_!=16) || !std::isfinite(ramp_) || ramp_<=0 || ramp_>1)return reject();
+            if(path_==CurrentRenderPath::Unknown)path_=CurrentRenderPath::RetainedTimeContinuation;
+            stage_=1;break;
         case 0x161bc0:
             if(stage_!=1)return reject();
             stage_=2;break;
@@ -108,6 +135,8 @@ public:
         case 0x161d64:
             if(stage_!=5 || s.x[0]!=binding_.renderer || !s.x[1] || s.x[2]!=binding_.camera+0xc0 ||
                s.x[7]!=compositor_+0x2993f8)return reject();
+            std::memcpy(&opacity_,&s.q[8],4); // actual native s8 product, never recomputed
+            if(path_==CurrentRenderPath::RetainedTimeContinuation && (!std::isfinite(opacity_) || opacity_<=0))return reject();
             stage_=6;break;
         case 0x161d68:
             if(stage_!=6 || !upload_)return reject();
@@ -154,6 +183,7 @@ public:
         CurrentRenderSelection selection;selection.window_=window_;selection.serial_=++window_->serial;
         selection.ticket_=ticket_;selection.invocation_=invocation_;selection.entry_sp_=entry_sp_;selection.caller_lr_=caller_lr_;
         selection.binding_=binding_;selection.identity_=identity_;selection.borrow_=n;
+        selection.path_=path_;selection.native_opacity_=opacity_;
         stage_=10;window_->active=true;window_->consumed=false;
         const bool result=callback(context,selection,n);
         const bool consumed=window_->consumed;window_->active=false;
@@ -177,6 +207,7 @@ private:
     std::shared_ptr<CurrentRenderSelection::Window> window_;
     CameraBinding binding_{};SourceIdentity identity_{};
     uint64_t ticket_=0,invocation_=0,last_invocation_=0,entry_sp_=0,caller_lr_=0,compositor_=0,upload_=0,last_upload_=0,texture_=0;
+    CurrentRenderPath path_=CurrentRenderPath::Unknown;float ramp_=0,opacity_=0;
     uint32_t index_=0,slot_=0;unsigned stage_=0;bool active_=false,failed_=false;
 };
 }

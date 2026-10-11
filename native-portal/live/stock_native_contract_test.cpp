@@ -24,7 +24,9 @@ struct BoundaryFixture {
         return {f.b,f.ticket,1,1,method,pc,1,m,saved};
     }
     void lock() {
-        auto g=s;g.sp=c.sp-0x50;g.x[0]=0;g.x[30]=Fixture::client+0x3280ec;
+        auto g=s;g.sp=c.sp-0x50;g.x[0]=1;g.x[19]=c.id;g.x[20]=c.provider;g.x[22]=c.provider+8;
+        c.inner_entered=false;assert(boundary.observe(at(M::Client,0x3280e0,g),c));c.inner_entered=true;
+        g.x[0]=0;g.x[30]=Fixture::client+0x3280ec;
         assert(boundary.observe(at(M::Client,0x3280ec,g),c));
         g.sp=s.sp;g.x[0]=s.sp+0x58;g.x[30]=Fixture::client+0x327e4c;
         assert(boundary.observe(at(M::Client,0x258438,g),c));
@@ -138,19 +140,31 @@ void exact_read_allowlist() {
     }
 }
 void scoped_reads_and_guard_lifetimes() {
+    {
+        BoundaryFixture b;auto g=b.s;g.sp=b.c.sp-0x50;g.x[0]=0;g.x[19]=b.c.id;g.x[20]=b.c.provider;g.x[22]=b.c.provider+8;
+        b.c.inner_entered=false;assert(b.boundary.observe(b.at(M::Client,0x3280e0,g),b.c));b.c.inner_entered=true;
+        g.sp=b.s.sp;g.x[0]=g.sp+0x58;g.x[30]=Fixture::client+0x327e4c;
+        assert(b.boundary.observe(b.at(M::Client,0x258438,g),b.c));
+        g.sp=b.s.sp-0x30;g.x[19]=b.s.sp+0x58;g.x[0]=1;g.x[30]=Fixture::client+0x2584c4;
+        assert(b.boundary.observe(b.at(M::Client,0x2584c4,g),b.c));
+        b.s.x[0]=0;b.f.put(b.c.header,11);
+        assert(!b.read(M::Client,0x327f30,b.c.header,8));
+        b.s.x[19]=b.c.header;b.f.put(b.c.header+0x68,1,4);
+        assert(!b.read(M::Client,0x327f70,b.c.header+0x68,4));assert(b.f.reads==0);
+    }
     for(int mode=0;mode<3;++mode) {
         BoundaryFixture b;
         if(mode==2)b.lock();
-        b.s.x[0]=b.c.header;b.f.put(b.c.header,11);
-        assert(b.read(M::Client,0x327e54,b.c.header,8)==(mode==2));
+        b.s.x[0]=0;b.f.put(b.c.header,11);
+        assert(b.read(M::Client,0x327f30,b.c.header,8)==(mode==2));
         assert(b.f.reads==(mode==2?1u:0u));
     }
     {
-        BoundaryFixture b;b.lock();b.s.x[0]=b.c.header;b.f.put(b.c.header,11);
+        BoundaryFixture b;b.lock();b.s.x[0]=0;b.f.put(b.c.header,11);
         const auto before=b.f.reads;
-        for(size_t size:{1u,4u,7u,9u,0x470u})assert(!b.read(M::Client,0x327e54,b.c.header,size));
-        assert(!b.read(M::Client,0x327e54,b.c.header+8,8));
-        assert(!b.read(M::Client,0x327e54,UINT64_MAX-3,8));
+        for(size_t size:{1u,4u,7u,9u,0x470u})assert(!b.read(M::Client,0x327f30,b.c.header,size));
+        assert(!b.read(M::Client,0x327f30,b.c.header+8,8));
+        assert(!b.read(M::Client,0x327f30,UINT64_MAX-3,8));
         assert(b.f.reads==before);
         // Every native ref slot, including 127. Width4, stride8, no whole header.
         for(unsigned slot=0;slot<128;++slot) {
@@ -166,7 +180,7 @@ void scoped_reads_and_guard_lifetimes() {
         assert(b.f.reads==reads);
         auto g=b.s;g.x[0]=g.sp+0x58;g.x[30]=Fixture::client+0x327f80;
         assert(b.boundary.observe(b.at(M::Client,0x258508,g),b.c));
-        b.s.x[0]=b.c.header;assert(!b.read(M::Client,0x327e54,b.c.header,8));
+        b.s.x[0]=0;assert(!b.read(M::Client,0x327f30,b.c.header,8));
         uint64_t out=0;assert(!b.boundary.read(b.c.header,&out,8));assert(b.f.reads==reads);
     }
     for(unsigned bad=0;bad<9;++bad) {
@@ -175,7 +189,7 @@ void scoped_reads_and_guard_lifetimes() {
         if(bad==1)++b.c.id;
         if(bad==2)++b.c.provider;
         if(bad==3){++b.c.object;++b.s.x[20];}
-        if(bad<4) {b.s.x[0]=b.c.header;b.f.put(b.c.header,11);assert(!b.read(M::Client,0x327e54,b.c.header,8));}
+        if(bad<4) {b.s.x[0]=0;b.f.put(b.c.header,11);assert(!b.read(M::Client,0x327f30,b.c.header,8));}
         else if(bad==4) {g.x[0]=g.sp+0x58;g.x[30]=Fixture::client+0x327e4c;assert(!b.boundary.observe(b.at(M::Client,0x258438,g),c));}
         else if(bad==5) {g.sp-=0x30;g.x[19]=b.s.sp+0x58;g.x[0]=1;g.x[30]=Fixture::client+0x2584c4;assert(!b.boundary.observe(b.at(M::Client,0x2584c4,g),c));}
         else {g.x[0]=g.sp+0x58;g.x[30]=Fixture::client+0x327f80;
@@ -187,7 +201,9 @@ void scoped_reads_and_guard_lifetimes() {
     }
     // Exact raw manager result and exact shared bool are independent.
     for(unsigned bad=0;bad<7;++bad) {
-        BoundaryFixture b;auto g=b.s;g.sp=b.c.sp-0x50;g.x[0]=0;g.x[30]=Fixture::client+0x3280ec;
+        BoundaryFixture b;auto g=b.s;g.sp=b.c.sp-0x50;g.x[0]=1;g.x[19]=b.c.id;g.x[20]=b.c.provider;g.x[22]=b.c.provider+8;
+        b.c.inner_entered=false;assert(b.boundary.observe(b.at(M::Client,0x3280e0,g),b.c));b.c.inner_entered=true;
+        g.x[0]=0;g.x[30]=Fixture::client+0x3280ec;
         if(bad==0){g.x[0]=1;assert(!b.boundary.observe(b.at(M::Client,0x3280ec,g),b.c));continue;}
         assert(b.boundary.observe(b.at(M::Client,0x3280ec,g),b.c));
         g.sp=b.s.sp;g.x[0]=g.sp+0x58;g.x[30]=Fixture::client+0x327e4c;
@@ -198,7 +214,7 @@ void scoped_reads_and_guard_lifetimes() {
         if(bad==4)g.sp+=16;
         if(bad==5)++g.x[30];
         if(bad!=6)assert(b.boundary.observe(b.at(M::Client,0x2584c4,g),b.c)==(bad==2));
-        b.s.x[0]=b.c.header;b.f.put(b.c.header,11);assert(!b.read(M::Client,0x327e54,b.c.header,8));assert(b.f.reads==0);
+        b.s.x[0]=0;b.f.put(b.c.header,11);assert(!b.read(M::Client,0x327f30,b.c.header,8));assert(b.f.reads==0);
     }
     // Default read_self is fault-contained, including a real protected boundary.
     {
@@ -206,10 +222,10 @@ void scoped_reads_and_guard_lifetimes() {
         auto* pages=static_cast<unsigned char*>(mmap(nullptr,page*2,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0));
         assert(pages!=MAP_FAILED);assert(mprotect(pages+page,page,PROT_NONE)==0);
         uint64_t id=11;std::memcpy(pages+page-8,&id,8);
-        BoundaryFixture b(true);b.lock();b.c.header=reinterpret_cast<uint64_t>(pages+page-8);b.s.x[0]=b.c.header;
-        assert(b.read(M::Client,0x327e54,b.c.header,8));
-        b.c.header+=4;b.s.x[0]=b.c.header;assert(!b.read(M::Client,0x327e54,b.c.header,8));
-        b.c.header+=4;b.s.x[0]=b.c.header;assert(!b.read(M::Client,0x327e54,b.c.header,8));
+        BoundaryFixture b(true);b.lock();b.c.header=reinterpret_cast<uint64_t>(pages+page-8);b.s.x[0]=0;
+        assert(b.read(M::Client,0x327f30,b.c.header,8));
+        b.c.header+=4;b.s.x[0]=0;assert(!b.read(M::Client,0x327f30,b.c.header,8));
+        b.c.header+=4;b.s.x[0]=0;assert(!b.read(M::Client,0x327f30,b.c.header,8));
         assert(munmap(pages,page*2)==0);
     }
 }

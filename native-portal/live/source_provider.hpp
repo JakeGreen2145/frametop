@@ -22,7 +22,9 @@ public:
         uint64_t id=0,alias=0,header=0;
         Entry ownership=Entry::Unknown; // manager entry only, NOT release authority
     };
+    enum class AcquireDisposition { Unknown, Granted, RecognizedNoGrant };
     struct ReadCall {
+        AcquireDisposition disposition=AcquireDisposition::Unknown;
         bool acquire_observed=false,release_observed=false,returned=false,increment=false,decrement=false;
         bool metadata_return_observed=false;
         int32_t acquire_result=0,release_result=0;
@@ -75,6 +77,7 @@ private:
     struct MetadataCall {
         bool pending=false,releasing=false,entered=false,inner=false,inner_entered=false,inner_returned=false;
         bool property=false,property_returned=false,ref_before=false,ref_after=false;
+        bool latest_observed=false,empty_path=false;
         unsigned queue=0;
         int32_t inner_result=0;
         uint64_t sp=0,return_pc=0,id=0,metadata_slot=0,data_slot=0,metadata=0;

@@ -40,6 +40,7 @@ struct Chain:Fixture {
     uint64_t system_interface=0,signal_pointer=0;
     struct {uint64_t serial=42;int8_t subserial=1;uint8_t padding[7]{};} signal_value;
     std::array<float,12> origin_matrix{1,0,0,0,0,1,0,1.6f,0,0,1,0};
+    std::string alternative_render;
     unsigned enqueues=0,lookups=0,native_acquires=0,native_releases=0,native_clears=0,policy_fault=0;
     unsigned held_releases=0;bool fail_native_release=false;
     bool pinned_camera=false,borrowed_fixture=false;size_t camera_step=0;
@@ -344,6 +345,9 @@ struct Chain:Fixture {
             update.sp=addr(camera_stack)+0x360;update.x[30]=base+0xfeed;
 #endif
             router.event(0x15fcc0,update);
+            if(alternative_render.rfind("source-negative-",0)==0) {
+                assert(update.pad==arena::SkipOwned);return; // refusal is source debt, not fixture abort
+            }
         }
 #endif
         // The counterfactual modifies only the owned copy, never native output,
@@ -362,12 +366,29 @@ struct Chain:Fixture {
         put(camera_stack,0x380,addr(source_texture));
 #ifdef FT_DORMANT_CURRENT_TEST
         s={};s.sp=addr(camera_stack)+0x460;s.x[0]=addr(camera);s.x[30]=base+0x9f400;event(0x160be8);
-        s.sp-=0x460;s.x[27]=addr(camera);s.x[0]=1;event(0x160ca8);event(0x161bc0);
+        s.sp-=0x460;s.x[27]=addr(camera);
+        const bool retained=alternative_render.rfind("retained-",0)==0 || alternative_render=="empty-warm-retained";
+        // Replay actual captured scalars. Binding/K/SP and original external
+        // services stay explicit Runtime source models, not native execution.
+        const char* mode_vector=alternative_render=="retained-bypass"?"mode-0-connected-0":
+            retained?"mode-1-connected-0":"mode-1-connected-1";
+        s.x[7]=admission_scalar(mode_vector,0x160ca0,7);event(0x160ca0);
+        if(s.x[7]) {s.x[0]=admission_scalar(mode_vector,0x160ca8,0);event(0x160ca8);}
+        const bool clamp=alternative_render=="retained-clamp";
+        const char* ramp_vector=clamp?"ramp-10.0-10.5":"ramp-10.0-10.125";
+        uint64_t bits=admission_scalar(ramp_vector,0x160db0,32);std::memcpy(s.q[0],&bits,8);
+        s.nzcv=admission_scalar(ramp_vector,0x160db0,96);event(0x160db0);
+        bits=admission_scalar(ramp_vector,0x160e34,36);std::memcpy(s.q[2],&bits,8);
+        s.nzcv=admission_scalar(ramp_vector,0x160e34,96);event(0x160e34);
+        if(clamp){bits=admission_scalar(ramp_vector,0x1621c4,32);std::memcpy(s.q[0],&bits,8);
+            s.nzcv=admission_scalar(ramp_vector,0x1621c4,96);event(0x1621c4);}
+        s.nzcv=admission_scalar(ramp_vector,0x160e60,96);event(0x160e60);event(0x161bc0);
         s.x[0]=native_selection[eye][0];event(0x161be8);
         s.x[0]=addr(camera)+4*native_selection[eye][0];event(0x161c74);
         s.x[24]=native_selection[eye][2];event(0x161c78);
 #endif
         s={};s.sp=addr(camera_stack);s.x[0]=addr(r);s.x[1]=addr(stock_wrapper);s.x[2]=addr(camera)+0xc0;s.x[7]=base+0x2993f8;s.x[27]=addr(camera);
+        {float opacity=.5f;std::memcpy(&s.q[8],&opacity,4);}
         event(0x161d64);if(s.pad!=arena::Replacement)std::fprintf(stderr,"upload refusal %u eye %u\n",unsigned(router.diagnostics().refusal),eye);
         assert(s.pad==arena::Replacement);const auto upload=s;
         uint32_t cursor=0;std::memcpy(&cursor,r.data()+0x1418,4);

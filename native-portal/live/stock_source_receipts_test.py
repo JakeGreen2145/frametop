@@ -70,8 +70,10 @@ def main():
     inventory = run([str(output / 'native-contract'), '--inventory'])
     actual_sites = [tuple(line.split()) for line in inventory.splitlines()]
     requested = json.loads((ROOT / 'live/stock-native-source-hook-request.json').read_text())
+    additions = json.loads((ROOT / 'live/admission-alternatives-hook-request.json').read_text())['new_required_sites']
     expected_sites = {(s['module'], s['pc']) for s in requested['required_callbacks']}
-    assert len(actual_sites) == len(set(actual_sites)) == requested['required_callback_count']
+    expected_sites.update((s['module'], s['pc']) for s in additions if s['module'] == 'client')
+    assert len(actual_sites) == len(set(actual_sites)) == len(expected_sites)
     assert set(actual_sites) == expected_sites
     if args.native_vectors:
         run([str(output / 'native-contract'), str(args.native_vectors)])
@@ -81,8 +83,10 @@ def main():
     current_inventory = run([str(output / 'current-admission'), '--inventory'])
     current_sites = [tuple(line.split()) for line in current_inventory.splitlines()]
     current_request = json.loads((ROOT / 'live/current-source-native-hook-request.json').read_text())
-    assert len(current_sites) == len(set(current_sites)) == current_request['render_required_callback_count']
-    assert set(current_sites) == {(s['module'], s['pc']) for s in current_request['render_required_callbacks']}
+    expected_current = {(s['module'], s['pc']) for s in current_request['render_required_callbacks']}
+    expected_current.update((s['module'], s['pc']) for s in additions if s['module'] == 'compositor')
+    assert len(current_sites) == len(set(current_sites)) == len(expected_current)
+    assert set(current_sites) == expected_current
     if args.current_vectors:
         run([str(output / 'current-admission'), str(args.current_vectors)])
     if args.runtime:

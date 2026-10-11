@@ -53,6 +53,7 @@
         if(client) {
             field=offset==0x32a628;
             switch(offset) {
+            case 0x3280e0:case 0x32766c:case 0x328148:case 0x3276d0:
             case 0x3280ec:case 0x327678:case 0x328150:case 0x3276d8:
             case 0x258438:case 0x2584c4:case 0x2584f8:case 0x258508:boundary=true;break;
             default:break;

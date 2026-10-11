@@ -25,6 +25,8 @@ template<class Base=Fixture> struct CurrentFixture: Base {
     unsigned borrow_fault=0;std::optional<CurrentRenderSelection> escaped;
     bool revoke_at_selection_auth=false,abort_in_identity=false;
     unsigned selection_callbacks=0;
+    bool retained=false,clamped=false,skip_join=false;
+    float ramp=.5f,opacity=.25f;double retained_time=10;
     render::NativeBorrow escaped_borrow{};
     std::map<uint64_t,arena::Saved> vectors;
     bool capture(uint64_t pc,arena::Saved s) {
@@ -38,8 +40,14 @@ template<class Base=Fixture> struct CurrentFixture: Base {
     bool select(render::NativeBorrow n,uint64_t invocation) {
         auto s=this->entry();
         if(!render.begin(this->ticket,this->b,invocation,0,s))return false;
-        s.sp-=0x460;s.x[27]=this->b.camera;s.x[0]=1;
-        if(!capture(0x160ca8,s))return false;
+        s.sp-=0x460;s.x[27]=this->b.camera;s.x[0]=1;s.x[7]=retained?0:1;
+        if(!capture(0x160ca0,s))return false;
+        if(!retained && !capture(0x160ca8,s))return false;
+        std::memcpy(&s.q[0],&retained_time,8);s.nzcv=0x20000000;
+        if(!capture(0x160db0,s))return false;
+        std::memcpy(&s.q[2],&ramp,4);if(!capture(0x160e34,s))return false;
+        if(clamped){float one=1;std::memcpy(&s.q[0],&one,4);if(!capture(0x1621c4,s))return false;}
+        if(!skip_join && !capture(0x160e60,s))return false;
         if(!capture(0x161bc0,s))return false;
         s.x[0]=n.resource_index;s.x[28]=99; // pre mov w28,w0 must use x0
         if(!capture(0x161be8,s))return false;
@@ -47,6 +55,7 @@ template<class Base=Fixture> struct CurrentFixture: Base {
         if(!capture(0x161c74,s))return false; // pre-load stale x24
         s.x[24]=n.slot;if(!capture(0x161c78,s))return false;
         s.x[0]=this->b.renderer;s.x[1]=77;s.x[2]=this->b.camera+0xc0;s.x[7]=0x2993f8;
+        std::memcpy(&s.q[8],&opacity,4);
         if(!capture(0x161d64,s))return false;
         if(!render.upload_reserved(n.provenance.ticket))return false;
         if(!capture(0x161d68,s))return false;
@@ -175,7 +184,7 @@ void current_connect_negatives() {
 }
 void selection_negatives() {
     struct Fault {uint64_t pc;unsigned reg;uint64_t value;};
-    const Fault faults[]={{0x161c74,0,0},{0x161c78,0,0},{0x160ca8,0,0},{0x160ca8,27,1},{0x161be8,0,2},{0x161c78,24,16},
+    const Fault faults[]={{0x161c74,0,0},{0x161c78,0,0},{0x160ca0,7,0},{0x160ca8,27,1},{0x161be8,0,2},{0x161c78,24,16},
         {0x161d64,0,99},{0x161d64,2,0},{0x161d64,7,0},{0x161e40,0,0},{0x161ed8,0,99},
         {0x161ed8,1,0},{0x161ed8,22,0},{0x161ed8,2,0},{0x161ed8,4,0},{0x161ed8,28,0},
         {0x161ed8,21,6},{0x161ed8,24,6}};
@@ -188,7 +197,7 @@ void selection_negatives() {
         CurrentFixture<> f;f.connect();assert(f.admission.fold_stock_history(f.transport));
         f.missing_pc=pc;assert(!f.select(f.borrow(),1));
     }
-    for(const auto pc:CurrentRenderCollector::required_sites)if(pc!=0x160be8 && pc!=0x160dd4 && pc!=0x161f30) {
+    for(const auto pc:CurrentRenderCollector::required_sites)if(pc!=0x160be8 && pc!=0x160dd4 && pc!=0x161f30 && pc!=0x1621c4) {
         CurrentFixture<> f;f.connect();assert(f.admission.fold_stock_history(f.transport));
         f.fault_pc=pc;f.fault_sp=true;f.fault_value=Fixture::sp-0x360;assert(!f.select(f.borrow(),1));
     }
@@ -225,6 +234,7 @@ void render_return_scope() {
     CurrentFixture<> f;auto s=f.entry();assert(f.render.begin(f.ticket,f.b,1,0,s));
     assert(f.render.capture(0x160dd4,s));assert(f.render.begin(f.ticket,f.b,2,0,s));
     auto body=s;body.sp-=0x460;body.x[27]=f.b.camera;body.x[0]=0;
+    body.x[7]=1;assert(f.render.capture(0x160ca0,body));
     assert(f.render.capture(0x160ca8,body));
     assert(f.render.capture(0x161f30,s));
     assert(f.render.begin(f.ticket,f.b,3,0,s));++s.x[30];assert(!f.render.capture(0x161f30,s));
@@ -244,12 +254,14 @@ void replay_current_vectors(const char* path) {
     assert(f.reads==reads);
     std::puts("PASS pinned selector/helper, connected/slot/texture Saved through current collector and cold borrowed journal");
 }
+#include "admission_alternatives_cases.inc"
 int main(int argc,char** argv) {
     if(argc==2 && !std::strcmp(argv[1],"--inventory")) {
         for(const auto pc:CurrentRenderCollector::required_sites)std::printf("compositor 0x%llx\n",static_cast<unsigned long long>(pc));
         return 0;
     }
     if(argc==2){replay_current_vectors(argv[1]);return 0;}
+    admission_alternative_cases();
     no_op_update_before_bootstrap();render_return_scope();current_connect_negatives();selection_negatives();
     warm_without_new_update();current_update_optional(false);current_update_optional(true);
     identity_revocation_cannot_open_selection();cold_connect();

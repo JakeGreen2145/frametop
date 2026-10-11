@@ -152,6 +152,10 @@ bool ClientSourceBinding::finish(uint64_t actual) noexcept {
     if(!owner())return refuse();
     bool valid=active_ && held() && !call_.pending && !metadata_.pending;
     for(const auto& r:observation_.reads)if(r.acquire_observed && r.acquire_result==0 && !r.returned)valid=false;
+    // The verified q1 failure path always continues through the actual q0 call.
+    // Missing peer observations cannot certify a completed empty Update.
+    if(observation_.reads[1].disposition==AcquireDisposition::RecognizedNoGrant &&
+       !observation_.reads[0].acquire_observed)valid=false;
     if(!valid)refuse();
     observation_.actual=actual;observation_.valid=valid;active_=false;ticket_=0;return valid;
 }
