@@ -17,6 +17,7 @@ BUILD = ROOT / 'build/stock-source-receipts'
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--sanitize', action='store_true')
+    parser.add_argument('--current-vectors', type=Path, help='replay pinned current-render producer Saved vectors')
     parser.add_argument('--native-vectors', type=Path, help='replay generated pinned producer Saved vectors')
     parser.add_argument('--runtime', action='store_true', help='also build/link complete unchanged Runtime and run its CPU smoke test')
     parser.add_argument('--vulkan-include', type=Path, default=Path('/home/jakeg/.hermes/work/frame-native-pipeline-review/include'))
@@ -76,6 +77,14 @@ def main():
         run([str(output / 'native-contract'), str(args.native_vectors)])
     target('stock-receipts', ['live/stock_source_receipts_test.cpp', 'live/source_provider.cpp', 'control/camera_gate.cpp'])
     target('existing-admission', ['live/native_source_admission_test.cpp'])
+    target('current-admission', ['live/current_source_admission_test.cpp', 'live/source_provider.cpp', 'control/camera_gate.cpp'])
+    current_inventory = run([str(output / 'current-admission'), '--inventory'])
+    current_sites = [tuple(line.split()) for line in current_inventory.splitlines()]
+    current_request = json.loads((ROOT / 'live/current-source-native-hook-request.json').read_text())
+    assert len(current_sites) == len(set(current_sites)) == current_request['render_required_callback_count']
+    assert set(current_sites) == {(s['module'], s['pc']) for s in current_request['render_required_callbacks']}
+    if args.current_vectors:
+        run([str(output / 'current-admission'), str(args.current_vectors)])
     if args.runtime:
         tree = ast.parse((ROOT / 'live/runtime_test.py').read_text())
         sources = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)

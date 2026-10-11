@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "initial_api_commit": "5bd84e0",
+  "activation": false,
+  "review": "parent-owned delta review, not claimed",
+  "tests": {
+    "plain": {
+      "log": "/home/jakeg/.hermes/work/frametop-native-current-source-admission/native-portal/build/stock-source-receipts/plain/results.json",
+      "sha256": "b927e348d5d5748e97e8810bcb23034a0439dbca612439b3982c1fa937925985",
+      "commands": 37,
+      "compiles": 23,
+      "all_exit_zero": true,
+      "all_memory_capped": true,
+      "pass_outputs": [
+        "PASS native contract: field provenance, own completion, masked fold and scoped read allowlist",
+        "PASS replayed 30 native-executed full Saved vectors through real collector",
+        "PASS stock source receipts: native-input binding/provider, warm borrow, ordered callers, sticky refusals",
+        "PASS identity-only bootstrap without current camera reads",
+        "PASS pinned selector/helper, connected/slot/texture Saved through current collector and cold borrowed journal",
+        "runtime: default stock continuation, exact pin, unsupported ownership, bounded real-memory queue payload parsing PASS"
+      ]
+    },
+    "sanitize": {
+      "log": "/home/jakeg/.hermes/work/frametop-native-current-source-admission/native-portal/build/stock-source-receipts/sanitize/results.json",
+      "sha256": "90cccc8e226dcea62d943c9e82c3e04db41739925dc6c3ad00dfbbed85e82950",
+      "commands": 37,
+      "compiles": 23,
+      "all_exit_zero": true,
+      "all_memory_capped": true,
+      "pass_outputs": [
+        "PASS native contract: field provenance, own completion, masked fold and scoped read allowlist",
+        "PASS replayed 30 native-executed full Saved vectors through real collector",
+        "PASS stock source receipts: native-input binding/provider, warm borrow, ordered callers, sticky refusals",
+        "PASS identity-only bootstrap without current camera reads",
+        "PASS pinned selector/helper, connected/slot/texture Saved through current collector and cold borrowed journal",
+        "runtime: default stock continuation, exact pin, unsupported ownership, bounded real-memory queue payload parsing PASS"
+      ]
+    }
+  },
+  "current_native_vectors": {
+    "scope": "Pinned current-render producer islands; synthetic memory, not whole render.\n\nRuns the actual selector call/helper/continuation, slot and texture loads.\nNo service/GPU calls, installations, native activation or inferred live lifetime.\n",
+    "compositor_sha256": "9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265",
+    "vectors": 5,
+    "output_sha256": "1778b1e0a94900441228b80b5e85b331344c1ab56298193e51ef0ebc6e3ba1d5",
+    "selector": "actual 161bc0 BL and 160a80 helper, zero-matrix tie selects0",
+    "synthetic": "camera/stack/source contents and schedule between independent instruction islands",
+    "pcs": [
+      "0x160ca8",
+      "0x161be8",
+      "0x161c74",
+      "0x161c78",
+      "0x161e40"
+    ]
+  },
+  "render_callbacks": 12,
+  "stock_callbacks": 75,
+  "source_sha256": {
+    "native_source_admission.hpp": "1fe625d8a5ca77fa7e38aa2e30b4e273fa32f2746a52cbbd48c35a50253f3967",
+    "current_source_completion.hpp": "633abd83221c0a84cdbf06d0f9c6505b6c649068603cfe7c4383056f242fdf42",
+    "current_source_selection.hpp": "868c3e1f4223c4154d809a77d8d4292c0423e5c34df1e9c444b9bd2bb86922e1",
+    "stock_source_receipts.hpp": "b3a1b76e9a60f31cda1a34c16d343e68d8fee329a596d47796b31e112cb0a70a",
+    "current_source_admission_test.cpp": "6d0f646620716b22eae8693da9c199ba26515ea7ae3d35c8c34b544167b79346",
+    "current_source_vectors.py": "063f10316fa8b481e73aa4e54f225deb300dd495e123b663eed2fb542af61c69",
+    "stock_source_receipts_test.cpp": "3920376e45431cb5aa9b43fd1d40e09ad8f0090ec0561561c53c7250d4327865",
+    "stock_source_receipts_test.py": "dd9f102285feefe752a215ad40b1b97305b1fa9da66c3879f439d656a4f9e62a"
+  },
+  "limits": [
+    "Native source schedules, providers and camera memory are explicitly synthetic.",
+    "Current vectors execute pinned selector helper and field producers, not whole render or installed islands.",
+    "Runtime smoke retains legacy constructor, not new Runtime integration.",
+    "Existing Command/Lifecycle/SourceCommand remain settlement authority.",
+    "Loader render extension and Runtime wiring belong to assigned lanes."
+  ]
+}

@@ -11,6 +11,7 @@ inline std::atomic<uint64_t> current_source_invocations{1};
 template<uint64_t Method> class CurrentSourceCompletion final {
 public:
     using Record=NativeSourceResult<Method>;
+    static constexpr bool accepts_method(uint64_t method) noexcept{return method==Method;}
     CurrentSourceCompletion(const CameraBinding& b,uint64_t version,std::thread::id owner,uint64_t runtime) noexcept:
         binding_(b),version_(version),owner_(owner),runtime_(runtime),stream_(current_source_invocations.fetch_add(1)) {}
     CurrentSourceCompletion(const CurrentSourceCompletion&)=delete;

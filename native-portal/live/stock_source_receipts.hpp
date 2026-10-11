@@ -41,6 +41,7 @@ using StockSourceReceipt=NativeSourceResult<0>;
 class StockSourceTransport final {
 public:
     using Record=StockSourceReceipt;
+    static constexpr bool accepts_method(uint64_t) noexcept{return true;}
     static constexpr size_t capacity=32;
     StockSourceTransport(const CameraBinding& b,uint64_t version,std::thread::id owner,uint64_t runtime) noexcept:
         binding_(b),version_(version),owner_(owner),process_(getpid()),stream_(next_stream_.fetch_add(1)),runtime_(runtime) {}
@@ -114,7 +115,7 @@ public:
     NativeSourceMethodCollector(const NativeSourceMethodCollector&)=delete;
     bool begin(uint64_t ticket,const CameraBinding& b,uint64_t version,uint64_t method,const arena::Saved& s,
                uint64_t comp,uint64_t client,const char* comp_digest,const char* client_digest) noexcept {
-        if(!owner() || active_ || binding_engine_.failed())return reject();
+        if(!owner() || active_ || binding_engine_.failed() || !Sink::accepts_method(method))return reject();
         if(s.x[0]!=b.camera || s.sp<0x500 || !s.x[30] ||
            (method!=0x15f9e0 && method!=0x15fba8 && method!=0x15fcc0))return reject();
         CameraBinding held;

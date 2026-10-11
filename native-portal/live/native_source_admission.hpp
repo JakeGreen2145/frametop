@@ -31,6 +31,7 @@ public:
         current_connect_=invocation;last_current_invocation_=invocation;before_local_=false;return true;
     }
     bool finish_current_connect(const CameraBinding& b,const CurrentConnectResult& r) noexcept {
+        if(!stock_owner()){stock_invalid_.store(true);return false;}
         SourceIdentity identity;
         if(!current_mode_ || !identity_lifetime(b,identity) || !current_connect_ ||
            !current_result(b,r) || r.sequence_!=current_connect_ || r.stream_!=current_connect_) {
@@ -56,6 +57,7 @@ public:
         current_update_=last_current_invocation_=invocation;return true;
     }
     bool finish_current_update(const CameraBinding& b,const CurrentUpdateResult& r) noexcept {
+        if(!stock_owner()){stock_invalid_.store(true);return false;}
         SourceIdentity identity;
         if(!current_mode_ || !identity_lifetime(b,identity) || !current_update_ || !current_result(b,r) ||
            r.sequence_!=current_update_ || r.stream_!=current_update_) {uncertain_=true;return false;}
@@ -78,6 +80,9 @@ public:
         if(any && (!f.has(NativeFieldFacts::ACTIVE|NativeFieldFacts::CONNECTED) || !f.values.active || !f.values.connected || !o.provider)) {
             uncertain_=true;return false;
         }
+        // A native no-read path is neutral even before cold Connect. It grants
+        // no journal, but cannot make bootstrap wait for a future image.
+        if(!any)return true;
         if(!journal_) {
             if(!complete || !f.values.ids[0] || !f.values.ids[1] || f.values.ids[0]==f.values.ids[1]) {uncertain_=true;return false;}
             apply_observation(f.values,o,true);
@@ -166,6 +171,7 @@ public:
             ((!s.ids[0] && !s.ids[1]) || (detached_ && s.ids==ids_));
     }
     void held_disconnect(const CameraBinding& b) noexcept override {
+        if(current_mode_)return; // observed aggregate no-op cannot mutate borrowed ownership
         State s;
         if(!before_ok_ || before_action_!=coordination::Action::Disconnect ||
            !lifetime(b,s) || !journal_ || !connected_ || s.ids!=ids_) {uncertain_=true;return;}

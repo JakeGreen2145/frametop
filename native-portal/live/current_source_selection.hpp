@@ -66,7 +66,7 @@ public:
     using Covered=bool(*)(void*,M,uint64_t) noexcept;
     using Borrow=bool(*)(void*,const CurrentRenderSelection&,render::NativeBorrow) noexcept;
     inline static constexpr uint64_t required_sites[]={0x160be8,0x160ca8,0x161bc0,0x161be8,
-        0x161c74,0x161c78,0x161d64,0x161d68,0x161e40,0x161ed8};
+        0x161c74,0x161c78,0x161d64,0x161d68,0x161e40,0x161ed8,0x160dd4,0x161f30};
     CurrentRenderCollector(CameraAccessGate& gate,void* context,AuthenticateIdentity authenticate,Covered covered):
         gate_(gate),context_(context),authenticate_(authenticate),covered_(covered),window_(std::make_shared<CurrentRenderSelection::Window>()) {}
     CurrentRenderCollector(const CurrentRenderCollector&)=delete;
@@ -81,12 +81,18 @@ public:
         active_=true;return held()?true:reject();
     }
     bool capture(uint64_t pc,const arena::Saved& s) noexcept {
+        if(!owner())return false;
+        // Native epilogues have restored K and the entry SP/LR. They revoke the
+        // scope only; unlike Connect they publish no own-completion receipt.
+        if(pc==0x160dd4 || pc==0x161f30)return finish(invocation_,s);
         if(!owner() || !active_ || failed_ || window_->active || !held() ||
            s.sp!=entry_sp_-0x460 || s.x[27]!=binding_.camera)return reject();
         switch(pc) {
         case 0x160ca8:
-            if(stage_!=0 || !uint8_t(s.x[0]))return reject();
-            stage_=1;break;
+            if(stage_!=0)return reject();
+            // Native connected0 is an ordinary no-sample branch. Observe it,
+            // grant nothing, and let its real return close the invocation.
+            stage_=uint8_t(s.x[0])?1:11;break;
         case 0x161bc0:
             if(stage_!=1)return reject();
             stage_=2;break;
@@ -94,10 +100,10 @@ public:
             if(stage_!=2 || uint32_t(s.x[0])>=2)return reject();
             index_=uint32_t(s.x[0]);stage_=3;break;
         case 0x161c74:
-            if(stage_!=3)return reject();
+            if(stage_!=3 || s.x[0]!=binding_.camera+4*index_)return reject();
             stage_=4;break; // pre-load x24 is NOT the slot
         case 0x161c78:
-            if(stage_!=4 || uint32_t(s.x[24])>=16)return reject();
+            if(stage_!=4 || s.x[0]!=binding_.camera+4*index_ || uint32_t(s.x[24])>=16)return reject();
             slot_=uint32_t(s.x[24]);stage_=5;break;
         case 0x161d64:
             if(stage_!=5 || s.x[0]!=binding_.renderer || !s.x[1] || s.x[2]!=binding_.camera+0xc0 ||
@@ -123,6 +129,16 @@ public:
     bool upload_reserved(uint64_t ticket) noexcept {
         if(!owner() || !active_ || failed_ || !held() || stage_!=6 || upload_ || !ticket || ticket<=last_upload_)return reject();
         upload_=last_upload_=ticket;return true;
+    }
+    // Scalar transport for the existing staging/NativeBorrow fields. This is not
+    // an admission certificate, native read token or deferred sample lifetime.
+    struct Sample {
+        uint32_t resource_index=0,slot=0;
+        uint64_t selected_texture=0,upload_ticket=0,invocation_sp=0,camera=0;
+    };
+    std::optional<Sample> sample() const noexcept {
+        if(!owner() || !active_ || failed_ || stage_!=9 || window_->active || !held())return {};
+        return Sample{index_,slot_,texture_,upload_,entry_sp_-0x460,binding_.camera};
     }
     // Invoke from the existing NativeBorrow callback inside Adapter::enqueue.
     // The packet is already copied; this one-shot certificate dies on return.
