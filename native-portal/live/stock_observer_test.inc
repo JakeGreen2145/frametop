@@ -46,6 +46,22 @@ static void test_stock_coverage(uintptr_t comp,uintptr_t client,uintptr_t ci,int
     assert(!ft_stock_observers_complete(&s));
 #endif
     assert(ft_native_portal_camera_coverage()==UINT64_C(0xfffff));
+#ifdef FT_TEST_CURRENT_COVERAGE
+#include "current-required.h"
+    uint64_t current_pcs[ALL_SITE_COUNT];
+    const size_t current_count=ft_native_portal_installed_sites(FT_INSTALLED_SITES_VERSION,0,current_pcs,ALL_SITE_COUNT);
+    assert(current_count==SITE_COUNT);
+    unsigned missing=0;
+    for(size_t r=0;r<sizeof current_required/sizeof current_required[0];++r) {
+        unsigned found=0;
+        for(size_t i=0;i<current_count;++i)found+=current_pcs[i]==current_required[r];
+        assert(found<=1);
+        if(!found) {++missing;assert(current_required[r]==FT_TEST_CURRENT_OMITTED);}
+    }
+    assert((missing==0)==FT_TEST_CURRENT_COVERAGE);
+    assert(missing==(FT_TEST_CURRENT_COVERAGE?0:1));
+    printf("PASS current-render actual installed inventory complete=%u missing=%u; V1/camera intact\n",missing==0,missing);
+#endif
     memset(&s,0xa5,sizeof s);struct ft_stock_observer_coverage_v1 prior=s;
     assert(!ft_native_portal_stock_observer_coverage(2,&s,sizeof s));
     assert(!memcmp(&s,&prior,sizeof s));

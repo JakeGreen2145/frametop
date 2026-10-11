@@ -1,0 +1,222 @@
+{
+  "base_commit": "0f387ff207eb52d99b80848a57bab207e374043a",
+  "consumer_commit": "673f1149e929aaa218716d572499b1fc919614a1",
+  "request_sha256": "e97b4d85b082bdbaca5f4d994da6216e46419a074303d896aba52897db135525",
+  "consumer_header_sha256": "868c3e1f4223c4154d809a77d8d4292c0423e5c34df1e9c444b9bd2bb86922e1",
+  "compositor_sha256": "9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265",
+  "client_sha256": "fe967dcc0d97dab984bd9acc1dc522fcecbcf9beb794fdd7ec156334ec31e313",
+  "counts": {
+    "manifest_before": 157,
+    "manifest_after": 166,
+    "compositor": 200,
+    "client": 32,
+    "total": 232
+  },
+  "new_sites": [
+    "0x160be8",
+    "0x160ca8",
+    "0x160dd4",
+    "0x161bc0",
+    "0x161be8",
+    "0x161c74",
+    "0x161c78",
+    "0x161e40",
+    "0x161f30"
+  ],
+  "consumer_required_sites": [
+    "0x160be8",
+    "0x160ca8",
+    "0x161bc0",
+    "0x161be8",
+    "0x161c74",
+    "0x161c78",
+    "0x161d64",
+    "0x161d68",
+    "0x161e40",
+    "0x161ed8",
+    "0x160dd4",
+    "0x161f30"
+  ],
+  "selected_consumer_rows": [
+    {
+      "continuation": "0x160bec",
+      "emitter": "observer",
+      "guard": "ff8311d1fd7b00a9fd030091f35301a9",
+      "index": 0,
+      "kind": 0,
+      "names": [
+        "0x160be8"
+      ],
+      "pc": 1444840,
+      "word": 3507586047
+    },
+    {
+      "continuation": "0x160cac",
+      "emitter": "observer",
+      "guard": "40060034f96b04a9604b42fd616f42fd",
+      "index": 0,
+      "kind": 3,
+      "names": [
+        "0x160ca8"
+      ],
+      "pc": 1445032,
+      "word": 872416832
+    },
+    {
+      "continuation": "0x160dd8",
+      "emitter": "observer",
+      "guard": "c0035fd6f55b42a9fb7345a9f8ffff17",
+      "index": 0,
+      "kind": 5,
+      "names": [
+        "0x160dd4"
+      ],
+      "pc": 1445332,
+      "word": 3596551104
+    },
+    {
+      "continuation": "0x161bc4",
+      "emitter": "observer",
+      "guard": "b0fbff97017c7ad3e8030a9122501091",
+      "index": 0,
+      "kind": 1,
+      "names": [
+        "0x161bc0"
+      ],
+      "pc": 1448896,
+      "word": 2550135728
+    },
+    {
+      "continuation": "0x161bec",
+      "emitter": "observer",
+      "guard": "fc03002a43c0df3c0669e93c29401091",
+      "index": 0,
+      "kind": 0,
+      "names": [
+        "0x161be8"
+      ],
+      "pc": 1448936,
+      "word": 704644092
+    },
+    {
+      "continuation": "0x161c78",
+      "emitter": "observer",
+      "guard": "182048b98110874f8010864fa3188b4f",
+      "index": 0,
+      "kind": 0,
+      "names": [
+        "0x161c74"
+      ],
+      "pc": 1449076,
+      "word": 3108511768
+    },
+    {
+      "continuation": "0x161c7c",
+      "emitter": "observer",
+      "guard": "8110874f8010864fa3188b4f2a41df3c",
+      "index": 0,
+      "kind": 0,
+      "names": [
+        "0x161c78"
+      ],
+      "pc": 1449080,
+      "word": 1334251649
+    },
+    {
+      "continuation": "0x161d68",
+      "emitter": "arena",
+      "guard": "e0003fd6e05740f90000403940100034",
+      "index": 0,
+      "kind": 2,
+      "names": [
+        "0x161d64",
+        "arena_0x161d64"
+      ],
+      "pc": 1449316,
+      "word": 3594453216
+    },
+    {
+      "continuation": "0x161d6c",
+      "emitter": "arena",
+      "guard": "e05740f90000403940100034f5324239",
+      "index": 7,
+      "kind": 0,
+      "names": [
+        "0x161d68",
+        "arena_0x161d68"
+      ],
+      "pc": 1449320,
+      "word": 4181743584
+    },
+    {
+      "continuation": "0x161e44",
+      "emitter": "observer",
+      "guard": "e0c301f9840a0035600308917aeb42b9",
+      "index": 0,
+      "kind": 0,
+      "names": [
+        "0x161e40"
+      ],
+      "pc": 1449536,
+      "word": 4177642464
+    },
+    {
+      "continuation": "0x161edc",
+      "emitter": "replace-call",
+      "guard": "80003fd6610340f983071c8b21804091",
+      "index": 2,
+      "kind": 2,
+      "names": [
+        "0x161ed8",
+        "camera_enqueue",
+        "camera_enqueue_owned"
+      ],
+      "pc": 1449688,
+      "word": 3594453120
+    },
+    {
+      "continuation": "0x161f34",
+      "emitter": "observer",
+      "guard": "c0035fd6f55b42a9f76343a9f96b44a9",
+      "index": 0,
+      "kind": 5,
+      "names": [
+        "0x161f30"
+      ],
+      "pc": 1449776,
+      "word": 3596551104
+    }
+  ],
+  "unchanged_v1_mask": "0xfffffffffff",
+  "unchanged_camera_mask": "0xfffff",
+  "source_sha256": {
+    "native-portal/live/runtime-sites.json": "dd891a5b04eb5ab4115c36fc52510775489c43572eb36334cd5622a9fe1b5159",
+    "native-portal/live/prepare.py": "6916d053fd9eb1774957381d2d6f711c2c38d3cba5206894a867cfe29353201e",
+    "native-portal/live/loader.c": "48de106f49c45dfb7e366a51700190359c4d4b298fc760a8b91f171ef8c44b09",
+    "native-portal/live/loader_emit.c": "3d2e0cdc1237db768a80bb72726e14171a4284ce4f8f58deba936cf56dfef7fa",
+    "native-portal/live/runtime-emit.c": "506a0ee0afb926f5672b99f41e97b36cbde27b0878c83cbca4bd321c8fc157ce",
+    "native-portal/live/stock_observer_coverage.h": "528354e54c7e5a0a6e549ca9bbda512e0ae98b37a7198fdee6d65aa98f997a76",
+    "native-portal/live/stock_observer_test.inc": "265186c5171d673abb39203930d6610837cd78ba8a4af3c9b40df72175c2da91",
+    "native-portal/live/current_render_hooks_test.py": "599607821c06b87609d8f806cd6046c5cc8d56f84d5a8e76adcfdae9a7d0f00e",
+    "native-portal/live/current_render_hooks_machine.py": "404d076f04b318abf0a5bc6971772bcd22fe63b4ffc2ba3f2799d5d8bdb462f8"
+  },
+  "logs": {
+    "baseline-red": {
+      "path": "/home/jakeg/.hermes/cache/scratch/current-render-hooks-baseline-red.log",
+      "sha256": "04c9f1caa19b0a034cae03c4916d97fc1f274e3318a3ed601c4f29faf119178d",
+      "exit_code": 1
+    },
+    "normal-final": {
+      "path": "/home/jakeg/.hermes/cache/scratch/current-render-hooks-normal-final.log",
+      "sha256": "33706172893f4b1545934cd52d03a7f459eccf1e3f585b6e457238340fdd786a",
+      "exit_code": 0
+    },
+    "sanitize-final": {
+      "path": "/home/jakeg/.hermes/cache/scratch/current-render-hooks-sanitize-final.log",
+      "sha256": "a7dbde0a9ff33b0cb6c7dc58bf43af9070964a5beea4b14be85f289e26b0525d",
+      "exit_code": 0
+    }
+  },
+  "instruction_comparisons": 72,
+  "scope": "Serial MemoryMax=256M MemorySwapMax=0 CPU tests. Full and nine omitted inventories through actual dual-module installer, normal and ASan+UBSan. Actual A64 selected-emitter instruction parity and pinned selector/load blocks through compiled observational dispatcher; native data and schedule synthetic. Not Runtime consumer routing or Frame/GPU installation."
+}
