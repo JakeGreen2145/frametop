@@ -29,7 +29,7 @@ def inventory():
     sources=list(BASE_SOURCES)
     for directory,pattern in [('runtime','*.cpp'),('live','runtime*.cpp'),('live','runtime*.S')]:
         for path in sorted((ROOT/directory).glob(pattern)):
-            if any(token in path.stem for token in ('test','machine','fixture','stub')):continue
+            if any(token in path.stem for token in ('test','machine','fixture','stub')) or path.stem.endswith('_red'):continue
             sources.append(str(path.relative_to(ROOT)))
     if 'live/runtime.cpp' not in sources:raise ValueError('missing real live/runtime.cpp; test stubs are forbidden in production')
     return sources
