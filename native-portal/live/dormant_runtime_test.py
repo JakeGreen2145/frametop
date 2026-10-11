@@ -27,11 +27,16 @@ def main():
     p.add_argument('--baseline-red', action='store_true')
     p.add_argument('--sanitize', action='store_true')
     p.add_argument('--current', action='store_true', help='Default Runtime first stereo and settlement')
+    p.add_argument('--first-consumer', action='store_true', help='Opt-in Present/Flush functional regression, source model only')
+    p.add_argument('--expect-refusal', action='store_true', help='Check exact current diagnostic outcome, NOT functional acceptance')
     p.add_argument('--modes', help='Comma-separated focused cases from the selected suite')
     p.add_argument('--fixtures', type=Path, default=Path('/home/jakeg/.hermes/work/frametop-native-live-integration/native-portal/build/camera-runtime-asan'))
     p.add_argument('--admission-vectors', type=Path, default=ROOT / 'build/admission-frozen/admission-native-vectors.json')
     p.add_argument('--factory-vectors', type=Path, default=Path('/home/jakeg/.hermes/work/desktop-compositor-re/factory-call-arguments-a374d89/SAVED-VECTORS.json'))
     args = p.parse_args()
+    if args.first_consumer:
+        args.current = True
+    assert not args.expect_refusal or args.first_consumer
     if not args.in_scope:
         unit = 'dormant-runtime-' + uuid.uuid4().hex + '.scope'
         try:
@@ -45,6 +50,8 @@ def main():
     os.environ['TMPDIR'] = str(SCRATCH)
     if args.current:
         BUILD = BUILD / 'current'
+    if args.first_consumer:
+        BUILD = BUILD / 'first-consumer'
     if args.sanitize:
         BUILD = BUILD / 'sanitize'
         os.environ['ASAN_OPTIONS'] = 'detect_leaks=1:halt_on_error=1'
@@ -117,6 +124,11 @@ def main():
                            OUTER_LR=0x14a5cc)
         flags += ['-DFT_' + key + '=' + hex(value) for key, value in coordinates.items()]
         flags += ['-Wl,--wrap=syscall', '-Wl,--wrap=process_vm_readv']
+    if args.first_consumer:
+        from present_runtime_fixture import generate
+        private_hashes.update(generate(BUILD))
+        flags += ['-DFT_FIRST_CONSUMER_TEST']
+        sources = ['live/present_runtime_observer_test.cpp' if source == 'live/runtime.cpp' else source for source in sources]
     inputs = [p for p in ROOT.rglob('*') if p.is_file() and 'build' not in p.relative_to(ROOT).parts
               and p.suffix in ('.cpp', '.hpp', '.inc', '.h', '.py')]
     hashes = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}
@@ -134,11 +146,13 @@ def main():
             obj = BUILD / (source.replace('/', '_') + '.o');objects.append(obj)
             deps = {name: digest for name, digest in hashes.items() if name == source or
                     Path(name).suffix in ('.hpp', '.h', '.inc') or
+                    (source == 'live/present_runtime_observer_test.cpp' and name == 'live/runtime.cpp') or
                     ('test' in source and name.endswith('_test.cpp'))}
-            key = hashlib.sha256(json.dumps([deps, flags, inventory, private_hashes], sort_keys=True).encode()).hexdigest()
+            object_flags = flags + (['-fno-access-control'] if source == 'live/present_runtime_observer_test.cpp' else [])
+            key = hashlib.sha256(json.dumps([deps, object_flags, inventory, private_hashes], sort_keys=True).encode()).hexdigest()
             objstamp = obj.with_suffix('.hash')
             if not obj.exists() or not objstamp.exists() or objstamp.read_text() != key:
-                run(['g++', *flags, '-c', ROOT / source, '-o', obj])
+                run(['g++', *object_flags, '-c', ROOT / source, '-o', obj])
                 objstamp.write_text(key)
         exe = BUILD / 'dormant-runtime-test'
         if rebuild or not exe.exists():
@@ -202,6 +216,9 @@ def main():
         retired_faults.update({'pc': '0x3003d0', 'missing-entry': '0x3052f0', 'missing-result': '0x4b3d0',
                               'failed-result': '0x3052f0', 'missing-free': '0x3053f8', 'factory-c': '0x305308', 'factory-r': '0x305308'})
         modes += [prefix + fault for prefix in ('retired-bad-', 'retired-engaged-bad-') for fault in retired_faults]
+    if args.first_consumer:
+        from present_runtime_fixture import MODES
+        modes = MODES
     if args.modes:
         requested = args.modes.split(',')
         assert requested and all(mode in modes or (args.current and mode in factory_modes) for mode in requested)
@@ -332,14 +349,22 @@ def main():
                           and 'CURRENT forbidden native cleanup' not in text and 'Assertion' not in text)
                 if mode.startswith('initializer-chain-'):
                     passed = passed and text.count('INITIALIZER direct-before-wrapper=1 before-29a528=1') == 1
+        consumer_result = {}
+        if args.first_consumer:
+            from present_runtime_fixture import assess
+            consumer_result = assess(mode, code, text, fields)
+            passed = consumer_result['diagnostic_pass' if args.expect_refusal else 'functional_pass']
+
         passed = passed and not any(marker in text for marker in ('ERROR: AddressSanitizer', 'runtime error:', 'ERROR: LeakSanitizer'))
         rows.append(dict(mode=mode, returncode=code, complete=complete, caller=returned_caller,
-                         exact_red=exact_red, passed=passed, fatal=fields))
-        print(json.dumps(rows[-1]), flush=True)
+                         exact_red=exact_red, passed=passed, fatal=fields, **consumer_result))
+        print(json.dumps({key: value for key, value in rows[-1].items() if key != 'snapshots'}), flush=True)
     assert hashes == {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}
     result = dict(source_model=True, native_execution=False, memory_max='256M', swap_max=0,
-                  baseline_red=args.baseline_red, source_hashes=hashes, frozen_fixture_hashes=private_hashes, commands=commands, cases=rows)
-    (BUILD / ('baseline-red.json' if args.baseline_red else 'acceptance.json')).write_text(json.dumps(result, indent=2) + '\n')
+                  baseline_red=args.baseline_red, first_consumer=args.first_consumer, expected_refusal=args.expect_refusal,
+                  source_hashes=hashes, frozen_fixture_hashes=private_hashes, commands=commands, cases=rows)
+    result_name = ('diagnostic.json' if args.expect_refusal else 'functional.json') if args.first_consumer else ('baseline-red.json' if args.baseline_red else 'acceptance.json')
+    (BUILD / result_name).write_text(json.dumps(result, indent=2) + '\n')
     return 0 if all(row['passed'] for row in rows) else 1
 
 

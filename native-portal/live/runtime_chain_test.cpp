@@ -15,6 +15,9 @@
 using namespace native_portal::live;
 struct Chain:Fixture {
     Runtime router;
+#ifdef FT_FIRST_CONSUMER_TEST
+    int (*first_consumer)(Chain&,Client&,Request&,Reply&)=nullptr;
+#endif
 #ifdef FT_DORMANT_CURRENT_TEST
     #include "dormant_source_fixture.inc"
 #endif
@@ -849,6 +852,9 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         f.frame_end();std::puts("aggregate Runtime: native handler results, three surviving callers, last-demand disconnect PASS");return 0;
     }
     f.record(0);f.record(1);f.frame_end();
+#ifdef FT_FIRST_CONSUMER_TEST
+    if(f.first_consumer)return f.first_consumer(f,client,request,reply);
+#endif
     if(mode=="--foreign-debt") {
         std::fprintf(stderr,"camera-cleanup-guard: writer cannot invalidate recorded source debt\n");
         arena::Saved request{};request.x[0]=addr(f.app);request.x[1]=2;
