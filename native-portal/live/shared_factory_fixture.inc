@@ -4,16 +4,29 @@ static void bootstrap_factory_observe(Chain &f) {
     const auto F=addr(f.stack)+0x100,W=addr(f.command),P=addr(f.bootstrap_pool),C=addr(f.executable);
     const auto before=native_reads.load();arena::Saved s{};s.sp=F;s.x[0]=addr(f.r)+0x5000;
     s.x[1]=Chain::base+0x478270;s.x[8]=F+0x98;s.x[19]=addr(f.r);s.x[30]=Chain::base+0x29a51c;
+    if(ancestry_case>=0)s=relocate_arguments(factory_ancestry_vectors[ancestry_case][0],f,F,P,W,addr(f.r)+0x5000);
     const auto root=s;
     auto emit=[&](uint64_t pc) {const auto copy=s;f.router.event(pc,s);assert(!std::memcmp(&copy,&s,sizeof s));};
-    emit(0x3053f8);s.sp-=0x30;s.x[0]=W;s.x[1]=root.x[0];s.x[2]=root.x[1];s.x[30]=Chain::base+0x30548c;emit(0x305308);
-    s.sp-=0x20;s.x[0]=P;s.x[1]=root.x[1];s.x[8]=W+8;s.x[30]=Chain::base+0x305330;emit(0x302790);
+    emit(0x3053f8);s.sp-=0x30;s.x[0]=W;s.x[1]=root.x[0];s.x[2]=root.x[1];s.x[30]=Chain::base+0x30548c;
+    if(ancestry_case>=0)s=relocate_arguments(factory_ancestry_vectors[ancestry_case][1],f,F-0x30,P,W,root.x[0]);
+    emit(0x305308);
+    s.sp-=0x20;s.x[0]=P;s.x[1]=root.x[1];s.x[8]=W+8;s.x[30]=Chain::base+0x305330;
+    if(ancestry_case>=0)s=relocate_arguments(factory_ancestry_vectors[ancestry_case][2],f,F-0x50,P,W,root.x[0]);
+    emit(0x302790);
     s.sp-=0x30;s.x[30]=Chain::base+0x3027b0;emit(0x304e60);
     s.sp-=0x60;s.x[19]=P;s.x[21]=W+8;s.x[22]=C;emit(0x304ec8);emit(0x304ecc);
     s.sp=F-0x30;s.x[30]=Chain::base+0x30548c;emit(0x3053a8);
     s.x[20]=F+0x98;s.x[22]=W;emit(0x305490);
     s=root;s.x[0]=F+0x98;emit(0x305470);
-    assert(native_reads.load()==before);f.s=s; // actual initializer publication follows
+    assert(native_reads.load()==before);
+    if(ancestry_case>=0) {
+        s=relocate_arguments(factory_ancestry_vectors[ancestry_case][3],f,F,P,W,root.x[0]);
+        // Desktop stopped before STR 29a528. Its caller has cleared the result
+        // slot; x0 and the renderer field still name the old wrapper.
+        put(f.stack,0x198,uint64_t(0));put(f.r,0x1380,s.x[0]);
+        assert(s.x[0]!=W && s.x[1]==W && s.x[19]==addr(f.r));
+    }
+    f.s=s; // actual initializer publication follows
 }
 static void shared_factory_sequence(Chain &f,const std::string &mode) {
     const uint64_t P=addr(f.r)+0x11e0,C=addr(f.other),W=addr(f.bootstrap_wrapper);
@@ -22,6 +35,7 @@ static void shared_factory_sequence(Chain &f,const std::string &mode) {
     f.begin_command(C,0,P);
     const auto before=native_reads.load();
     auto emit=[&](uint64_t pc,arena::Saved s) {
+        if(argument_vector && pc==0x302790)s=relocate_arguments(*argument_vector,f,s.sp,P,W,A);
         if((mode=="shared-bad-pre-ret" && pc==0x3053a8) ||
            (mode=="shared-bad-interrupted" && pc==0x304ecc) ||
            (mode=="shared-bad-cleanup-call" && pc==0x311648))return;

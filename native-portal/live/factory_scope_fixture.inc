@@ -2,7 +2,7 @@
 // Source-only schedules through the actual default Runtime. Desktop's complete
 // contract supplies the root registers, pool, name and caller-local output slot.
 // Native bodies/order and queue results remain modeled, not instruction execution.
-static int factory_scope_probe(const std::string& mode,Chain *existing=nullptr) {
+static int factory_scope_probe(const std::string& mode,Chain *existing=nullptr,bool prepublication=false) {
     auto owned=existing?std::unique_ptr<Chain>{}:std::make_unique<Chain>();
     auto *f=existing?existing:owned.get();active=f;if(!existing)f->bootstrap_router();
     const auto pool=addr(f->r)+0x11e0;
@@ -21,7 +21,7 @@ static int factory_scope_probe(const std::string& mode,Chain *existing=nullptr) 
         const auto original=s;f->router.event(pc,s);
         assert(!std::memcmp(&original,&s,sizeof s));
     };
-    arena::Saved s{};s.sp=addr(f->outer_stack)+0x1000;
+    arena::Saved s{};s.sp=prepublication?addr(f->stack)+0x100:addr(f->outer_stack)+0x1000;
     struct Root {uint64_t lr,slot,name,queue;unsigned renderer;};
     constexpr Root roots[]={{0x297878,0x50,0x477ae8,0x297928,20},
         {0x297b70,0x80,0x477c50,0x297c70,19},
@@ -30,10 +30,20 @@ static int factory_scope_probe(const std::string& mode,Chain *existing=nullptr) 
         {0x29ca68,0xa8,0x4784a8,0x29cba0,24}};
     unsigned index=1;
     if(mode.rfind("factory-root-",0)==0)index=unsigned(mode.at(13)-'0');
+    if(mode.rfind("factory-argument-",0)==0)index=2;
     assert(index<5);const auto root=roots[index];
     s.x[0]=pool;s.x[1]=Chain::base+root.name;s.x[8]=s.sp+root.slot;
-    s.x[root.renderer]=addr(f->r);if(index==2)s.x[24]=pool;
+    // 29a458 ADRP overwrites x24 after 29a450 MOV x0,x24.
+    // Callback entry retains the pool only in x0, not in x24.
+    s.x[root.renderer]=addr(f->r);if(index==2)s.x[24]=Chain::base+0x478000;
     s.x[30]=Chain::base+root.lr;
+    if(argument_vector)s=relocate_arguments(*argument_vector,*f,s.sp,pool,addr(f->bootstrap_wrapper),addr(f->r)+0x5000);
+    if(mode=="factory-argument-pool")++s.x[0];
+    if(mode=="factory-argument-renderer")++s.x[19];
+    if(mode=="factory-argument-slot")++s.x[8];
+    if(mode=="factory-argument-name")++s.x[1];
+    if(mode=="factory-argument-sp")++s.sp;
+    if(mode=="factory-argument-lr")++s.x[30];
     const auto acquire=s;
     const bool member_ctor=mode=="factory-member-ctor",member_reset=mode=="factory-member-reset";
     const auto C=addr(f->bootstrap_command),M=s.sp+0x300;
@@ -85,6 +95,7 @@ static int factory_scope_probe(const std::string& mode,Chain *existing=nullptr) 
         uint64_t pc=0x302790;
         if(mode.rfind("factory-site-",0)==0)pc=std::stoull(mode.substr(13),nullptr,16);
         emit(pc,s);
+        if(mode=="factory-argument-reentry")emit(pc,s);
         if(mode.rfind("factory-diag-",0)==0) {
             auto later=s;later.x[0]=0;later.x[8]=0;later.x[30]=Chain::base+0xfeed;
             emit(0x302790,later); // first receipt cannot be replaced by later facts
@@ -124,7 +135,7 @@ static int factory_scope_probe(const std::string& mode,Chain *existing=nullptr) 
     }
     s={};s.sp=addr(f->outer_stack)+0x1000;s.x[0]=pool+0xd0;
     s.x[1]=addr(f->other);s.x[30]=Chain::base+FT_STOCK_POOL_LR;
-    if(mode!="factory-selected-sibling")emit(0x311648,s); // existing proved caller, not a new LR allowance
+    if(!prepublication && mode!="factory-selected-sibling")emit(0x311648,s); // existing proved caller, not a new LR allowance
     if(member_ctor || member_reset) {
         arena::Saved q{};q.sp=M;q.x[19]=C;q.x[20]=C;q.x[1]=addr(f->r)+0x50;
         if(member_ctor) {
@@ -143,7 +154,7 @@ static int factory_scope_probe(const std::string& mode,Chain *existing=nullptr) 
     assert(native_reads.load()==before);
     assert(!f->router.diagnostics().frames && !f->router.diagnostics().pending && !f->enqueues);
     assert(!munmap(guard,4096));
-    if(existing) {s={};s.x[0]=addr(f->other);emit(0x4b3d0,s);}
+    if(existing) {if(!prepublication){s={};s.x[0]=addr(f->other);emit(0x4b3d0,s);}}
     else {owned.reset();active=nullptr;} // flush real bounded diagnostic logger
     std::fprintf(stderr,"FACTORY mode=%s reads=0 saved-unchanged=1 no-work=1 returned=1\n",mode.c_str());
     return 0;

@@ -129,10 +129,11 @@ int NativeStockFactCollector::observe_shared(uint64_t pc,const arena::Saved &s) 
         struct Root {uint64_t lr,slot,name;unsigned renderer;};
         constexpr Root roots[]={{0x297878,0x50,0x477ae8,20},{0x297b70,0x80,0x477c50,19},
             {0x29a464,0x88,0x4780c0,19},{0x29af28,0x80,0x478388,23},{0x29ca68,0xa8,0x4784a8,24}};
+        // At LR 29a464 the name-page ADRP has already clobbered x24.
+        // x0, not x24, carries the pool derived from the retained renderer.
         for(const auto &r:roots)if(lr==r.lr && ptr(s.x[r.renderer],0x12b0) &&
             s.x[0]==s.x[r.renderer]+0x11e0 && s.x[1]==base_+r.name &&
-            s.sp>=0x90 && ptr(s.sp,r.slot+8) && s.x[8]==s.sp+r.slot &&
-            (lr!=0x29a464 || s.x[24]==s.x[0])) {
+            s.sp>=0x90 && ptr(s.sp,r.slot+8) && s.x[8]==s.sp+r.slot) {
             o={};o.kind=1;o.phase=3;o.entry=active_;o.acquire=active_;
             o.p=s.x[0];o.slot=s.x[8];o.name=s.x[1];return 1;
         }

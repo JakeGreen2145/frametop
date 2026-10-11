@@ -29,6 +29,7 @@ def main():
     p.add_argument('--current', action='store_true', help='Default Runtime first stereo and settlement')
     p.add_argument('--modes', help='Comma-separated focused cases from the selected suite')
     p.add_argument('--fixtures', type=Path, default=Path('/home/jakeg/.hermes/work/frametop-native-live-integration/native-portal/build/camera-runtime-asan'))
+    p.add_argument('--factory-vectors', type=Path, default=Path('/home/jakeg/.hermes/work/desktop-compositor-re/factory-call-arguments-a374d89/SAVED-VECTORS.json'))
     args = p.parse_args()
     if not args.in_scope:
         unit = 'dormant-runtime-' + uuid.uuid4().hex + '.scope'
@@ -82,6 +83,8 @@ def main():
         flags += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
     private_hashes = {}
     if args.current:
+        from factory_arguments_data import header, PIN
+        (BUILD / 'factory-arguments.private.hpp').write_text(header(args.factory_vectors))
         # Opaque frozen headers only. Do not import their native evidence runners.
         private_hashes = {
             'pump.private.hpp': '2619b907e95b98af18a1367aaf38b0a9463510ce63483cd5541c2d579e03d1c0',
@@ -92,6 +95,8 @@ def main():
             content = (args.fixtures / name).read_bytes()
             assert hashlib.sha256(content).hexdigest() == expected, 'frozen fixture changed: ' + name
             (BUILD / name).write_bytes(content)
+        private_hashes['SAVED-VECTORS.json'] = PIN
+        private_hashes['factory-arguments.private.hpp'] = hashlib.sha256((BUILD / 'factory-arguments.private.hpp').read_bytes()).hexdigest()
         # Source-model coordinates already present in the owning fixture and
         # published native contracts, not a fresh instruction-execution claim.
         coordinates = dict(NATIVE_RUN_RETURN=0x182aa8, BOOT_DISPATCH_LR=0x6caf0,
@@ -150,6 +155,8 @@ def main():
                         'factory-selected-no-positive': '0x304ecc', 'factory-selected-no-pre-ret': '0x305490',
                         'factory-selected-null-output': '0x305470', 'factory-selected-wrong-c': '0x304ec8',
                         'factory-selected-reuse': '0x304ec8'}
+    factory_negative.update({'factory-argument-' + name: '0x302790'
+                             for name in ('pool', 'renderer', 'slot', 'name', 'sp', 'lr', 'reentry')})
     factory_modes += [mode for mode in factory_negative if mode not in factory_modes]
     factory_modes += ['factory-member-ctor', 'factory-member-reset', 'factory-selected-sibling']
     factory_modes += [f'factory-root-{index}-{result}' for index in range(5) for result in ('positive', 'null')]
@@ -170,6 +177,11 @@ def main():
                        **{'shared-bad-free-' + role: '0x4b3d0' for role in ('r', 'w', 'c')}}
     if args.current:
         modes += shared_modes + list(shared_negative) + ['shared-chain-cold', 'shared-chain-warm']
+        modes += [f'initializer-chain-{state}-{result}' for state in ('cold', 'warm') for result in ('positive', 'null')]
+        modes += ['initializer-chain-no-' + proof for proof in ('gpu', 'cpu', 'source')]
+        modes += [f'vectors-{case}-root-{root}-{result}' for case in range(2) for root in range(6) for result in ('positive', 'null')]
+        modes += [f'initializer-chain-vectors-{case}-{state}-{result}' for case in range(2)
+                  for state in ('cold', 'warm') for result in ('positive', 'null')]
         modes += factory_modes
     if args.modes:
         requested = args.modes.split(',')
@@ -214,6 +226,13 @@ def main():
             passed = exact_red
         if args.current:
             passed = code == 0 and text.count('stereo=1 pending-Off=1 exact-settlement=1 disconnects=0 clean-teardown=1') == 2
+            if mode.startswith('initializer-chain-'):
+                passed = passed and text.count('INITIALIZER direct-before-wrapper=1 before-29a528=1') == 2
+            if mode.startswith('vectors-'):
+                live = [dict(word.split('=', 1) for word in line.split()[1:])
+                        for line in text.splitlines() if line.startswith('ft-native-live ')]
+                passed = (code == 0 and 'VECTORS mode=' + mode + ' replayed=1' in text and bool(live)
+                          and all(row.get('first_stock_pc') == '0x0' and row.get('first_evidence_pc') == '0x0' for row in live))
             if mode in factory_modes:
                 live = [dict(word.split('=', 1) for word in line.split()[1:])
                         for line in text.splitlines() if line.startswith('ft-native-live ')]
@@ -278,11 +297,14 @@ def main():
             if mode == 'missing-hook':
                 passed = code == 0 and text.count('CURRENT missing-hook refused=1 clean-teardown=1') == 2
             if mode in ('partial-upload', 'rejected-enqueue', 'source-uncertainty', 'identity-migration',
-                        'actual-return', 'no-gpu', 'no-cpu', 'no-source'):
+                        'actual-return', 'no-gpu', 'no-cpu', 'no-source',
+                        'initializer-chain-no-gpu', 'initializer-chain-no-cpu', 'initializer-chain-no-source'):
                 passed = (code == -6 and 'CURRENT pending cleanup negative=' + mode + ' native_cleanup=0' in text
                           and fields.get('event') == '0x000000000008b020'
                           and fields.get('reason') == '0x0000000000000005' and fields.get('joined') == '1'
                           and 'CURRENT forbidden native cleanup' not in text and 'Assertion' not in text)
+                if mode.startswith('initializer-chain-'):
+                    passed = passed and text.count('INITIALIZER direct-before-wrapper=1 before-29a528=1') == 1
         passed = passed and not any(marker in text for marker in ('ERROR: AddressSanitizer', 'runtime error:', 'ERROR: LeakSanitizer'))
         rows.append(dict(mode=mode, returncode=code, complete=complete, caller=returned_caller,
                          exact_red=exact_red, passed=passed, fatal=fields))

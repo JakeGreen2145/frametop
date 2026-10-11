@@ -120,7 +120,9 @@ struct Chain:Fixture {
             begin_command(addr(bootstrap_command));put(r,0x1380,addr(bootstrap_wrapper));
         }
         if(observe)observe(*this);
-        s.x[19]=addr(r);s.x[1]=turnover?addr(bootstrap_wrapper):addr(command);event(0x29a528);
+        s.x[19]=addr(r);s.x[1]=turnover?addr(bootstrap_wrapper):addr(command);
+        const auto publication=s;event(0x29a528);assert(!std::memcmp(&publication,&s,sizeof s));
+        put(r,0x1380,s.x[1]); // modeled displaced STR, after its observer
         s.x[24]=addr(r);s.x[0]=1;event(0x7fdbc);
     }
     void bootstrap_turnover(const std::string &mode,bool post_run=false) {
