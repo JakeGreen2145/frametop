@@ -17,7 +17,7 @@ int main() {
     assert(a.original(7,[&]{retained=true;return true;}));assert(retained);
     assert(!a.engage(7,[]{assert(false);return true;}));
     assert(!a.begin_close(8));
-    assert(a.begin_close(7));
+    assert(a.begin_close(7));assert(!a.reader(7,true));
     assert(!a.original(7,[]{assert(false);return true;}));
     assert(!a.finish_close(7));a.original_return(7);assert(a.finish_close(7));
     assert(!a.engage(7,[]{assert(false);return true;}));
@@ -28,7 +28,9 @@ int main() {
     assert(b.engage(11,[]{return true;}));
     assert(!b.original(11,[]{assert(false);return true;}));
     assert(b.reader(11));assert(b.begin_close(11));assert(!b.reader(11));
-    assert(!b.finish_close(11));b.reader_return(11);assert(b.finish_close(11));
+    assert(!b.finish_close(11));b.reader_return(11);assert(b.close_ready(11));
+    assert(b.reader(11,true));assert(!b.close_ready(11));b.reader_return(11);
+    assert(b.finish_close(11));assert(!b.reader(11,true));
     // Real overlap: retain and complete native-original reservation survive
     // close. No callback/owner pump and no sleeps are involved.
     RuntimeAdmission c;assert(c.bind(13));

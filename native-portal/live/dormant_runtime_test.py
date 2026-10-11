@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import resource
+import re
 import socket
 import subprocess
 import sys
@@ -20,9 +21,11 @@ SCRATCH = Path('/home/jakeg/.hermes/cache/scratch')
 
 
 def main():
+    global BUILD
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--in-scope', action='store_true', help=argparse.SUPPRESS)
     p.add_argument('--baseline-red', action='store_true')
+    p.add_argument('--sanitize', action='store_true')
     args = p.parse_args()
     if not args.in_scope:
         unit = 'dormant-runtime-' + uuid.uuid4().hex + '.scope'
@@ -35,18 +38,45 @@ def main():
             raise
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     os.environ['TMPDIR'] = str(SCRATCH)
+    if args.sanitize:
+        BUILD = BUILD / 'sanitize'
     BUILD.mkdir(parents=True, exist_ok=True)
+    # Modeled installed inventory from literal canonical inputs, NOT either
+    # collector's required-sites list. Do not import prepare or open an ELF.
+    prep = ast.parse((ROOT / 'live/prepare.py').read_text())
+    names = {'SOURCE_COMP', 'SOURCE_CLIENT', 'STOCK_OBSERVERS', 'ARENA', 'PASS', 'LIFECYCLE', 'EVIDENCE'}
+    values = {}
+    for node in prep.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names:
+            values[node.targets[0].id] = ast.literal_eval(node.value)
+        elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) and node.target.id == 'SOURCE_COMP':
+            values['SOURCE_COMP'] += ast.literal_eval(node.value)
+    comp = set()
+    for name in ('SOURCE_COMP', 'ARENA', 'PASS', 'LIFECYCLE', 'EVIDENCE'):
+        comp.update(values[name])
+    comp.update(int(pc, 0) for pc in re.findall(r'\{"[^\"]+",(0x[0-9a-f]+),', (ROOT / 'hooks/pins.h').read_text()))
+    manifest = json.loads((ROOT / 'live/runtime-sites.json').read_text())
+    comp.update(row['relative_pc'] for row in manifest['sites'])
+    client = set(values['SOURCE_CLIENT'])
+    client.update(pc for _, module, pc, _, _ in values['STOCK_OBSERVERS'] if module == 'client')
+    assert (len(comp), len(client)) == (200, 32), 'canonical observer inventory changed; reconcile rather than guess'
+    inventory = ('// Modeled installation only, canonical PCs without ELF/loader execution.\n'
+                 + 'static constexpr uint64_t modeled_comp_sites[]={' + ','.join(map(hex, sorted(comp))) + '};\n'
+                 + 'static constexpr uint64_t modeled_client_sites[]={' + ','.join(hex(pc | (1 << 63)) for pc in sorted(client)) + '};\n')
+    (BUILD / 'dormant-inventory.private.hpp').write_text(inventory)
     tree = ast.parse((ROOT / 'live/runtime_test.py').read_text())
     sources = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
                    and any(isinstance(t, ast.Name) and t.id == 'SOURCES' for t in n.targets))
     flags = ['-std=c++17', '-O0', '-g1', '-Wall', '-Wextra', '-Werror', '-pthread', '-no-pie',
              '--param=ggc-min-expand=10', '--param=ggc-min-heapsize=4096',
-             '-I' + str(ROOT / 'include'), '-I/home/jakeg/.hermes/work/frame-native-pipeline-review/include',
+             '-I' + str(ROOT / 'include'), '-I' + str(BUILD), '-I/home/jakeg/.hermes/work/frame-native-pipeline-review/include',
              '-DFT_NATIVE_PORTAL_TEST_CALL']
+    if args.sanitize:
+        flags += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
     inputs = [p for p in ROOT.rglob('*') if p.is_file() and 'build' not in p.relative_to(ROOT).parts
               and p.suffix in ('.cpp', '.hpp', '.inc', '.h')]
     hashes = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}
-    fingerprint = hashlib.sha256(json.dumps([hashes, flags], sort_keys=True).encode()).hexdigest()
+    fingerprint = hashlib.sha256(json.dumps([hashes, flags, inventory], sort_keys=True).encode()).hexdigest()
     stamp = BUILD / 'fingerprint'
     rebuild = not stamp.exists() or stamp.read_text() != fingerprint
     commands = []
@@ -65,7 +95,10 @@ def main():
             run(['g++', *flags, *objects, '-o', exe])
         stamp.write_text(fingerprint)
     rows = []
-    for mode in ['baseline', 'responsive', 'blocked', 'nested']:
+    modes = ['baseline', 'responsive', 'blocked', 'nested']
+    if not args.baseline_red:
+        modes += ['cold-seal', 'connect', 'engage-race']
+    for mode in modes:
         reader, writer = socket.socketpair();chunks = []
         def drain():
             while True:
@@ -74,7 +107,8 @@ def main():
                     return
                 chunks.append(data)
         thread = threading.Thread(target=drain);thread.start()
-        child = subprocess.Popen([str(exe), mode], stdout=writer.fileno(), stderr=writer.fileno())
+        child = subprocess.Popen([str(exe), mode], stdout=writer.fileno(), stderr=writer.fileno(),
+                                 env={**os.environ, 'FT_DORMANT_FIXTURE_LEGACY': '1' if args.baseline_red else '0'})
         writer.close()
         try:
             code = child.wait(timeout=15)
@@ -92,7 +126,10 @@ def main():
                      and fields.get('event') == '0x000000000013a100' and fields.get('bound') == '1'
                      and fields.get('current_tid') != fields.get('owner_tid')
                      and 'DORMANT at-SIGABRT originals=0' in text and 'DORMANT bound=1 zero_work=1' in text)
-        passed = returned_caller if mode in ('baseline', 'blocked', 'nested') else complete
+        passed = returned_caller if mode != 'responsive' else complete
+        engaged = 'DORMANT metadata-engaged=1' in text
+        if mode in ('cold-seal', 'connect', 'engage-race'):
+            passed = passed and engaged
         if args.baseline_red and mode in ('blocked', 'nested'):
             passed = exact_red
         rows.append(dict(mode=mode, returncode=code, complete=complete, caller=returned_caller,

@@ -45,8 +45,20 @@
         constexpr uint64_t client_tag=UINT64_C(1)<<63;
         const bool client=(pc&client_tag)!=0;const uint64_t offset=pc&~client_tag;
         bool observation=client;
-        bool ending=false;
+        bool ending=false,field=false,boundary=false;
+        if(client) {
+            field=offset==0x32a628;
+            switch(offset) {
+            case 0x3280ec:case 0x327678:case 0x328150:case 0x3276d8:
+            case 0x258438:case 0x2584c4:case 0x2584f8:case 0x258508:boundary=true;break;
+            default:break;
+            }
+        }
         if(!client)switch(pc) {
+        case 0x15f9fc:case 0x15fa60:case 0x15fa94:case 0x15fbc4:case 0x15fd30:
+        case 0x15fa04:case 0x15fa8c:case 0x15fabc:case 0x15fbc0:case 0x15fc4c:
+        case 0x15fd48:case 0x15fd90:case 0x15fbd0:case 0x15fc08:case 0x16013c:
+            observation=field=true;break;
         case 0x15fee4:case 0x15fee8:case 0x160164:case 0x160168:case 0x160184:case 0x160188:
         case 0x160380:case 0x160384:case 0x1605c4:case 0x1605c8:
         case 0x15fa24:case 0x15fa28:case 0x15fa44:case 0x15fa48:case 0x15fae8:case 0x15faec:
@@ -55,15 +67,24 @@
         default:break;
         }
         if(!observation)return false;
+        const auto module=client?ClientSourceBinding::Module::Client:ClientSourceBinding::Module::Compositor;
+        if(auto* scope=dormant_scope()) {
+            if(!scope->method)dormant_history->invalidate();
+            else if(ending)scope->method->camera_return(offset,s);
+            else if(field)scope->method->camera_fact(module,offset,s);
+            else if(boundary)scope->method->boundary_event(module,offset,s);
+            else scope->method->event(module,offset,s);
+            return true;
+        }
         // Global hooks also see unrelated native calls. Never borrow a new ticket
         // on bootstrap/foreign ingress and never read owner optionals off-thread.
         if(tid()!=owner_tid) {if(camera_bound.load())source_foreign.store(true);return true;}
+        if(field || boundary)return true; // legacy engine has no such PC handler
         if(!source_observing)return true;
         if(ending) {
             const uint64_t expected=pc==0x15fdc8?0x15fcc0:(pc==0x15fa78 || pc==0x15faa4)?0x15f9e0:0x15fba8;
             source_finish(s.x[0],source_method==expected);return true;
         }
-        const auto module=client?ClientSourceBinding::Module::Client:ClientSourceBinding::Module::Compositor;
         if(source_binding->event(module,offset,s) && source)source->observe(camera_binding,module,offset,s);
         return true;
     }

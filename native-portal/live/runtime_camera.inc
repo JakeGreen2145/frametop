@@ -2,7 +2,11 @@
 // Included inside Runtime::Impl. All original method calls use loader-generated
 // bypasses. No owner queue lock is held over native execution or listener waits.
     CameraOwner camera_owner;
-    NativeSourceAdmission native_source{this,source_authenticate};
+    static bool source_stock_owner(void* p) noexcept {
+        const auto& self=*static_cast<Impl*>(p);
+        return getpid()==self.pid && tid()==self.owner_tid && self.camera_bound.load();
+    }
+    NativeSourceAdmission native_source{this,source_authenticate,source_stock_owner};
     SourceAdmission* source=nullptr;
     std::atomic<bool> camera_bound{false};
     // Serializes only owned decisions. Never held across original/native calls.
@@ -178,7 +182,9 @@
         if(!camera_owner.bind_handoff(b,id.renderer_generation)) {
             camera_join_refused(camera_owner.bind_stage()==CameraOwner::BindStage::Published?JoinRefusal::Barrier:JoinRefusal::NativeBind);return;
         }
-        camera_binding=b;camera=c.camera;camera_bound.store(true);
+        camera_binding=b;camera=c.camera;
+        if(!dormant_bound(b,c.version))camera_route_abort(CameraFatalReason::Publication,0x14e5a8);
+        camera_bound.store(true);
         d.join_rejection=0;camera_snapshot_locked();
     }
     [[noreturn]] void camera_route_abort(CameraFatalReason reason,uint64_t pc) noexcept {
@@ -247,6 +253,10 @@
     }
     bool camera_route(uint64_t pc,arena::Saved& s) noexcept {
         if(pc==0x15fbb8 || pc==0x15fb20) {
+            if(auto* scope=dormant_scope()) {
+                if(s.x[19]!=scope->binding.camera)camera_route_abort(CameraFatalReason::DecisionScope,pc);
+                return true; // unchanged native decision, no held-success selection
+            }
             // Actual native decision boundaries. The emitter selects 15fbc8
             // (Release's native no-op result) or 15fb74 (Clear's lock unwind).
             // Never replace x0 with logical acceptance or a cached result.
@@ -285,6 +295,10 @@
         }
         if((cleanup_pc(pc) || writer_pc(pc)) && camera_unbound_original(pc,s))return true;
         if(cleanup_pc(pc)) {
+            if(dormant_enabled && dormant_scope()) {
+                dormant_admission.begin_close(dormant_version);
+                camera_route_abort(CameraFatalReason::CleanupRefused,pc); // exact retained caller cannot wait for itself
+            }
             // Nested resource cleanup is within the already quiescent outer
             // application cleanup. Do not reacquire or self-wait in that call.
             if((tid()==owner_tid || (tid()==bootstrap_tid && joined)) && camera_cleanup_active)return true;
@@ -303,6 +317,7 @@
             return true;
         }
         if(!writer_pc(pc))return false;
+        if(camera_bound.load() && dormant_original(pc,s))return true;
         if(camera_bound.load()) {
             const bool app_entry=pc==0x6d6e0 || pc==0x6d6f0;
             const bool camera_entry=pc==0x15f9e0 || pc==0x15fba8 || pc==0x15f938 || pc==0x15faf8 || pc==0x15fcc0;
@@ -421,6 +436,21 @@
     }
     void camera_maintenance(bool close=false) noexcept {
         if(!camera_bound.load() || tid()!=owner_tid || camera_active || camera_closed)return;
+        if(dormant_enabled && close && !camera_closing) {
+            if(!dormant_admission.begin_close(dormant_version))return;
+            // Retained callers keep their observation permission until the whole
+            // original returns. Do not close their native gate underneath them.
+            if(!dormant_admission.close_ready(dormant_version))return;
+        }
+        if(dormant_enabled && !dormant_engaged) {
+            if(close && !camera_closing)camera_closing=camera_owner.begin_close();
+            if(camera_closing && dormant_admission.close_ready(dormant_version)) {
+                camera_closed=camera_owner.finish_close();
+                if(camera_closed && !dormant_admission.finish_close(dormant_version))std::abort();
+                std::lock_guard<std::mutex> lock(camera_join_mutex);camera_snapshot_locked();
+            }
+            return; // no owner arbiter/source reader was ever admitted
+        }
         if(close && !camera_closing)camera_closing=camera_owner.begin_close();
         if(!camera_closing)camera_owner.pump(8);
         auto poll=[&](const CameraBinding&,coordination::DemandArbiter& arbiter) {
@@ -446,7 +476,9 @@
                     return receipt;
                 });
             });
+            if(dormant_enabled && !dormant_admission.close_ready(dormant_version))return;
             camera_closed=camera_owner.finish_close();
+            if(dormant_enabled && camera_closed && !dormant_admission.finish_close(dormant_version))std::abort();
             {std::lock_guard<std::mutex> lock(camera_join_mutex);camera_snapshot_locked();}
         }
     }

@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 #include "runtime.hpp"
 #include "native_source_admission.hpp"
+#include "runtime_admission.hpp"
+#include "../runtime/native_stock_facts.hpp"
+#include "stock_observer_coverage.h"
+#pragma weak ft_native_portal_installed_sites
+#include <algorithm>
 extern "C" uint64_t ft_native_portal_original(uint64_t) noexcept __attribute__((weak));
 extern "C" uint64_t ft_native_portal_camera_coverage() noexcept __attribute__((weak));
 extern "C" bool ft_native_portal_source_modules(uint64_t*,uint64_t*) noexcept __attribute__((weak));
@@ -85,7 +90,8 @@ struct Runtime::Impl {
     bool layer_effective=false;
     bool policy_ready=false,claimed_layer=false;
 
-    Backend backend;runtime::Evidence evidence;arena::Bridge bridge{evidence.bridge_memory()};
+    Backend backend;runtime::NativeStockFactCollector stock_facts;
+    runtime::Evidence evidence;arena::Bridge bridge{evidence.bridge_memory()};
     std::unique_ptr<Server> server;
     std::optional<FrameGate> gate;std::optional<DemandAdapter> demand;
     std::optional<Adapter> adapter;std::optional<binding::Command> command;
@@ -151,6 +157,7 @@ struct Runtime::Impl {
     }
     std::atomic<bool> collector_stop{false};std::thread collector;
     #include "runtime_camera.inc"
+    #include "runtime_dormant.inc"
     #include "source_router.inc"
     #include "source_command.inc"
     explicit Impl(SourceAdmission* admission,bool production=false):source(production?&native_source:admission){published.publish(diag);live_published.publish(live);}
@@ -485,6 +492,7 @@ struct Runtime::Impl {
                      camera_diagnostic.run_seen=1;camera_diagnostic.run_authenticated=1;camera_diagnostic.run_rejection=0;
                      camera_diagnostic.start_scope=evidence.identity().renderer_generation;
                      camera_snapshot_locked();}
+                    if(dormant_enabled)stock_facts.handoff(evidence);
                     camera_handoff();
                 }
             } else {
@@ -510,21 +518,34 @@ struct Runtime::Impl {
         }
         if(external_pending.exchange(false) && demand) {demand->external_observed();owned=false;}
         camera_maintenance(stopped.load());
+        if(dormant_enabled && !dormant_engaged && (pc==0x11a3a4 || pc==0x147a48))dormant_engage();
+        const bool dormant=dormant_enabled && !dormant_engaged;
+        struct ReaderReservation {
+            Impl* self=nullptr;
+            ~ReaderReservation(){if(self)self->dormant_admission.reader_return(self->dormant_version);}
+        } reader;
+        if(dormant_enabled && dormant_engaged) {
+            if(camera_closed || !dormant_admission.reader(dormant_version,camera_closing))return;
+            reader.self=this;
+        }
         ++diag.events;live.pc=pc;
         constexpr uint64_t phase_pcs[]={0x7fda0,0x7fdbc,0x147a48,0x112b58,0x63920,0x1480b8,
             0x161d64,0x161d68,0x161ed8,0x2a1e18,0x29f1e8,0x3021d4,0x3021d8,0x316120,0x300a38};
         for(unsigned i=0;i<sizeof(phase_pcs)/sizeof(*phase_pcs);++i)if(pc==phase_pcs[i])live.phases|=1ull<<i;
         // Native queue instructions always run, including mixed stock submissions.
-        source_command_event(pc,s);
-        queue_event(pc,s);
+        if(!dormant){source_command_event(pc,s);queue_event(pc,s);}
+        const bool fact=dormant_fact_site(pc);
+        if(fact)stock_facts.capture(pc,s);
         if(pc==0x7fda0 || pc==0x29a14c || pc==0x29a150 || pc==0x7fdbc) {
             if(!evidence.route(bridge,pc,s))refuse(Refusal::NativeInitialization);
-            if(pc==0x7fdbc && evidence.initialized())attach();
+            if(fact)stock_facts.finish();
+            if(!dormant && pc==0x7fdbc && evidence.initialized())attach();
             publish();return;
         }
-        const bool graph_boundary=pc==0x2a1e18 || pc==0x2a2230 || pc==0x2a2320 || pc==0x2987d8 || pc==0x298840;
+        const bool graph_boundary=!dormant && (pc==0x2a1e18 || pc==0x2a2230 || pc==0x2a2320 || pc==0x2987d8 || pc==0x298840);
         if(graph_boundary)evidence.graph_event(pc,s);
         evidence.event(pc,s);
+        if(fact)stock_facts.finish();
         if(runtime::command_trace_pc(pc)) {
             const auto diagnostic=evidence.command_diagnostic();
             command_trace.push(pc,s,base,tid(),owner_tid.load(),CommandTrace::Owner,&diagnostic);
@@ -538,6 +559,10 @@ struct Runtime::Impl {
         if(pc==0x2987d4)arena_site=arena::Reset;
         if(arena_site<arena::SiteCount) {
             evidence.arena_event(bridge,arena_site,s);
+        }
+        if(dormant) {
+            if(shutdown_store || pc==0x29bd18 || pc==0x29c238) {stop_at(pc,s);backend.invalidate(Reason::Off);}
+            publish();return; // stock facts/classifiers only; no optional graph/source/idle readers
         }
         if(shutdown_store || pc==0x29bd18 || pc==0x29c238) {
             stop_at(pc,s);backend.invalidate(Reason::Off);if(adapter)adapter->off();refuse(Refusal::Stopped);
@@ -815,6 +840,21 @@ Runtime::Runtime():p_(new Impl(nullptr,true)){}
 Runtime::Runtime(SourceAdmission* source):p_(new Impl(source)){}
 Runtime::~Runtime()=default;
 bool Runtime::pin(uint64_t b,const char *sha) noexcept {
+    if(!p_->pinned && b && sha && !std::strcmp(sha,runtime::elf_sha256) &&
+       p_->source==&p_->native_source && ft_native_portal_installed_sites) {
+        std::array<uint64_t,256> sites{};
+        const size_t comp=ft_native_portal_installed_sites(FT_INSTALLED_SITES_VERSION,0,sites.data(),sites.size());
+        const size_t client=comp && comp<sites.size()?ft_native_portal_installed_sites(
+            FT_INSTALLED_SITES_VERSION,FT_STOCK_OBSERVER_CLIENT_TAG,sites.data()+comp,sites.size()-comp):0;
+        uint64_t comp_base=0,client_base=0;
+        if(!comp || comp>=sites.size() || !client || client>sites.size()-comp ||
+           !ft_native_portal_source_modules || !ft_native_portal_source_modules(&comp_base,&client_base) ||
+           comp_base!=b || !client_base || !p_->dormant_configure(sites.data(),comp+client)) {
+            // An actual but incomplete installed inventory cannot silently opt
+            // this production provider into unqualified source admission.
+            p_->source_foreign.store(true);
+        }
+    }
     if(!p_->evidence.pin(b,sha))return false;
     p_->base=b;p_->pinned=true;return true;
 }
