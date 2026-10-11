@@ -19,6 +19,7 @@ class NativeStockFactCollector {
     // Only after successful capture, on this owner before finish. No scalar
     // answer or Evidence obligation belongs to this classified global event.
     bool unrelated() const noexcept {return unrelated_;}
+    bool observing() const noexcept {return observation_.kind!=0;}
     void finish() noexcept;
     // Only after actual Evidence Run handoff and parent exclusion. No graph loan.
     bool handoff(const Evidence &) noexcept;
@@ -46,6 +47,14 @@ class NativeStockFactCollector {
     struct Turn {uint64_t w=0,c=0;Point entry{};unsigned phase=0;} turn_;
     struct Dispose {uint64_t w=0,c=0,p=0;Point entry{};unsigned phase=0;} dispose_;
     struct Begin {uint64_t c=0;Point entry{};bool loaded=false;} begin_;
+    // One bounded disjoint invocation. Copies only, never a native pointer loan,
+    // publication, generation or settlement authority. Nested ambiguity refuses.
+    struct Observation {
+        unsigned kind=0,phase=0; // direct acquisition, factory, wrapper cleanup
+        uint64_t owner=0,slot=0,w=0,c=0,p=0,name=0,renderer=0;
+        Point entry{},acquire{},pop{},positive{};
+    } observation_;
+    int observe_shared(uint64_t,const arena::Saved &) noexcept;
     struct Field {uint64_t address=0,value=0;};
     std::array<Member,64> members_{};
     std::array<Field,6> fields_{};size_t fields_count_=0;
@@ -65,5 +74,6 @@ class NativeStockFactCollector {
     static bool scalar_cb(void *,uint64_t,uint64_t,uint64_t &) noexcept;
     static bool bootstrap_cb(void *,uint64_t,const render::Identity &,uint64_t,uint64_t,uint64_t) noexcept;
     static bool complete_cb(void *) noexcept;
+    static bool cleanup_return_cb(void *,uint64_t,uint64_t) noexcept;
 };
 } // namespace native_portal::runtime

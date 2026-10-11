@@ -32,7 +32,13 @@ bool NativeStockFactCollector::install_coverage(const uint64_t *pcs,size_t n) no
     for(auto pc:required) {bool found=false;for(size_t i=0;i<n;++i)found=found || pcs[i]==pc;if(!found)return deny(pc);}
     coverage_=true;return true;
 }
-Evidence::StockFactReader NativeStockFactCollector::reader() noexcept {return {this,scalar_cb,bootstrap_cb,complete_cb};}
+Evidence::StockFactReader NativeStockFactCollector::reader() noexcept {return {this,scalar_cb,bootstrap_cb,complete_cb,cleanup_return_cb};}
+bool NativeStockFactCollector::cleanup_return_cb(void *u,uint64_t pc,uint64_t c) noexcept {
+    if(!u)return false;
+    const auto &self=*static_cast<NativeStockFactCollector*>(u);
+    return self.owner() && !self.failure_.load() && self.active_pc_==pc && pc==0x311648 &&
+        self.observation_.kind==3 && self.observation_.phase==4 && self.observation_.c==c;
+}
 bool NativeStockFactCollector::scalar_cb(void *u,uint64_t pc,uint64_t a,uint64_t &v) noexcept {return u && static_cast<NativeStockFactCollector*>(u)->scalar(pc,a,v);}
 bool NativeStockFactCollector::bootstrap_cb(void *u,uint64_t b,const render::Identity &i,uint64_t w,uint64_t c,uint64_t v) noexcept {return u && static_cast<NativeStockFactCollector*>(u)->bootstrap(b,i,w,c,v);}
 bool NativeStockFactCollector::complete_cb(void *u) noexcept {return u && static_cast<NativeStockFactCollector*>(u)->complete();}
@@ -74,15 +80,142 @@ bool NativeStockFactCollector::bootstrap(uint64_t b,const render::Identity &i,ui
     identity_=i;bootstrapped_=true;return true;
 }
 bool NativeStockFactCollector::handoff(const Evidence &e) noexcept {
-    if(getpid()!=pid_ || failure_.load() || !coverage_ || !bootstrapped_ || active_pc_ || ctor_.phase || begin_.c || turn_.phase || factory_.phase || dispose_.phase)return deny(0);
+    if(getpid()!=pid_ || failure_.load() || !coverage_ || !bootstrapped_ || active_pc_ || observation_.kind || ctor_.phase || begin_.c || turn_.phase || factory_.phase || dispose_.phase)return deny(0);
     const auto i=e.identity();const auto f=e.stock_command_facts();
     if(i.process_instance!=identity_.process_instance || i.renderer!=identity_.renderer || i.renderer_generation!=identity_.renderer_generation || i.device!=identity_.device || i.device_generation!=identity_.device_generation || f.command!=current_c_ || f.wrapper!=current_w_ || !e.application_owner().worker)return deny(0);
     tid_=pid_t(syscall(SYS_gettid));return true;
 }
 bool NativeStockFactCollector::complete() const noexcept {
-    if(!owner() || failure_.load() || !coverage_ || !bootstrapped_ || active_pc_ || ctor_.phase || begin_.c || turn_.phase || factory_.phase || dispose_.phase || !current_c_ || !current_w_)return false;
+    if(!owner() || failure_.load() || !coverage_ || !bootstrapped_ || active_pc_ || observation_.kind || ctor_.phase || begin_.c || turn_.phase || factory_.phase || dispose_.phase || !current_c_ || !current_w_)return false;
     for(const auto &m:members_)if(m.reset)return false;
     return true;
+}
+int NativeStockFactCollector::observe_shared(uint64_t pc,const arena::Saved &s) noexcept {
+    auto &o=observation_;
+    const auto lr=s.x[30]-base_;
+    auto owned_w=[&](uint64_t w) {return w && (w==current_w_ || w==turn_.w || w==factory_.w);};
+    auto owned_slot=[&](uint64_t slot) {
+        return slot && ((current_w_ && slot==current_w_+8) || (turn_.w && slot==turn_.w+8) ||
+            (factory_.w && slot==factory_.w+8) || (factory_.phase && slot==factory_.slot));
+    };
+    // Any address in the selected native frame wins over disjoint-root matching.
+    // This also catches malformed descendants whose subject or phase is wrong.
+    const auto F=turn_.phase?turn_.entry.sp-0xd0:factory_.entry.sp;
+    const bool owned_frame=(turn_.phase || factory_.phase || dispose_.phase) && F>=0xe0 && s.sp>=F-0xe0 && s.sp<=F;
+    const bool shared=pc==0x3053f8 || pc==0x305308 || pc==0x302790 || pc==0x304e60 ||
+        pc==0x304ec8 || pc==0x304ecc || pc==0x3053a8 || pc==0x305490 || pc==0x305470 ||
+        pc==0x305260 || pc==0x3052e0 || pc==0x3052ec || pc==0x3052f0;
+    // Dropping an observation receipt at a later caller/ancestor boundary grants
+    // nothing. Until that boundary pre-RET is NOT a completed factory. Incomplete
+    // scopes cannot be overwritten by a later invocation or permit engagement.
+    const bool terminal=(o.kind==1 && o.phase==5) || (o.kind==2 && o.phase==8) || (o.kind==3 && o.phase==5);
+    const bool root=pc==0x3053f8 || pc==0x305260 || pc==0x302790;
+    if(o.kind==2 && (pc==0x2a23f8 || pc==0x29a528) && o.renderer!=identity_.renderer) {
+        if(o.phase!=8 || s.sp!=o.entry.sp || s.x[30]!=o.entry.lr || s.x[19]!=o.renderer ||
+           (pc==0x2a23f8?s.x[0]:s.x[1])!=o.w ||
+           o.entry.lr!=base_+(pc==0x2a23f8?0x2a23e8:0x29a51c))return -1;
+        o={};return 1; // paired other-renderer continuation, not a scalar answer
+    }
+    if(o.kind && s.sp>=o.entry.sp && (!shared || root)) {
+        if(!terminal)return -1;
+        o={};
+    }
+    if(shared && (owned_frame || (pc==0x305260 && owned_w(s.x[0])) ||
+       ((pc==0x302790 || pc==0x304e60 || pc==0x3053f8) && owned_slot(s.x[8])) ||
+       ((pc==0x304ec8 || pc==0x304ecc) && owned_slot(s.x[21])) ||
+       (pc==0x305308 && owned_w(s.x[0])) ||
+       ((pc==0x3052e0 || pc==0x3052ec || pc==0x3052f0) && owned_w(s.x[19]))))return 0;
+    if(pc==0x302790 && !o.kind) {
+        struct Root {uint64_t lr,slot,name;unsigned renderer;};
+        constexpr Root roots[]={{0x297878,0x50,0x477ae8,20},{0x297b70,0x80,0x477c50,19},
+            {0x29a464,0x88,0x4780c0,19},{0x29af28,0x80,0x478388,23},{0x29ca68,0xa8,0x4784a8,24}};
+        for(const auto &r:roots)if(lr==r.lr && ptr(s.x[r.renderer],0x12b0) &&
+            s.x[0]==s.x[r.renderer]+0x11e0 && s.x[1]==base_+r.name &&
+            s.sp>=0x90 && ptr(s.sp,r.slot+8) && s.x[8]==s.sp+r.slot &&
+            (lr!=0x29a464 || s.x[24]==s.x[0])) {
+            o={};o.kind=1;o.phase=3;o.entry=active_;o.acquire=active_;
+            o.p=s.x[0];o.slot=s.x[8];o.name=s.x[1];return 1;
+        }
+        return 0; // preserve the exact six selected diagnostic predicates
+    }
+    if(pc==0x3053f8 && !o.kind) {
+        if(!ptr(s.x[0],0x40) || !ptr(s.x[19],0x16c0) || s.sp<0xe0 ||
+           !ptr(s.sp,0xa0) || s.x[8]!=s.sp+0x98 ||
+           (lr!=0x29a51c && !(lr==0x2a23e8 && s.x[19]!=identity_.renderer)))return 0;
+        o={};o.kind=2;o.phase=1;o.entry=active_;o.owner=s.x[0];o.slot=s.x[8];o.name=s.x[1];o.renderer=s.x[19];return 1;
+    }
+    if(pc==0x305260 && !o.kind) {
+        bool caller=false;for(auto x:{0x2953b4u,0x29c104u,0x29c54cu,0x2a23b4u,0x2a2404u,0x2a2420u})caller=caller || lr==x;
+        if(!caller || !ptr(s.x[0],0x10) || s.sp<0x30)return 0;
+        o={};o.kind=3;o.phase=1;o.entry=active_;o.w=s.x[0];return 1;
+    }
+    if(!o.kind)return 0;
+    if(o.kind==3) {
+        if(pc==0x3052e0) {
+            if(o.phase!=1 || s.sp!=o.entry.sp-0x30 || s.x[19]!=o.w ||
+               (s.x[1] && (s.x[1]==current_c_ || s.x[1]==turn_.c || s.x[1]==factory_.c)))return -1;
+            o.c=s.x[1];o.phase=2;return 1;
+        }
+        if(pc==0x3052ec) {
+            if(o.phase!=2 || !o.c || s.sp!=o.entry.sp-0x30 || s.x[19]!=o.w || s.x[1]!=o.c || s.x[0]<=0xd0)return -1;
+            o.p=s.x[0]-0xd0;o.phase=3;return 1;
+        }
+        if(pc==0x311648) {
+            if(o.phase!=3 || s.sp!=o.entry.sp-0x30 || s.x[19]!=o.w || s.x[1]!=o.c || lr!=0x3052f0 || s.x[0]!=o.p+0xd0)return -1;
+            // Known members MUST enter the ordinary ledger reducer below.
+            if(member(o.c))return 0;
+            o.phase=4;return 1;
+        }
+        if(pc==0x3052f0) {
+            if(s.sp!=o.entry.sp-0x30 || s.x[19]!=o.w)return -1;
+            if(o.c) {
+                if(o.phase!=4 || lr!=0x3052f0 || (s.x[0]&255)!=1)return -1;
+                if(auto *m=member(o.c))m->returned=true;
+            } else if(o.phase!=2)return -1; // native null bypass has no return value
+            o.phase=5;return 1;
+        }
+        if(shared)return -1;
+        return 0;
+    }
+    switch(pc) {
+    case 0x305308:
+        if(o.kind!=2 || o.phase!=1 || s.sp!=o.entry.sp-0x30 || lr!=0x30548c ||
+           s.x[1]!=o.owner || s.x[2]!=o.name || !ptr(s.x[0],0x10))return -1;
+        o.w=s.x[0];o.phase=2;return 1;
+    case 0x302790:
+        if(o.kind!=2 || o.phase!=2 || s.sp!=o.entry.sp-0x50 || lr!=0x305330 ||
+           s.x[8]!=o.w+8 || s.x[1]!=o.name || !ptr(s.x[0],0xd0))return -1;
+        o.p=s.x[0];o.acquire=active_;o.phase=3;return 1;
+    case 0x304e60:
+        if(o.phase!=3 || s.sp!=o.acquire.sp-0x30 || lr!=0x3027b0 ||
+           s.x[8]!=(o.kind==1?o.slot:o.w+8) || s.x[0]!=o.p)return -1;
+        o.pop=active_;o.phase=4;return 1;
+    case 0x304ec8: {
+        if(o.phase!=4 || s.sp!=o.pop.sp-0x60 || s.x[21]!=(o.kind==1?o.slot:o.w+8) ||
+           s.x[19]!=o.p || !s.x[22] || s.x[22]==current_c_ || s.x[22]==turn_.c || s.x[22]==factory_.c)return -1;
+        auto *m=member(s.x[22]);
+        if(m && (!m->made || !m->begun || m->reset || m->p!=o.p))return -1;
+        o.c=s.x[22];o.positive=active_;o.phase=9;return 1;
+    }
+    case 0x304ecc:
+        if((o.phase!=4 && o.phase!=9) || s.sp!=o.pop.sp-0x60 ||
+           s.x[21]!=(o.kind==1?o.slot:o.w+8) || s.x[19]!=o.p)return -1;
+        if(o.phase==9 && (s.x[30]!=o.positive.lr || s.x[22]!=o.c))return -1;
+        // Without the positive predecessor x22 is stale. No positive fact is
+        // created, even when those bits happen to name a tracked command.
+        o.phase=5;return 1;
+    case 0x3053a8:
+        if(o.kind!=2 || o.phase!=5 || s.sp!=o.entry.sp-0x30 || lr!=0x30548c)return -1;
+        o.phase=6;return 1;
+    case 0x305490:
+        if(o.kind!=2 || o.phase!=6 || s.sp!=o.entry.sp-0x30 || lr!=0x30548c || s.x[20]!=o.slot || s.x[22]!=o.w)return -1;
+        o.phase=7;return 1;
+    case 0x305470:
+        if(o.kind!=2 || (o.phase!=7 && o.phase!=1) || s.sp!=o.entry.sp ||
+           s.x[30]!=o.entry.lr || s.x[0]!=o.slot)return -1;
+        o.phase=8;return 1;
+    default:return shared?-1:0;
+    }
 }
 bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexcept {
     if(!owner())return deny(pc);
@@ -100,6 +233,12 @@ bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexce
     bool obligation=ctor_.phase || begin_.c || turn_.phase || factory_.phase || dispose_.phase;
     for(const auto& m:members_)obligation=obligation || m.reset;
     auto unrelated=[&] {unrelated_=true;return true;};
+    const auto observed=observe_shared(pc,s);
+    if(observed<0) {
+        if(pc==0x311648)if(auto *m=member(s.x[1]))m->begun=false;
+        return bad();
+    }
+    if(observed>0)return unrelated();
     // These hooks are process-global. Entry qualifies a new command by device;
     // descendants can only describe an existing owned invocation/member. Never
     // ask Evidence to read a missing scalar for an unrelated native invocation.
@@ -215,11 +354,17 @@ bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexce
         auto *m=member(s.x[1]);if(!m || !m->made)return bad();
         const bool begun=m->begun;m->begun=false; // entry revokes even a refused return
         if(!begun || m->reset || s.x[0]!=m->p+0xd0 || m->c==current_c_)return bad();
-        if(dispose_.phase) {
+        const bool observed_return=observation_.kind==3 && observation_.phase==3 && observation_.c==m->c;
+        const bool selected_return=dispose_.phase && (m->c==dispose_.c || s.sp==dispose_.entry.sp-0x30);
+        if(observed_return) {
+            // observe_shared already paired W/load/pre-BL/entry, including P.
+            observation_.phase=4;
+        } else if(selected_return) {
             if(dispose_.phase!=3 || s.sp!=dispose_.entry.sp-0x30 || s.x[30]!=base_+0x3052f0 || s.x[19]!=dispose_.w || m->c!=dispose_.c)return bad();
             dispose_.phase=4;
         } else if(!return_caller(s.x[30]-base_))return bad();
-        m->returned=!dispose_.phase;return command_fields(*m);
+        m->returned=!selected_return && !observed_return;
+        return command_fields(*m);
     }
     case 0x3052f0:
         if(dispose_.phase!=4 || s.sp!=dispose_.entry.sp-0x30 || s.x[19]!=dispose_.w || s.x[30]!=base_+0x3052f0 || (s.x[0]&255)!=1)return bad();
@@ -228,15 +373,12 @@ bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexce
     case 0x3053f8:
         // Bootstrap wrapper identity uses the existing qualified initializer
         // borrow. This collector's factory path is the authenticated turnover.
-        if(!bootstrapped_ && !turn_.phase)return true;
         if(factory_.phase || turn_.phase!=5 || s.sp<0xe0 || !ptr(s.sp,0xa0) || s.sp!=turn_.entry.sp-0xd0 || s.x[30]!=base_+0x2a23e8 || s.x[8]!=s.sp+0x98 || !s.x[0])return bad();
         factory_={};factory_.owner=s.x[0];factory_.slot=s.x[8];factory_.name=s.x[1];factory_.entry=active_;factory_.phase=1;return true;
     case 0x305308:
-        if(!bootstrapped_ && !turn_.phase)return true;
         if(factory_.phase!=1 || s.sp!=factory_.entry.sp-0x30 || s.x[30]!=base_+0x30548c || s.x[1]!=factory_.owner || s.x[2]!=factory_.name || !ptr(s.x[0],0x10))return bad();
         factory_.w=s.x[0];factory_.constructor=active_;factory_.phase=2;return true;
     case 0x302790: {
-        if(!bootstrapped_ && !turn_.phase)return true;
         auto reject=[&](unsigned predicate) {
             bool known_pool=false;for(const auto &m:members_)known_pool=known_pool || (m.c && m.p==s.x[0]);
             const bool sp_checked=factory_.phase>=2 && factory_.constructor.sp>=0x20;
@@ -257,32 +399,26 @@ bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexce
         factory_.p=s.x[0];factory_.acquire=active_;factory_.phase=3;return true;
     }
     case 0x304e60:
-        if(!bootstrapped_ && !turn_.phase)return true;
         if(factory_.phase!=3 || s.sp!=factory_.acquire.sp-0x30 || s.x[30]!=base_+0x3027b0 || s.x[8]!=factory_.w+8 || s.x[0]!=factory_.p)return bad();
         factory_.pop=active_;factory_.phase=4;return true;
     case 0x304ec8: {
-        if(!bootstrapped_ && !turn_.phase)return true;
         auto *m=member(s.x[22]);
         if(factory_.phase!=4 || s.sp!=factory_.pop.sp-0x60 || s.x[21]!=factory_.w+8 || s.x[19]!=factory_.p || !m || !m->made || !m->begun || m->p!=factory_.p)return bad();
         factory_.c=m->c;factory_.positive_store=active_;factory_.phase=9;return true;
     }
     case 0x304ecc: {
-        if(!bootstrapped_ && !turn_.phase)return true;
         // The failed-creation branch 304f9c/304fa0 also arrives here. Only
         // adjacent actual STR+post observations establish the positive result.
         if(factory_.phase!=9 || s.sp!=factory_.positive_store.sp || s.x[30]!=factory_.positive_store.lr || s.x[22]!=factory_.c || s.x[21]!=factory_.w+8 || s.x[19]!=factory_.p)return bad();
         factory_.loaded=active_;factory_.phase=5;return true;
     }
     case 0x3053a8:
-        if(!bootstrapped_ && !turn_.phase)return true;
         if(factory_.phase!=5 || s.sp!=factory_.constructor.sp || s.x[30]!=base_+0x30548c)return bad();
         factory_.return_intent=active_;factory_.phase=6;return true;
     case 0x305490:
-        if(!bootstrapped_ && !turn_.phase)return true;
         if(factory_.phase!=6 || s.sp!=factory_.entry.sp-0x30 || s.x[20]!=factory_.slot || s.x[22]!=factory_.w || s.x[30]!=base_+0x30548c)return bad();
         factory_.stored=active_;factory_.phase=7;return true;
     case 0x305470:
-        if(!bootstrapped_ && !turn_.phase)return true;
         if(factory_.phase!=7 || s.sp!=factory_.entry.sp || s.x[30]!=factory_.entry.lr || s.x[0]!=factory_.slot)return bad();
         factory_.return_slot=active_;factory_.phase=8;return true;
     case 0x2a23f4:return true; // pre-store never publishes or supplies fields

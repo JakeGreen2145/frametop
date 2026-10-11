@@ -242,7 +242,9 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
             bool stock_return=false;
             for(uint64_t lr:{0x29798cu,0x297cb4u,0x297d40u,0x29a8b8u,0x29b080u,0x29cbe0u,0x29ccbcu})
                 stock_return=stock_return || s.x[30]==base_+lr;
-            if(pc==0x311648 && stock_return && !c.published &&
+            const bool paired_cleanup=dormant_stock() && stock_reader_.cleanup_return &&
+                stock_reader_.cleanup_return(stock_reader_.user,pc,command);
+            if(pc==0x311648 && (stock_return || paired_cleanup) && !c.published &&
                !c.generation && c.begun && !c.renewal &&
                (!lifecycle_ || lifecycle_owner_.command!=command)) {
                 uint64_t D=0,pool=0,vk=0;

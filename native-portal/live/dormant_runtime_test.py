@@ -143,13 +143,34 @@ def main():
                   'bootstrap-delete-renderer', 'bootstrap-delete-wrapper']
         modes += ['bootstrap-return-pool', 'bootstrap-return-lr', 'bootstrap-return-duplicate',
                   'bootstrap-reset-subject', 'bootstrap-disposal-subject']
-    # Pending native classification contract: explicit source probes, not part
-    # of default acceptance until the positive contract is independently proved.
-    factory_modes = ['factory-control', 'factory-direct', 'factory-direct-chain']
+    # Verified shared invocation contract. Functional and denial regressions are
+    # default acceptance, not diagnostic-only opt-in probes.
+    factory_modes = ['factory-control', 'factory-direct', 'factory-direct-chain', 'factory-alias-current', 'factory-selected']
+    factory_negative = {'factory-direct': '0x311648', 'factory-alias-current': '0x302790',
+                        'factory-selected-no-positive': '0x304ecc', 'factory-selected-no-pre-ret': '0x305490',
+                        'factory-selected-null-output': '0x305470', 'factory-selected-wrong-c': '0x304ec8',
+                        'factory-selected-reuse': '0x304ec8'}
+    factory_modes += [mode for mode in factory_negative if mode not in factory_modes]
+    factory_modes += ['factory-member-ctor', 'factory-member-reset', 'factory-selected-sibling']
+    factory_modes += [f'factory-root-{index}-{result}' for index in range(5) for result in ('positive', 'null')]
     factory_modes += ['factory-diag-' + name for name in ('phase', 'sp', 'caller', 'slot', 'name', 'pool')]
     factory_modes += ['factory-site-' + hex(pc)[2:] for pc in (
         0x3053f8, 0x305308, 0x302790, 0x304e60, 0x304ec8, 0x304ecc,
         0x3053a8, 0x305490, 0x305470, 0x305260, 0x3052e0, 0x3052ec, 0x3052f0)]
+    shared_modes = ['shared-initial', 'shared-unselected', 'shared-factory-null', 'shared-acquire-null',
+                    'shared-cleanup-unknown', 'shared-cleanup-null', 'shared-cleanup-known']
+    shared_negative = {'shared-bad-sp': '0x304e60', 'shared-bad-lr': '0x3053a8', 'shared-bad-slot': '0x302790',
+                       'shared-bad-name': '0x302790', 'shared-bad-pool': '0x304ecc', 'shared-bad-subject': '0x305308',
+                       'shared-bad-current-pop': '0x304ec8', 'shared-bad-pre-ret': '0x305490',
+                       'shared-bad-interrupted': '0x3053a8', 'shared-bad-publication': '0x2a23f8',
+                       'shared-bad-unwind': '0x311648', 'shared-bad-return-pool': '0x311648',
+                       'shared-bad-current-return': '0x311648', 'shared-bad-duplicate': '0x311648',
+                       'shared-bad-cleanup-call': '0x3052f0', 'shared-bad-cleanup-result': '0x3052f0',
+                       'shared-bad-cleanup-current': '0x3052e0',
+                       **{'shared-bad-free-' + role: '0x4b3d0' for role in ('r', 'w', 'c')}}
+    if args.current:
+        modes += shared_modes + list(shared_negative) + ['shared-chain-cold', 'shared-chain-warm']
+        modes += factory_modes
     if args.modes:
         requested = args.modes.split(',')
         assert requested and all(mode in modes or (args.current and mode in factory_modes) for mode in requested)
@@ -199,6 +220,10 @@ def main():
                 passed = (code == 0 and 'reads=0 saved-unchanged=1 no-work=1 returned=1' in text
                           and bool(live) and all(row.get('first_stock_pc') == '0x0' and
                                                 row.get('first_evidence_pc') == '0x0' for row in live))
+                if mode in factory_negative or mode.startswith('factory-site-'):
+                    expected = factory_negative.get(mode)
+                    passed = (code == 0 and 'reads=0 saved-unchanged=1 no-work=1 returned=1' in text and
+                              any(row.get('first_stock_pc') == expected if expected else row.get('first_stock_pc') != '0x0' for row in live))
                 if mode.startswith('factory-diag-'):
                     predicate = ['phase', 'sp', 'caller', 'slot', 'name', 'pool'].index(mode[13:]) + 1
                     caller = '0x297b70' if predicate in (1, 3) else '0x305330'
@@ -209,6 +234,16 @@ def main():
                                   row.get('stock_phase') == ('0' if predicate == 1 else '2') and
                                   row.get('stock_flags') == hex(flags) and row.get('stock_caller') == caller
                                   for row in live))
+            if mode in shared_modes:
+                live = [dict(word.split('=', 1) for word in line.split()[1:])
+                        for line in text.splitlines() if line.startswith('ft-native-live ')]
+                passed = (code == 0 and 'reads=0 saved-unchanged=1 returned=1' in text and bool(live)
+                          and all(row.get('first_stock_pc') == '0x0' and row.get('first_evidence_pc') == '0x0' for row in live))
+            if mode in shared_negative:
+                live = [dict(word.split('=', 1) for word in line.split()[1:])
+                        for line in text.splitlines() if line.startswith('ft-native-live ')]
+                passed = (code == 0 and 'reads=0 saved-unchanged=1 returned=1' in text and
+                          any(row.get('first_stock_pc') == shared_negative[mode] for row in live))
             if mode.startswith('prebootstrap-'):
                 if mode == 'prebootstrap-cause':
                     passed = code == 0 and 'earlier_stock=0x0 first_evidence=0x0 bootstrap=1 reads=1' in text

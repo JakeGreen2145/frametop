@@ -137,6 +137,7 @@
     }
     bool dormant_fact_site(uint64_t pc) const noexcept {
         if(!dormant_enabled || dormant_engaged)return false;
+        if(stock_facts.observing())return true; // existing event boundary, copied receipts only
         if(pc==0x29a14c || pc==0x29a150 || pc==0x2a23f4 || pc==0x2a1f64)return true;
         size_t count=0;const auto* sites=runtime::NativeStockFactCollector::required_sites(count);
         return std::find(sites,sites+count,pc)!=sites+count;

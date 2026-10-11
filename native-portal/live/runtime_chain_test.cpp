@@ -110,7 +110,7 @@ struct Chain:Fixture {
 #endif
         event(0x30180c);
     }
-    void bootstrap_router(bool turnover=false) {
+    void bootstrap_router(bool turnover=false,void (*observe)(Chain &)=nullptr) {
         event(0x7fda0);s.x[19]=addr(r);s.x[0]=addr(r)+0xec0;s.x[1]=0x80000;s.x[8]=s.sp+0x140;
         event(0x29a14c);assert(s.x[1]==0x80080);put(stack,0x140,addr(resource));event(0x29a150);put(stack,0x140,uint64_t(0));
         begin_command(addr(executable));
@@ -119,6 +119,7 @@ struct Chain:Fixture {
             put(bootstrap_command,0x50,addr(bootstrap_pool));put(bootstrap_wrapper,8,addr(bootstrap_command));
             begin_command(addr(bootstrap_command));put(r,0x1380,addr(bootstrap_wrapper));
         }
+        if(observe)observe(*this);
         s.x[19]=addr(r);s.x[1]=turnover?addr(bootstrap_wrapper):addr(command);event(0x29a528);
         s.x[24]=addr(r);s.x[0]=1;event(0x7fdbc);
     }

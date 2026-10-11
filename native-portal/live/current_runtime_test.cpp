@@ -75,15 +75,25 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t* x,uint64_t x8) n
 }
 #include "prebootstrap_runtime_fixture.inc"
 #include "factory_scope_fixture.inc"
+#include "shared_factory_fixture.inc"
 static void scenario() {
     const unsigned connects_before=connect_calls;
     auto f=std::make_unique<Chain>();active=f.get();f->source_map();f->borrowed_fixture=true;
     auto saved=f->s;f->s={};f->s.sp=addr(f->stack);f->s.x[19]=addr(f->app);
     f->s.x[20]=addr(f->app)+0x20000;f->s.x[26]=addr(f->camera);f->event(0x8dc1c);f->s=saved;
     prebootstrap_observe(*f);
-    f->initial_camera_resources();f->bootstrap_router();postbootstrap_observe(*f);f->publish_worker();
+    f->initial_camera_resources();
+    const bool shared_chain=current_mode=="shared-chain-cold" || current_mode=="shared-chain-warm";
+    f->bootstrap_router(false,shared_chain?bootstrap_factory_observe:nullptr);postbootstrap_observe(*f);f->publish_worker();
     std::thread owner([&]{
         f->run_enter();
+        if(shared_chain) {
+            for(unsigned i=0;i<5;++i)for(const auto result:{"positive","null"})
+                factory_scope_probe("factory-root-"+std::to_string(i)+"-"+result,f.get());
+            for(const auto mode:{"shared-initial","shared-unselected","shared-factory-null","shared-acquire-null",
+                                 "shared-cleanup-unknown","shared-cleanup-null","shared-cleanup-known"})
+                shared_factory_sequence(*f,mode);
+        }
         if(current_mode=="bound-known-delete" || current_mode=="bound-known-destroy") {
             const auto binding=f->router.camera_binding_diagnostics();
             assert(binding.run_authenticated && binding.runtime_bound && binding.barrier_retained);
@@ -93,7 +103,7 @@ static void scenario() {
             f->frame_start();f->frame_end();
             assert(!f->router.diagnostics().capable && !f->router.diagnostics().pending && !f->enqueues);
         } else {
-        if(current_mode=="warm") {
+        if(current_mode=="warm" || current_mode=="shared-chain-warm") {
             put(f->camera,0x34a,uint8_t(1));put(f->camera,0x360,uint8_t(1));
             put(f->camera,0x350,uint64_t(11));put(f->camera,0x358,uint64_t(12));
         }
@@ -143,7 +153,7 @@ static void scenario() {
         const auto d=f->router.diagnostics();
         assert(d.uploads[0]==1 && d.uploads[1]==1 && d.encoded[0]==1 && d.encoded[1]==1 && d.queue_success==1 && d.pending==negative);
         assert(!f->native_releases && updates);
-        assert(connect_calls-connects_before==unsigned(current_mode!="warm"));
+        assert(connect_calls-connects_before==unsigned(current_mode!="warm" && current_mode!="shared-chain-warm"));
         }
         }
         f->router.stop();arena::Saved pump{};f->router.event(0,pump);
@@ -165,6 +175,7 @@ static void scenario() {
 int main(int argc,char** argv){
     current_mode=argc>1?argv[1]:"cold";
     if(current_mode.rfind("factory-",0)==0)return factory_scope_probe(current_mode);
+    if(current_mode.rfind("shared-",0)==0 && current_mode.rfind("shared-chain-",0)!=0)return shared_factory_probe(current_mode);
     if(current_mode=="prebootstrap-cause")return prebootstrap_cause();
     if(current_mode=="prebootstrap-runtime-cause")return prebootstrap_runtime_cause();
     if(current_mode=="prebootstrap-scope-guards")return prebootstrap_scope_guards();
