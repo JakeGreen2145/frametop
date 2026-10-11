@@ -143,9 +143,16 @@ def main():
                   'bootstrap-delete-renderer', 'bootstrap-delete-wrapper']
         modes += ['bootstrap-return-pool', 'bootstrap-return-lr', 'bootstrap-return-duplicate',
                   'bootstrap-reset-subject', 'bootstrap-disposal-subject']
+    # Pending native classification contract: explicit source probes, not part
+    # of default acceptance until the positive contract is independently proved.
+    factory_modes = ['factory-control', 'factory-direct', 'factory-direct-chain']
+    factory_modes += ['factory-diag-' + name for name in ('phase', 'sp', 'caller', 'slot', 'name', 'pool')]
+    factory_modes += ['factory-site-' + hex(pc)[2:] for pc in (
+        0x3053f8, 0x305308, 0x302790, 0x304e60, 0x304ec8, 0x304ecc,
+        0x3053a8, 0x305490, 0x305470, 0x305260, 0x3052e0, 0x3052ec, 0x3052f0)]
     if args.modes:
         requested = args.modes.split(',')
-        assert requested and all(mode in modes for mode in requested)
+        assert requested and all(mode in modes or (args.current and mode in factory_modes) for mode in requested)
         modes = requested
     for mode in modes:
         reader, writer = socket.socketpair();chunks = []
@@ -167,6 +174,9 @@ def main():
             thread.join(timeout=5);reader.close()
         text = b''.join(chunks).decode(errors='replace')
         (BUILD / (mode + '.log')).write_text(text)
+        live_lines = [line for line in text.splitlines() if line.startswith('ft-native-live ')]
+        # Each scenario owns its logger. Current positives create two Runtimes.
+        assert len(live_lines) <= 128 and all(len(line.encode()) < 3072 for line in live_lines)
         complete = code == 0 and ('clean-teardown=1' in text if args.current else 'DORMANT clean-teardown=1' in text)
         returned_caller = complete and 'DORMANT returned caller=1 owner=0' in text
         fatal = next((line for line in text.splitlines() if line.startswith('ft-camera-fatal ')), '')
@@ -183,6 +193,22 @@ def main():
             passed = exact_red
         if args.current:
             passed = code == 0 and text.count('stereo=1 pending-Off=1 exact-settlement=1 disconnects=0 clean-teardown=1') == 2
+            if mode in factory_modes:
+                live = [dict(word.split('=', 1) for word in line.split()[1:])
+                        for line in text.splitlines() if line.startswith('ft-native-live ')]
+                passed = (code == 0 and 'reads=0 saved-unchanged=1 no-work=1 returned=1' in text
+                          and bool(live) and all(row.get('first_stock_pc') == '0x0' and
+                                                row.get('first_evidence_pc') == '0x0' for row in live))
+                if mode.startswith('factory-diag-'):
+                    predicate = ['phase', 'sp', 'caller', 'slot', 'name', 'pool'].index(mode[13:]) + 1
+                    caller = '0x297b70' if predicate in (1, 3) else '0x305330'
+                    flags = {1: 1, 2: 13, 3: 29, 4: 25, 5: 29, 6: 28}[predicate]
+                    passed = (code == 0 and 'reads=0 saved-unchanged=1 no-work=1 returned=1' in text and
+                              any(row.get('first_stock_pc') == '0x302790' and
+                                  row.get('stock_pred') == str(predicate) and
+                                  row.get('stock_phase') == ('0' if predicate == 1 else '2') and
+                                  row.get('stock_flags') == hex(flags) and row.get('stock_caller') == caller
+                                  for row in live))
             if mode.startswith('prebootstrap-'):
                 if mode == 'prebootstrap-cause':
                     passed = code == 0 and 'earlier_stock=0x0 first_evidence=0x0 bootstrap=1 reads=1' in text

@@ -182,7 +182,8 @@ struct Runtime::Impl {
                 if(live_published.read(snapshot)) {
                     snapshot.first_owner_rejection=first_owner_rejection.load();
                     snapshot.first_evidence_pc=evidence.first_failure_pc();
-                    snapshot.first_stock_pc=stock_facts.failure_pc();
+                    snapshot.first_stock_record=stock_facts.failure_record();
+                    snapshot.first_stock_pc=runtime::NativeStockFactCollector::refusal_pc(snapshot.first_stock_record);
                     const auto stop=first_stop.load();
                     snapshot.first_stop_pc=stop&0xffffff;snapshot.stop_flags=(stop>>24)&255;snapshot.stop_lr=stop>>32;
                     const size_t n=log.format(snapshot,owner_events.load(),line,sizeof line);

@@ -23,7 +23,15 @@ class NativeStockFactCollector {
     // Only after actual Evidence Run handoff and parent exclusion. No graph loan.
     bool handoff(const Evidence &) noexcept;
     bool complete() const noexcept;
-    uint64_t failure_pc() const noexcept {return failure_.load();}
+    // Single immutable atomic receipt. PC[23:0], predicate[31:24], factory
+    // phase[35:32], flags[40:36], module-relative caller[63:41]. No pointers.
+    // 302790 predicates: phase, SP, LR, output slot, name, pool range (1..6).
+    // Flags: known pool, current slot, factory slot, SP checked, SP matched.
+    uint64_t failure_record() const noexcept {return failure_.load();}
+    static uint64_t refusal_pc(uint64_t record) noexcept {
+        const auto pc=record&0xffffff;return pc==0xffffff?UINT64_MAX:pc;
+    }
+    uint64_t failure_pc() const noexcept {return refusal_pc(failure_record());}
  private:
     struct Point {uint64_t pc=0,sp=0,lr=0,thread=0;};
     struct Member {
@@ -48,7 +56,7 @@ class NativeStockFactCollector {
     render::Identity identity_{};
     Point active_{};
     bool owner() const noexcept;
-    bool deny(uint64_t) noexcept;
+    bool deny(uint64_t,uint64_t detail=0) noexcept;
     bool field(uint64_t,uint64_t) noexcept;
     bool command_fields(const Member &) noexcept;
     Member *member(uint64_t) noexcept;

@@ -74,6 +74,7 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t* x,uint64_t x8) n
     return fixture_native_call(target,x,x8);
 }
 #include "prebootstrap_runtime_fixture.inc"
+#include "factory_scope_fixture.inc"
 static void scenario() {
     const unsigned connects_before=connect_calls;
     auto f=std::make_unique<Chain>();active=f.get();f->source_map();f->borrowed_fixture=true;
@@ -163,6 +164,7 @@ static void scenario() {
 }
 int main(int argc,char** argv){
     current_mode=argc>1?argv[1]:"cold";
+    if(current_mode.rfind("factory-",0)==0)return factory_scope_probe(current_mode);
     if(current_mode=="prebootstrap-cause")return prebootstrap_cause();
     if(current_mode=="prebootstrap-runtime-cause")return prebootstrap_runtime_cause();
     if(current_mode=="prebootstrap-scope-guards")return prebootstrap_scope_guards();

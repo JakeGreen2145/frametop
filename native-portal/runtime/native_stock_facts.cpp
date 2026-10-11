@@ -23,8 +23,9 @@ bool return_caller(uint64_t lr) noexcept {
 NativeStockFactCollector::NativeStockFactCollector() noexcept:pid_(getpid()),tid_(pid_t(syscall(SYS_gettid))) {}
 const uint64_t *NativeStockFactCollector::required_sites(size_t &n) noexcept {n=sizeof(required)/sizeof(*required);return required;}
 bool NativeStockFactCollector::owner() const noexcept {return getpid()==pid_ && syscall(SYS_gettid)==tid_;}
-bool NativeStockFactCollector::deny(uint64_t pc) noexcept {
-    uint64_t zero=0;failure_.compare_exchange_strong(zero,pc?pc:UINT64_MAX);return false;
+bool NativeStockFactCollector::deny(uint64_t pc,uint64_t detail) noexcept {
+    const auto word=(pc?pc:0xffffff)|(detail&~uint64_t(0xffffff));
+    uint64_t zero=0;failure_.compare_exchange_strong(zero,word);return false;
 }
 bool NativeStockFactCollector::install_coverage(const uint64_t *pcs,size_t n) noexcept {
     if(!owner() || coverage_ || base_ || !pcs || n>4096)return deny(0);
@@ -234,10 +235,27 @@ bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexce
         if(!bootstrapped_ && !turn_.phase)return true;
         if(factory_.phase!=1 || s.sp!=factory_.entry.sp-0x30 || s.x[30]!=base_+0x30548c || s.x[1]!=factory_.owner || s.x[2]!=factory_.name || !ptr(s.x[0],0x10))return bad();
         factory_.w=s.x[0];factory_.constructor=active_;factory_.phase=2;return true;
-    case 0x302790:
+    case 0x302790: {
         if(!bootstrapped_ && !turn_.phase)return true;
-        if(factory_.phase!=2 || s.sp!=factory_.constructor.sp-0x20 || s.x[30]!=base_+0x305330 || s.x[8]!=factory_.w+8 || s.x[1]!=factory_.name || !ptr(s.x[0],0xd0))return bad();
+        auto reject=[&](unsigned predicate) {
+            bool known_pool=false;for(const auto &m:members_)known_pool=known_pool || (m.c && m.p==s.x[0]);
+            const bool sp_checked=factory_.phase>=2 && factory_.constructor.sp>=0x20;
+            const uint64_t flags=uint64_t(known_pool) | uint64_t(current_w_ && s.x[8]==current_w_+8)<<1 |
+                uint64_t(factory_.w && s.x[8]==factory_.w+8)<<2 | uint64_t(sp_checked)<<3 |
+                uint64_t(sp_checked && s.sp==factory_.constructor.sp-0x20)<<4;
+            const uint64_t caller=s.x[30]>=base_ && s.x[30]-base_<0x600000?s.x[30]-base_:0;
+            return deny(pc,uint64_t(predicate)<<24 | uint64_t(factory_.phase&15)<<32 | flags<<36 | caller<<41);
+        };
+        // Same short-circuit predicates and order. Diagnostics read only owned
+        // local facts, never the name, output slot, native pool or Saved memory.
+        if(factory_.phase!=2)return reject(1);
+        if(s.sp!=factory_.constructor.sp-0x20)return reject(2);
+        if(s.x[30]!=base_+0x305330)return reject(3);
+        if(s.x[8]!=factory_.w+8)return reject(4);
+        if(s.x[1]!=factory_.name)return reject(5);
+        if(!ptr(s.x[0],0xd0))return reject(6);
         factory_.p=s.x[0];factory_.acquire=active_;factory_.phase=3;return true;
+    }
     case 0x304e60:
         if(!bootstrapped_ && !turn_.phase)return true;
         if(factory_.phase!=3 || s.sp!=factory_.acquire.sp-0x30 || s.x[30]!=base_+0x3027b0 || s.x[8]!=factory_.w+8 || s.x[0]!=factory_.p)return bad();
