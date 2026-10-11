@@ -8,7 +8,10 @@ CameraOwner::CameraOwner() noexcept:process_(getpid()),owner_(std::this_thread::
 CameraOwner::~CameraOwner() {
     // No destructor-side native operations or fabricated settlement. The barrier
     // outlives all queued and committed work, including faulted source evidence.
-    if(process_==getpid() && barrier_)std::terminate();
+    if(process_==getpid()) {
+        std::lock_guard<std::mutex> lock(callers_mutex_);
+        if(barrier_ || callers_)std::terminate();
+    }
 }
 bool CameraOwner::owner() const noexcept {
     return process_==getpid() && owner_==std::this_thread::get_id();
@@ -30,6 +33,43 @@ bool CameraOwner::bind_handoff(const CameraBinding& binding,uint64_t generation,
 }
 bool CameraOwner::retained_binding(CameraBinding& b) const {
     return owner() && barrier_ && gate_.lookup(barrier_,b);
+}
+CameraOwner::RetainedCaller::~RetainedCaller() {
+    if(ticket_ && !release())std::terminate();
+}
+CameraOwner::RetainedCaller::RetainedCaller(RetainedCaller&& other) noexcept
+    :owner_(std::exchange(other.owner_,nullptr)),ticket_(std::exchange(other.ticket_,0)) {}
+CameraOwner::RetainedCaller& CameraOwner::RetainedCaller::operator=(RetainedCaller&& other) noexcept {
+    if(this==&other)return *this;
+    if(ticket_ && !release())std::terminate();
+    owner_=std::exchange(other.owner_,nullptr);ticket_=std::exchange(other.ticket_,0);return *this;
+}
+bool CameraOwner::RetainedCaller::binding(CameraBinding& out) const {
+    out={};
+    return ticket_ && owner_->process_==getpid() && owner_->gate_.lookup(ticket_,out);
+}
+bool CameraOwner::RetainedCaller::release() noexcept {
+    // Gate release is deliberately not issuer-thread-only. On failure preserve
+    // BOTH the exact ticket and owner accounting so explicit retry remains real.
+    if(!ticket_ || owner_->process_!=getpid())return false;
+    try {
+        std::lock_guard<std::mutex> lock(owner_->callers_mutex_);
+        if(!owner_->gate_.release(ticket_))return false;
+        --owner_->callers_;ticket_=0;owner_=nullptr;return true;
+    } catch(...) {return false;}
+}
+CameraOwner::RetainedCaller CameraOwner::retain_caller(uint64_t epoch,uint64_t generation) {
+    // Never touch an inherited mutex, owner thread ID, queue or arbiter here.
+    if(process_!=getpid())return {};
+    std::lock_guard<std::mutex> lock(callers_mutex_);
+    // Bind publishes immutable epoch/generation and the scalar gate binding
+    // before this release/acquire edge. Partial epochs grant no caller access.
+    if(bind_stage_.load(std::memory_order_acquire)!=BindStage::Retained ||
+       epoch!=epoch_ || generation!=generation_)return {};
+    uint64_t ticket=0;
+    // The existing gate serializes this acquisition with EVERY cleanup/close.
+    if(!gate_.retain(epoch,ticket))return {};
+    ++callers_;return RetainedCaller(*this,ticket);
 }
 bool CameraOwner::observe_scope(const ScopeObserver& fn) {
     if(!owner() || !active_ || !current_ticket_ || !fn)return false;
@@ -55,13 +95,14 @@ bool CameraOwner::bind(const CameraBinding& binding,uint64_t generation,size_t c
     if(!owner() || bound_ || !generation || !capacity || capacity>co::OwnerCoordinator::MaxSlots)return false;
     uint64_t issued=0;
     if(!native_.bind(binding,owner_,issued)){bind_stage_=BindStage::CleanRefused;return false;}
-    epoch_=issued;bind_stage_=BindStage::Published;
+    epoch_=issued;generation_=generation;bind_stage_=BindStage::Published;
     // This ticket is acquired BEFORE close, never manufactured by drain. A
     // concurrent precleanup can instead win and make this generation unusable.
-    bound_=true;generation_=generation;
+    bound_=true;
     if(!gate_.retain(epoch_,barrier_))return false;
     queue_.emplace(epoch_,generation,capacity,retention());
-    demand_.emplace(epoch_,generation,retention());bind_stage_=BindStage::Retained;return true;
+    demand_.emplace(epoch_,generation,retention());
+    bind_stage_.store(BindStage::Retained,std::memory_order_release);return true;
 }
 co::NativeReceipt CameraOwner::invoke(uint64_t ticket,const NativeMutation& fn) {
     if(!owner() || active_ || !fn || !demand_)return {};
@@ -103,6 +144,8 @@ bool CameraOwner::finish_close() {
     const auto s=demand_->snapshot();
     if(s.fault || s.committed_debts || s.producer_demand ||
        (s.integration_obligations && !s.native_idle))return false;
+    std::lock_guard<std::mutex> lock(callers_mutex_);
+    if(callers_)return false;
     // Relinquishing an unused closing barrier gives stock its cleanup back.
     // It does not change Unknown queues or authorize portal readiness/detach.
     if(!gate_.release(barrier_))return false;

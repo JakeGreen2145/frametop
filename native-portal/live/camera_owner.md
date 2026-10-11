@@ -39,18 +39,71 @@ Close in this order:
 3. Use `drain` to observe existing obligations and reconcile final native
    disconnects. It looks up identities using the barrier acquired at bind. It
    neither acquires a new ticket after close nor bypasses gate lookup.
-4. `finish_close` releases that barrier only when the queue is drained, every
-   arbiter debt has actually released its ticket, the journal has no fault, and
-   both queues are proven disconnected with no producer demand.
+4. `finish_close` releases that barrier only when all retained callers have
+   released, the queue is drained, every arbiter debt has released its ticket,
+   the journal has no fault, and there is no producer demand. Attempted integration
+   work must have proven native disconnect; an unused integration can relinquish
+   its barrier without declaring the unknown native queues idle.
 5. Retry the original cleanup boundary. The binding invokes the complete original
    method synchronously through its integration-supplied bypass callback. Join
    all users before destroying the owner object.
 
-Unknown initial queues, partial execution, missing source proof or release failure
+Unresolved integration work, partial execution, missing source proof or release failure
 can leave the barrier retained indefinitely. Destruction then fails fast. There
 is no force-release or timeout-based declaration of settlement. An integration
 must retain the owner or take its explicit fail-stop path, not discard its debt.
 A never-connected generation has no invented initial-idle certificate.
+
+## Incoming caller lifetime only
+
+`retain_caller(expected_epoch, expected_generation)` returns a move-only
+`CameraOwner::RetainedCaller`. An empty handle means refusal. Caller authentication
+and the expected identities come from the incoming binding, not an unretained
+native pointer lookup. This API does not authenticate a caller by itself.
+
+1. Retain before resolving any context, application, camera or association pointer.
+2. Call `handle.binding(out)` to copy the immutable published `CameraBinding`
+   through that handle's actual gate ticket. Refusal clears `out`. This exposes
+   scalar identities, not permission to read a native graph.
+3. Keep the handle until the complete original invocation has returned, including
+   nested callbacks. Each nested independently admitted caller owns a separate
+   ticket. No queue pumping or owner execution is required by this API.
+4. Call `handle.release()` after the original returns. Success empties the handle.
+   Failure preserves its ticket and owner accounting for an explicit retry.
+   Releasing an empty or moved-from handle returns false and cannot release a
+   later occupant of the reusable gate slot.
+
+The handle is not concurrently mutable. With external synchronization it may move
+or release on another thread, matching `CameraAccessGate::release` and the owner
+queue. The gate's existing cleanup self-wait rules still apply. Move assignment
+first releases the destination. Destruction provides RAII release; failed fallback
+release or failed destination release takes `std::terminate`, never silently
+forgets a ticket. All handles and callers must finish before the owning
+`CameraOwner` is destroyed. Outstanding retention makes owner destruction fatal.
+The handle does not extend the C++ object's storage lifetime.
+
+Only the acquire-visible `Retained` bind stage permits admission. Immutable epoch
+and generation writes precede that release publication. Initial, unbound,
+clean-refused, partial-published and closed instances refuse without reading
+owner-only mutable fields. A short caller-accounting mutex covers actual gate
+retain/release and final barrier release. Lock order is caller accounting then
+gate; no native callback runs under either lock. The gate itself serializes
+admission with owner close and native cleanup. All new lock-taking entry paths
+check process identity before touching inherited locks after fork.
+
+A caller ticket keeps native cleanup nonquiescent. `finish_close` also refuses
+while any caller handle remains, even if the queue and arbiter have no work. A
+successful `finish_close` means only that the integration barrier was released.
+It neither invokes native cleanup nor changes unknown native queues to idle.
+The complete native cleanup must still run through `CameraNativeBinding::cleanup`.
+
+This is lifetime retention only. It grants no graph-read scope, mutation
+exclusion, source-arbiter access, dispatch authorization or native owner execution
+permission. `Runtime::camera_route` is unchanged. Moving `0x13a100` or any other
+original to the incoming thread still requires the independently established
+native caller/thread and source contracts, with retention before first lookup and
+release after the complete original call. These CPU tests do not repair the live
+blocked-owner routing failure or establish world-space stereo output.
 
 ## Reusing existing render settlement
 
@@ -92,6 +145,37 @@ native `0x15fba8` is not blindly retried. A raw Release result of one without bo
 actual disconnect calls cannot authorize warm idle or another Connect.
 
 ## CPU verification
+
+The caller-only suite needs a C++17 compiler and user systemd, no private native
+binary or generated fixture. Every native callback is explicitly modeled. The
+test links the actual production owner, gate, native cleanup binding and queue.
+Link-time retain/release wrappers provide deterministic race scheduling and
+failure injection without a production test hook. Unused `RenderDebt` methods
+are link-discarded in this small suite; the full composition below covers them.
+
+```
+python3 native-portal/live/camera_caller_test.py
+python3 native-portal/live/camera_caller_test.py --sanitize
+```
+
+It covers a blocked owner with an independently retained incoming invocation,
+close-before-retain and retain-before-close, nested independent handles, shared
+gate capacity and slot reuse, stale identities, moves, cross-thread release,
+release failure and retry, RAII fail-stop, partial bind, and fork refusal with a
+real inherited locked caller mutex. Condition variables represent complete
+original return, not native success. Cleanup callbacks are counted separately
+from integration close.
+
+For source-only full-owner regression runs, pass an existing saved opaque header:
+
+```
+python3 native-portal/live/camera_owner_test.py --saved-idle-fixture /path/to/camera_idle_fixture.hpp
+python3 native-portal/live/camera_owner_test.py --sanitize --saved-idle-fixture /path/to/camera_idle_fixture.hpp
+```
+
+This option copies the saved fixture into ignored build storage without importing
+or executing a native analysis runner. It reports saved replay rather than fresh
+instruction evidence. The default workflow below still generates fresh evidence.
 
 Provide the existing pinned compositor ELF through `FT_HOOK_TEST_ELF`, with
 Unicorn and pyelftools available in the selected interpreter or `PYTHONPATH`.

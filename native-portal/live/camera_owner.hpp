@@ -36,6 +36,30 @@ public:
     bool bind_handoff(const CameraBinding&,uint64_t generation,size_t capacity=8);
     coordination::NativeReceipt direct(const NativeMutation&);
     bool retained_binding(CameraBinding&) const;
+    // Lifetime ONLY. Authenticate the incoming caller and expected epoch/generation
+    // before calling, and retain BEFORE any native pointer lookup. No owner pump,
+    // native operation, graph/mutation permission or arbiter access is provided.
+    // Keep through the COMPLETE original invocation. Join all users and destroy
+    // every handle before destroying CameraOwner. A handle is not thread-safe;
+    // externally synchronized moves/releases on other threads are permitted.
+    class RetainedCaller final {
+    public:
+        RetainedCaller() noexcept=default;
+        ~RetainedCaller(); // failed fallback release is fail-stop, never forgotten
+        RetainedCaller(const RetainedCaller&)=delete;
+        RetainedCaller& operator=(const RetainedCaller&)=delete;
+        RetainedCaller(RetainedCaller&&) noexcept;
+        RetainedCaller& operator=(RetainedCaller&&) noexcept;
+        explicit operator bool() const noexcept {return ticket_!=0;}
+        bool binding(CameraBinding&) const; // immutable scalars via this real ticket
+        bool release() noexcept; // false preserves a live handle/accounting for retry
+    private:
+        friend class CameraOwner;
+        RetainedCaller(CameraOwner& owner,uint64_t ticket) noexcept:owner_(&owner),ticket_(ticket) {}
+        CameraOwner* owner_=nullptr;
+        uint64_t ticket_=0;
+    };
+    RetainedCaller retain_caller(uint64_t expected_epoch,uint64_t expected_generation);
     // Only within an active owner mutation. This is the SAME FIFO ticket or
     // pre-close barrier, never an additional retain. Gate/identities are borrowed
     // for this callback. The Runtime observer must not outlive this CameraOwner.
@@ -60,7 +84,9 @@ public:
     // A real gate ticket acquired at bind protects drain after admission closes.
     bool begin_close();
     coordination::NativeReceipt drain(const NativeMutation&);
-    bool finish_close(); // only after debt release AND proven native disconnect
+    // Integration barrier only: all callers/queue/debts released and attempted
+    // native work detached. This does NOT execute cleanup or assert global idle.
+    bool finish_close();
     binding::CameraNativeBinding::Dispatch cleanup(uint64_t pc,arena::Saved&,
         CameraAccessGate::Cleanup,void*,std::chrono::milliseconds timeout,bool initial_caller=false);
 private:
@@ -75,6 +101,10 @@ private:
     std::optional<coordination::DemandArbiter> demand_;
     uint64_t epoch_=0,barrier_=0,generation_=0,current_ticket_=0;
     bool bound_=false,active_=false,closing_=false;
+    // Lock order is callers_mutex_ -> gate_. No callback or native operation
+    // under this mutex. It joins successful retain/accounting with finish_close.
+    std::mutex callers_mutex_;
+    size_t callers_=0;
     std::atomic<BindStage> bind_stage_{BindStage::Unattempted};
 };
 

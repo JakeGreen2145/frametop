@@ -11,6 +11,8 @@ import uuid
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--sanitize', action='store_true')
+p.add_argument('--saved-idle-fixture', type=Path,
+               help='reuse an opaque saved camera_idle_fixture.hpp; skip ALL native binary analysis')
 a = p.parse_args()
 r = Path(__file__).resolve().parents[1]
 b = r.parent / 'build/camera-owner'
@@ -38,25 +40,28 @@ assert 'struct Fake {' in render and 'struct Fixture {' in render
 (b/'upstream_fixture.hpp').write_text(upstream.replace('"test.cpp"', '"render_fixture.hpp"'))
 (b/'combined_fixture.hpp').write_text(combined.replace('"build/upstream_fixture.hpp"', '"upstream_fixture.hpp"'))
 
-# The warm receipt fixture is generated from actual pinned instruction execution.
-# FT_HOOK_TEST_ELF and PYTHONPATH are operator inputs; never fetch device binaries.
-witness = run([sys.executable, r/'live/camera_idle_native.py'], capture_output=True, text=True)
-rows = json.loads(witness.stdout)
-(b/'camera-idle-witness.json').write_text(json.dumps(rows, indent=2)+'\n')
-lines = ['// Generated pinned native transitions; service/lock calls are CPU fakes.',
-         'static const Transition transitions[] = {']
-for t in rows['transitions']:
-    calls = t['service_calls']
-    assert len(calls) <= 2 and all(c[0] in ('acquire', 'release') for c in calls)
-    assert len(t['service_results']) == len(calls)
-    values = ['{%d,%d,%d}' % (1 if c[0]=='acquire' else 2, c[1], result)
-              for c, result in zip(calls, t['service_results'])]
-    values += ['{0,0,0}'] * (2-len(values))
-    lines.append('{%d,{%s},{%s},%d,%d,{{%s}}},' % (
-        t['pc'], ','.join(map(str,t['before'])), ','.join(map(str,t['after'])),
-        t['result'],len(calls),','.join(values)))
-lines.append('};')
-(b/'camera_idle_fixture.hpp').write_text('\n'.join(lines)+'\n')
+if a.saved_idle_fixture:
+    (b/'camera_idle_fixture.hpp').write_bytes(a.saved_idle_fixture.read_bytes())
+else:
+    # The warm receipt fixture is generated from actual pinned instruction execution.
+    # FT_HOOK_TEST_ELF and PYTHONPATH are operator inputs; never fetch device binaries.
+    witness = run([sys.executable, r/'live/camera_idle_native.py'], capture_output=True, text=True)
+    rows = json.loads(witness.stdout)
+    (b/'camera-idle-witness.json').write_text(json.dumps(rows, indent=2)+'\n')
+    lines = ['// Generated pinned native transitions; service/lock calls are CPU fakes.',
+             'static const Transition transitions[] = {']
+    for t in rows['transitions']:
+        calls = t['service_calls']
+        assert len(calls) <= 2 and all(c[0] in ('acquire', 'release') for c in calls)
+        assert len(t['service_results']) == len(calls)
+        values = ['{%d,%d,%d}' % (1 if c[0]=='acquire' else 2, c[1], result)
+                  for c, result in zip(calls, t['service_results'])]
+        values += ['{0,0,0}'] * (2-len(values))
+        lines.append('{%d,{%s},{%s},%d,%d,{{%s}}},' % (
+            t['pc'], ','.join(map(str,t['before'])), ','.join(map(str,t['after'])),
+            t['result'],len(calls),','.join(values)))
+    lines.append('};')
+    (b/'camera_idle_fixture.hpp').write_text('\n'.join(lines)+'\n')
 flags = ['-std=c++17', '-O0', '-g1', '-Wall', '-Wextra', '-Werror', '-pthread',
          '--param=ggc-min-expand=10', '--param=ggc-min-heapsize=4096',
          '-I'+str(b), '-I'+str(r/'render'), '-I'+str(r/'include')]
@@ -75,4 +80,5 @@ for s in sources:
 exe = b/('camera-owner-sanitize' if a.sanitize else 'camera-owner')
 run(['g++', *flags, *objects, '-o', exe])
 run([exe], env={**os.environ, 'ASAN_OPTIONS':'detect_leaks=1'})
-print('camera-owner: pinned receipt replay and real production composition passed; no live hooks/GPU')
+label = 'saved opaque receipt replay' if a.saved_idle_fixture else 'fresh pinned receipt replay'
+print(f'camera-owner: {label} and real production composition passed; no live hooks/GPU')
