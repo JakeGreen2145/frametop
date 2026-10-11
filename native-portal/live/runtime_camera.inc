@@ -6,7 +6,8 @@
         const auto& self=*static_cast<Impl*>(p);
         return getpid()==self.pid && tid()==self.owner_tid && self.camera_bound.load();
     }
-    NativeSourceAdmission native_source{this,source_authenticate,source_stock_owner};
+    NativeSourceAdmission legacy_source{this,source_authenticate,source_stock_owner};
+    std::optional<NativeSourceAdmission> native_source; // selected once, before pin/native work
     SourceAdmission* source=nullptr;
     std::atomic<bool> camera_bound{false};
     // Serializes only owned decisions. Never held across original/native calls.
@@ -105,8 +106,12 @@
     bool camera_original(uint64_t pc,arena::Saved& s) noexcept {
         const auto target=ft_native_portal_original?ft_native_portal_original(pc):0;
         if(!target || getpid()!=pid || (tid()!=owner_tid && !(tid()==bootstrap_tid && joined)))return false;
+        if(dormant_enabled && dormant_engaged && tid()==owner_tid) {
+            if(pc==0x15f9e0)return current_original_method<CurrentConnectCompletion,CurrentConnectCollector>(pc,s);
+            if(pc==0x15fcc0)return current_original_method<CurrentUpdateCompletion,CurrentUpdateCollector>(pc,s);
+        }
         const bool prior=camera_active;camera_active=true;
-        const bool source_call=source_begin(pc);
+        const bool source_call=!dormant_enabled && source_begin(pc);
         const bool ok=ft_native_portal_call_saved(target,&s);
         // Direct bypass return is authoritative; nested calls finish at their
         // actual native RET hooks. Missing nested return cannot borrow outer x0.
@@ -137,7 +142,11 @@
            !self.source || !self.source_integrity() || !self.camera_owner.retained_binding(held) ||
            !(held==self.camera_binding) || !self.evidence.command_owner(now) ||
            now.command!=borrow.command || now.recording!=borrow.provenance.recording_generation ||
-           !same(now.identity,borrow.provenance.identity) || !self.source->borrow_ready(held,borrow))return false;
+           !same(now.identity,borrow.provenance.identity))return false;
+        const bool ready=self.dormant_enabled?
+            self.current_render_active && !self.current_render_failed && self.current_render &&
+                self.current_render->with_selection(borrow,current_borrow,&self):self.source->borrow_ready(held,borrow);
+        if(!ready)return false;
         c.tickets[eye]=borrow.provenance.ticket;c.watermark=borrow.watermark;c.owner=now;
         return true;
     }
@@ -145,7 +154,8 @@
         CameraBinding held;
         const auto demand_state=camera_owner.snapshot();
         const uint64_t installed=ft_native_portal_camera_coverage?ft_native_portal_camera_coverage():0;
-        return (installed&0xfffff)==0xfffff && camera_bound.load() && !camera_closing && !demand_state.fault && !demand_state.stock_full_display &&
+        return (!dormant_enabled || (!current_render_failed && current_render_coverage())) &&
+            (installed&0xfffff)==0xfffff && camera_bound.load() && !camera_closing && !demand_state.fault && !demand_state.stock_full_display &&
             camera_owner.retained_binding(held) && held==camera_binding && source && source_integrity() && source->connect_eligible(held);
     }
     static bool camera_source_settled(void* p,uint64_t watermark) noexcept {
@@ -329,7 +339,11 @@
         if(tid()==owner_tid && camera_active) {
             // Start at the nested entry, before any arbitrated bypass. Only its
             // own native RET can finish this scope, never the enclosing return.
-            source_begin(pc);
+            if(!dormant_enabled)source_begin(pc);
+            if(dormant_enabled && pc==0x15fcc0) {
+                if(!camera_original(pc,s))camera_route_abort(CameraFatalReason::NestedMethod,pc);
+                s.pad=arena::SkipOwned;return true;
+            }
             if(camera_aggregate && !camera_method_active && (pc==0x15f9e0 || pc==0x15fba8)) {
                 if(!camera_method(pc,s))camera_route_abort(CameraFatalReason::NestedMethod,pc);
                 s.pad=arena::SkipOwned;
@@ -396,6 +410,29 @@
             coordination::Caller caller{coordination::CallerKind::Portal,1,held.association_generation};
             if(!source || !source_integrity() || !source->transition_eligible(held,
                acquiring?coordination::Action::Connect:coordination::Action::None) || !arbiter.register_caller(caller))return coordination::NativeReceipt{};
+            if(dormant_enabled && acquiring) {
+                // Identity/bootstrap reservation and the ONE existing native
+                // Connect precede portal_on. No image or fake cold tuple is used.
+                CameraAggregateScope scope(*this,arbiter,caller);
+                arena::Saved r{};r.x[0]=held.camera;r.x[1]=2;
+                // Enter the real hooked method, not its bypass: only its actual
+                // entry supplies native SP/LR. The nested hook invokes the sole
+                // complete bypass and finalizes the typed current result.
+                const bool prior=camera_active;camera_active=true;current_method_ready=false;
+                const bool called=ft_native_portal_call_saved(base+0x15f9e0,&r);camera_active=prior;
+                if(!called)return coordination::NativeReceipt{};
+                transition_called=true;transition_result=r.x[0];
+                coordination::NativeReceipt actual;actual.execution=coordination::Execution::Executed;
+                actual.value_valid=true;actual.value=r.x[0];
+                if(!current_method_ready)return actual;
+                portal_token=arbiter.portal_on(caller);if(!portal_token.id)return actual;
+                auto receipt=arbiter.reconcile([&](const coordination::ActionPlan& plan){
+                    if(plan.action!=coordination::Action::Connect)return coordination::NativeReceipt{};
+                    auto r=source_receipt(held,plan,actual.value);
+                    r.execution=actual.execution;r.value_valid=actual.value_valid;r.value=actual.value;return r;
+                });
+                accepted=arbiter.frame_admissible(portal_token);return receipt;
+            }
             const bool borrowed_use=arbiter.snapshot().use==coordination::UseDisposition::AuthenticatedBorrowedUse;
             if(acquiring) {
                 portal_token=arbiter.portal_on(caller);
@@ -462,7 +499,7 @@
             // A real upload can precede a refused first enqueue, before the
             // dispatch-time pair debt exists. Keep its closing barrier and
             // forbid Disconnect/cleanup until that native work is settled.
-            if(adapter && adapter->state().pending)return;
+            if((dormant_enabled && current_source_failed) || (adapter && adapter->state().pending))return;
             camera_owner.drain([&](const CameraBinding& held,coordination::DemandArbiter& arbiter) {
                 if(camera_debt || !source || !source_integrity() ||
                    !source->transition_eligible(held,coordination::Action::None))return coordination::NativeReceipt{};

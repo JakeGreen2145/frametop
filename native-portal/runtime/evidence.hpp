@@ -89,7 +89,7 @@ class Evidence {
     // with LR=161edc because Adapter already issued the replacement call.
     // False never means stock fallback. No pointer is registered by this API.
     uint64_t stage(render::Adapter &,uint64_t pc,arena::Saved &,const render::EyeInput &,
-                   uint64_t invocation=0) noexcept;
+                   uint64_t invocation=0,bool copied_selection=false) noexcept;
     bool initialized() const noexcept;
     // Optional predicate result is call-local, never authority or a second reader.
     bool owner_event(uint64_t,const arena::Saved &,uint16_t *rejection=nullptr) noexcept;

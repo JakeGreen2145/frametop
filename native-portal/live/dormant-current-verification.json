@@ -1,0 +1,611 @@
+{
+  "schema": 1,
+  "scope": "Actual default Runtime and production components, source-modeled native boundaries; no device or installed-island execution",
+  "memory_max": "256M",
+  "memory_swap_max": 0,
+  "source_hashes": {
+    "live/runtime.cpp": "18afcbbdf2f3f8e184caa1f04aeccb62a369ba210a55939d2ce038646d17bb7c",
+    "live/runtime_camera.inc": "87a614f6db01bc9df8bd940dfe87e4bcf5787f51167f42fcc4d64a3de2dd5323",
+    "live/runtime_dormant.inc": "ed8054aa76b52d49f78250faca6f3b089eeabae51eafc1d437d20820e9f5849f",
+    "live/runtime_current_source.inc": "e6d73a772a228060d61c4808901751fcf764c9fb761774c41f9ac04f7bc194fe",
+    "live/source_router.inc": "c9670e0299cb7b6296c59dde57c41097bcd08c54f5208b8580c1d58fdff8d36a",
+    "runtime/evidence.hpp": "1b093b157023da0e69c69871f05199a9a1ea4ea1a4d7ce0a51a14e4f079160ac",
+    "runtime/staging.cpp": "e56f0996cb78e1b607d2d2293f371f0370d9db429f05d76e0e1192d77ff43bcb",
+    "live/build.py": "87e3b25e8ab216d3bcc0bfb8d0281ac0418dd6f7a21a4db496a9d401accbf50c"
+  },
+  "suites": [
+    {
+      "path": "build/dormant-runtime/current/acceptance.json",
+      "sha256": "d66822bbf4529f975246af2ca6f68dd201509778f4be995cd514347954f75d5a",
+      "cases": [
+        {
+          "mode": "cold",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "warm",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "stock-render",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "update-three",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-hook",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "partial-upload",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x0000000000183866",
+            "owner_tid": "0x0000000000183869",
+            "bootstrap_tid": "0x0000000000183866",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "rejected-enqueue",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x000000000018386b",
+            "owner_tid": "0x000000000018386e",
+            "bootstrap_tid": "0x000000000018386b",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "source-uncertainty",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x0000000000183870",
+            "owner_tid": "0x0000000000183873",
+            "bootstrap_tid": "0x0000000000183870",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "identity-migration",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x0000000000183875",
+            "owner_tid": "0x0000000000183878",
+            "bootstrap_tid": "0x0000000000183875",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "actual-return",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x000000000018387a",
+            "owner_tid": "0x000000000018387d",
+            "bootstrap_tid": "0x000000000018387a",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "no-gpu",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x000000000018387f",
+            "owner_tid": "0x0000000000183882",
+            "bootstrap_tid": "0x000000000018387f",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "no-cpu",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x0000000000183884",
+            "owner_tid": "0x0000000000183887",
+            "bootstrap_tid": "0x0000000000183884",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "no-source",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x0000000000183889",
+            "owner_tid": "0x000000000018388c",
+            "bootstrap_tid": "0x0000000000183889",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        }
+      ],
+      "source_hash_count": 223,
+      "source_hashes_current": true,
+      "frozen_fixture_hashes": {
+        "pump.private.hpp": "2619b907e95b98af18a1367aaf38b0a9463510ce63483cd5541c2d579e03d1c0",
+        "camera.private.hpp": "4a48132b19672f429e6584552fa5712bd05aa8d54cc86f9bf3b3815d02b3763d",
+        "selection.private.hpp": "4d70ee508d6741fa75c04c021f1272f4f1e0eba8228954fcf76b1cba305f2e60"
+      }
+    },
+    {
+      "path": "build/dormant-runtime/current/sanitize/acceptance.json",
+      "sha256": "5b676969fcfdfc909ce204cfaf992c2db0c63c366dd2e74bbd3026d6b63c03c7",
+      "cases": [
+        {
+          "mode": "cold",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "warm",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "stock-render",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "update-three",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "missing-hook",
+          "returncode": 0,
+          "complete": true,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "partial-upload",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001838e1",
+            "owner_tid": "0x00000000001838e4",
+            "bootstrap_tid": "0x00000000001838e1",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "rejected-enqueue",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001838e6",
+            "owner_tid": "0x00000000001838e9",
+            "bootstrap_tid": "0x00000000001838e6",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "source-uncertainty",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001838eb",
+            "owner_tid": "0x00000000001838ee",
+            "bootstrap_tid": "0x00000000001838eb",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "identity-migration",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001838f0",
+            "owner_tid": "0x00000000001838f3",
+            "bootstrap_tid": "0x00000000001838f0",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "actual-return",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001838f5",
+            "owner_tid": "0x00000000001838f8",
+            "bootstrap_tid": "0x00000000001838f5",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "no-gpu",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001838fa",
+            "owner_tid": "0x00000000001838fd",
+            "bootstrap_tid": "0x00000000001838fa",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "no-cpu",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x00000000001838ff",
+            "owner_tid": "0x0000000000183902",
+            "bootstrap_tid": "0x00000000001838ff",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        },
+        {
+          "mode": "no-source",
+          "returncode": -6,
+          "complete": false,
+          "caller": false,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {
+            "reason": "0x0000000000000005",
+            "event": "0x000000000008b020",
+            "current_tid": "0x0000000000183904",
+            "owner_tid": "0x0000000000183907",
+            "bootstrap_tid": "0x0000000000183904",
+            "bound": "1",
+            "handoff_wait": "0",
+            "stopped": "1",
+            "joined": "1"
+          }
+        }
+      ],
+      "source_hash_count": 223,
+      "source_hashes_current": true,
+      "frozen_fixture_hashes": {
+        "pump.private.hpp": "2619b907e95b98af18a1367aaf38b0a9463510ce63483cd5541c2d579e03d1c0",
+        "camera.private.hpp": "4a48132b19672f429e6584552fa5712bd05aa8d54cc86f9bf3b3815d02b3763d",
+        "selection.private.hpp": "4d70ee508d6741fa75c04c021f1272f4f1e0eba8228954fcf76b1cba305f2e60"
+      }
+    },
+    {
+      "path": "build/dormant-runtime/acceptance.json",
+      "sha256": "f190f1c428dcbcb54c41a153a7b7b0f14d83761500f00c09d593e73f8f2ccb2f",
+      "cases": [
+        {
+          "mode": "baseline",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "responsive",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "blocked",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "nested",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "cold-seal",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "connect",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "engage-race",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        }
+      ],
+      "source_hash_count": 223,
+      "source_hashes_current": true,
+      "frozen_fixture_hashes": {}
+    },
+    {
+      "path": "build/dormant-runtime/sanitize/acceptance.json",
+      "sha256": "606fe355eb979d29c47c017cb12f58a6a49a8f626dc832eccabd7eb5785234ed",
+      "cases": [
+        {
+          "mode": "baseline",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "responsive",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "blocked",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "nested",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "cold-seal",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "connect",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        },
+        {
+          "mode": "engage-race",
+          "returncode": 0,
+          "complete": true,
+          "caller": true,
+          "exact_red": false,
+          "passed": true,
+          "fatal": {}
+        }
+      ],
+      "source_hash_count": 223,
+      "source_hashes_current": true,
+      "frozen_fixture_hashes": {}
+    }
+  ],
+  "total_scenarios": 40,
+  "legacy_evidence": {
+    "path": "build/dormant-runtime/legacy-evidence-results.json",
+    "sha256": "91838067bd1ab135d431226b23df9ca58a2c37431cd549e20b143ef2f86de67b",
+    "executions": [
+      {
+        "argv": [
+          "/home/jakeg/.hermes/work/frametop-native-dormant-runtime/native-portal/build/dormant-runtime/current/legacy-evidence-test"
+        ],
+        "returncode": 0,
+        "output": "evidence: real self-read, scoped begin/publication, Bridge bootstrap, bounded staging with 35 synthetic cases, Adapter descriptor capture, Lifecycle bind/refusal and fail-closed PassGate passed\n"
+      },
+      {
+        "argv": [
+          "/home/jakeg/.hermes/work/frametop-native-dormant-runtime/native-portal/build/dormant-runtime/current/sanitize/legacy-evidence-test"
+        ],
+        "returncode": 0,
+        "output": "evidence: real self-read, scoped begin/publication, Bridge bootstrap, bounded staging with 35 synthetic cases, Adapter descriptor capture, Lifecycle bind/refusal and fail-closed PassGate passed\n"
+      }
+    ]
+  },
+  "inventory_tests": "dormant_inventory_test.py and build_inventory_test.py passed",
+  "review": "Parent-owned independent final delta review still required",
+  "sanitizer_findings": 0,
+  "red_artifacts": [
+    "build/dormant-runtime/current/staging-red.json",
+    "build/dormant-runtime/current/stock-render-red.json",
+    "build/dormant-runtime/current/source-uncertainty-red.json"
+  ]
+}

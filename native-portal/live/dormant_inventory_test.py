@@ -24,4 +24,5 @@ for name in ('hash_file', 'source_hashes'):
     exec(compile(ast.Module(body=[node], type_ignores=[]), 'build.py:' + name, 'exec'), namespace)
 hashes = namespace['source_hashes'](production, ROOT / 'live/runtime-sites.json')
 assert 'live/runtime_dormant.inc' in hashes, 'production identity omits actual dormant routing implementation'
+assert 'live/runtime_current_source.inc' in hashes, 'production identity omits current-source routing implementation'
 print('Runtime CPU/production inventories and identity include dormant implementation; RED probes excluded')

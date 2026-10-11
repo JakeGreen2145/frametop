@@ -36,7 +36,7 @@ def inventory():
 
 def source_hashes(sources,manifest):
     tracked=[ROOT/s for s in sources]+[ROOT/'live/loader.c',ROOT/'live/loader_emit.c',ROOT/'live/runtime-emit.c',
-             ROOT/'arena/emit.c',ROOT/'binding/pass_emit.c',ROOT/'binding/lifecycle_emit.c',ROOT/'runtime/graph.inc',ROOT/'live/runtime_camera.inc',ROOT/'live/runtime_dormant.inc',ROOT/'live/source_router.inc',ROOT/'live/source_loader.inc',ROOT/'live/source_metadata.inc',ROOT/'live/source_command.inc',manifest]
+             ROOT/'arena/emit.c',ROOT/'binding/pass_emit.c',ROOT/'binding/lifecycle_emit.c',ROOT/'runtime/graph.inc',ROOT/'live/runtime_camera.inc',ROOT/'live/runtime_dormant.inc',ROOT/'live/runtime_current_source.inc',ROOT/'live/source_router.inc',ROOT/'live/source_loader.inc',ROOT/'live/source_metadata.inc',ROOT/'live/source_command.inc',manifest]
     tracked += [p for p in ROOT.rglob('*') if p.suffix in ('.h','.hpp') and 'build' not in p.relative_to(ROOT).parts]
     tracked += [ROOT/'live'/n for n in ('prepare.py','build.py','bundle.py')]
     return {str(p.relative_to(ROOT)) if ROOT in p.parents else str(p):hash_file(p) for p in tracked}

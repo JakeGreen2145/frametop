@@ -158,9 +158,10 @@ struct Runtime::Impl {
     std::atomic<bool> collector_stop{false};std::thread collector;
     #include "runtime_camera.inc"
     #include "runtime_dormant.inc"
+    #include "runtime_current_source.inc"
     #include "source_router.inc"
     #include "source_command.inc"
-    explicit Impl(SourceAdmission* admission,bool production=false):source(production?&native_source:admission){published.publish(diag);live_published.publish(live);}
+    explicit Impl(SourceAdmission* admission,bool production=false):source(production?&legacy_source:admission){published.publish(diag);live_published.publish(live);}
     ~Impl(){collector_stop=true;if(collector.joinable())collector.join();}
     void collect() {
         collector=std::thread([this] {
@@ -525,9 +526,10 @@ struct Runtime::Impl {
             ~ReaderReservation(){if(self)self->dormant_admission.reader_return(self->dormant_version);}
         } reader;
         if(dormant_enabled && dormant_engaged) {
-            if(camera_closed || !dormant_admission.reader(dormant_version,camera_closing))return;
+            if(camera_closed || !dormant_admission.reader(dormant_version,camera_closing || stopped.load() || current_render_active))return;
             reader.self=this;
         }
+        current_render_event(pc,s); // original Saved, before any Evidence/staging rewrite
         ++diag.events;live.pc=pc;
         constexpr uint64_t phase_pcs[]={0x7fda0,0x7fdbc,0x147a48,0x112b58,0x63920,0x1480b8,
             0x161d64,0x161d68,0x161ed8,0x2a1e18,0x29f1e8,0x3021d4,0x3021d8,0x316120,0x300a38};
@@ -756,8 +758,24 @@ struct Runtime::Impl {
                 // Site-specific camera BLR islands have a SkipOwned route.
                 if(pc==0x161d64 || pc==0x161ed8) {s.pad=arena::SkipOwned;s.x[30]=base+pc+4;}
             } else {
-                const auto ticket=evidence.stage(*adapter,pc,s,eye,pc==0x161d64?0:invocation);
-                if(pc==0x161d64)invocation=ticket;
+                auto input=eye;
+                if(dormant_enabled && pc==0x161ed8 && current_render_active && !current_render_failed && current_render) {
+                    const auto selected=current_render->sample();
+                    if(selected && selected->upload_ticket==invocation) {
+                        input.resource_index=selected->resource_index;input.slot=selected->slot;
+                        input.selected_texture=selected->selected_texture;input.camera=selected->camera;
+                        input.invocation_sp=selected->invocation_sp;
+                    }
+                }
+                const auto ticket=evidence.stage(*adapter,pc,s,input,pc==0x161d64?0:invocation,dormant_enabled);
+                if(pc==0x161d64) {
+                    invocation=ticket;
+                    if(dormant_enabled && (!current_render_active || current_render_failed || !current_render ||
+                       !current_render->upload_reserved(ticket))) {
+                        current_render_failed=true;adapter->off();
+                        s.pad=arena::SkipOwned;s.x[30]=base+0x161d68;
+                    }
+                }
                 if(pc==0x161d68 && ticket && eye.eye<2)++diag.uploads[eye.eye];
                 if(pc==0x161ed8 || pc==0x161f00)invocation=0;
                 if(!ticket)refuse(Refusal::Adapter);
@@ -841,7 +859,7 @@ Runtime::Runtime(SourceAdmission* source):p_(new Impl(source)){}
 Runtime::~Runtime()=default;
 bool Runtime::pin(uint64_t b,const char *sha) noexcept {
     if(!p_->pinned && b && sha && !std::strcmp(sha,runtime::elf_sha256) &&
-       p_->source==&p_->native_source && ft_native_portal_installed_sites) {
+       p_->source==&p_->legacy_source && ft_native_portal_installed_sites) {
         std::array<uint64_t,256> sites{};
         const size_t comp=ft_native_portal_installed_sites(FT_INSTALLED_SITES_VERSION,0,sites.data(),sites.size());
         const size_t client=comp && comp<sites.size()?ft_native_portal_installed_sites(

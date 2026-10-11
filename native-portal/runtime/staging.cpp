@@ -18,7 +18,7 @@ bool Evidence::staging_read(uint64_t p,void *out,size_t n) const noexcept {
     return (field || constants) && read_self(p,out,n);
 }
 uint64_t Evidence::stage(render::Adapter &adapter,uint64_t pc,arena::Saved &s,
-                         const render::EyeInput &input,uint64_t invocation) noexcept {
+                         const render::EyeInput &input,uint64_t invocation,bool copied_selection) noexcept {
     // Foreign callers cannot race non-atomic scoped state. Poison is observed by
     // the owner before publication; fork changes only the child's private copy.
     if(!owner()) {staging_poisoned_.store(true);s.pad=arena::Unsupported;return 0;}
@@ -93,7 +93,16 @@ uint64_t Evidence::stage(render::Adapter &adapter,uint64_t pc,arena::Saved &s,
         // eye. At 161ed8 x21 and x24 both contain 3*slot. Read only this
         // invocation's current scalar and selected wrapper; no retained reads.
         staging_input_.invocation_sp=s.sp;staging_input_.camera=camera_;
-        if(s.x[28]<2 && s.x[21]==s.x[24] && s.x[24]<48 && s.x[24]%3==0) {
+        if(copied_selection) {
+            // Scalar transport only. The Adapter's existing NativeBorrow
+            // callback must still consume its private current-selection window.
+            // Never fall back to broad camera reads when that sample is absent.
+            if(input.invocation_sp!=s.sp || input.camera!=camera_ || input.resource_index>=2 ||
+               input.slot>=16 || !input.selected_texture || input.resource_index!=s.x[28] ||
+               s.x[21]!=s.x[24] || s.x[24]!=3*input.slot)return refuse();
+            staging_input_.resource_index=input.resource_index;staging_input_.slot=input.slot;
+            staging_input_.selected_texture=input.selected_texture;
+        } else if(s.x[28]<2 && s.x[21]==s.x[24] && s.x[24]<48 && s.x[24]%3==0) {
             uint32_t selected=UINT32_MAX;uint64_t texture=0;
             if(read_self(camera_+0x820+4*s.x[28],&selected,4) && selected==s.x[24]/3 &&
                read_self(camera_+0x520+384*s.x[28]+24*selected,&texture,8)) {

@@ -14,6 +14,40 @@
         store(0x138,client_base+0x3280a8);store(0x140,client_base+0x327640);
     }
     void source_unmap(){if(source_vtable)assert(!munmap(source_vtable,4096));}
+    std::array<std::array<std::byte,0x200>,2> metadata_objects{},metadata_headers{},metadata_values{};
+    void source_metadata(uint64_t entry_sp,unsigned q,bool release) {
+        const uint64_t local_sp=entry_sp-0x360,manager=reinterpret_cast<uint64_t>(&provider);
+        const auto object=addr(metadata_objects[q]),header=addr(metadata_headers[q]),meta=addr(metadata_values[q]),data=meta+0x100;
+        const uint64_t start=release?(q?0x160164:0x160380):(q?0x15fee4:0x160184);
+        const uint64_t manager_entry=release?0x327640:0x3280a8,call=release?0x3276c4:0x32813c;
+        const uint64_t inner_entry=release?0x3274d8:0x327e18,mframe=release?0x40:0x50,iframe=release?0x60:0x70;
+        auto client_event=[&](uint64_t pc,const arena::Saved& saved){auto copy=saved;router.event(FT_STOCK_OBSERVER_CLIENT_TAG|pc,copy);};
+        arena::Saved s{};s.sp=local_sp;s.x[19]=addr(camera);s.x[0]=manager;s.x[1]=11+q;
+        s.x[2]=release?meta:local_sp+0x90;s.x[3]=release?client_base+manager_entry:local_sp+0x98;s.x[5]=client_base+manager_entry;
+        router.event(start,s);s.x[30]=base+start+4;client_event(manager_entry,s);
+        s.sp=local_sp-mframe;s.x[0]=0;s.x[30]=client_base+(release?0x327678:0x3280ec);
+        client_event(release?0x327678:0x3280ec,s);
+        s.x[19]=11+q;s.x[20]=manager+0x70;s.x[0]=object;
+        s.x[1]=release?meta:local_sp+0x90;s.x[2]=release?0:local_sp+0x98;s.x[3]=0;
+        client_event(call,s);s.x[30]=client_base+call+4;client_event(inner_entry,s);
+        s.sp-=iframe;s.x[release?21:20]=object;
+        const auto inner=s.sp,address=inner+(release?0x48:0x58);
+        auto g=s;g.x[0]=address;g.x[30]=client_base+(release?0x327504:0x327e4c);client_event(0x258438,g);
+        g.sp=inner-0x30;g.x[19]=address;g.x[0]=1;g.x[30]=client_base+0x2584c4;client_event(0x2584c4,g);
+        g.sp=inner;g.x[30]=client_base+(release?0x327504:0x327e4c);client_event(0x2584f8,g);
+        s.x[0]=header;put(metadata_headers[q],0,uint64_t(11+q));
+        client_event(release?0x32750c:0x327e54,s);
+        s.x[1]=release?meta:local_sp+0x90;client_event(release?0x3275a0:0x327f2c,s);
+        std::memcpy(reinterpret_cast<void*>(local_sp+0x90),&meta,8);std::memcpy(reinterpret_cast<void*>(local_sp+0x98),&data,8);s.x[0]=0;
+        client_event(release?0x3275a4:0x327f30,s);
+        put(metadata_headers[q],0x68,uint32_t(release?2:1));s.x[19]=header;s.x[1]=header;s.x[24]=0x68;s.x[0]=release?1:2;
+        client_event(release?0x32758c:0x327f70,s);put(metadata_headers[q],0x68,uint32_t(s.x[0]));
+        client_event(release?0x327590:0x327f74,s);
+        g.sp=inner;g.x[0]=address;g.x[30]=client_base+(release?0x3275cc:0x327f80);client_event(0x258508,g);
+        s.sp=local_sp-mframe;s.x[0]=0;client_event(call+4,s);
+        s.x[0]=manager+8;client_event(release?0x3276d8:0x328150,s);
+        s.sp=local_sp;s.x[19]=addr(camera);s.x[0]=0;router.event(start+4,s);
+    }
     void source_fact(uint64_t pc,uint64_t body_sp,uint64_t value=0) {
         arena::Saved fact{};fact.sp=body_sp;fact.x[19]=addr(camera);fact.x[0]=fact.x[1]=fact.x[20]=value;
         router.event(pc,fact);

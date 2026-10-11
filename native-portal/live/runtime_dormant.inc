@@ -30,7 +30,8 @@
         for(const auto& site:NativeStockReadBoundary::required_sites)
             if(!dormant_covered(this,site.module,site.pc))return false;
         if(!evidence.begin_dormant_stock(stock_facts.reader()))return false;
-        dormant_enabled=true;return true;
+        native_source.emplace(this,CurrentSourceContracts{source_identity},source_stock_owner);
+        source=&*native_source;dormant_enabled=true;return true;
     }
     static bool dormant_covered(void* p,ClientSourceBinding::Module module,uint64_t pc) noexcept {
         const auto& self=*static_cast<Impl*>(p);
@@ -128,7 +129,7 @@
         const bool engaged=dormant_admission.engage(dormant_version,[&]{
             if(source_foreign.load() || !stock_facts.complete() || !dormant_history || dormant_history->failed())return false;
             const auto current=evidence.stock_command_facts();if(!current.generation)return false;
-            if(!native_source.fold_stock_history(*dormant_history))return false;
+            if(!native_source->fold_stock_history(*dormant_history))return false;
             return evidence.engage_stock(evidence.identity(),current.generation);
         });
         if(engaged)dormant_engaged=true;

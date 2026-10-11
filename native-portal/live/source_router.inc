@@ -11,6 +11,10 @@
             ft_native_portal_source_modules && ft_native_portal_source_modules(&comp,&client) && comp==base && client;
     }
     coordination::NativeReceipt source_receipt(const CameraBinding& held,const coordination::ActionPlan& plan,uint64_t actual) noexcept {
+        if(dormant_enabled) {
+            if(!source || !source_integrity() || !current_method_ready)return {};
+            return source->transition(held,plan,actual);
+        }
         if(!source || !source_binding || !source_integrity())return {};
         const auto observed=source_binding->snapshot();
         if(!observed.valid || observed.actual!=actual || observed.action!=plan.action)return {};
@@ -79,6 +83,12 @@
         // Global hooks also see unrelated native calls. Never borrow a new ticket
         // on bootstrap/foreign ingress and never read owner optionals off-thread.
         if(tid()!=owner_tid) {if(camera_bound.load())source_foreign.store(true);return true;}
+        if(dormant_enabled && dormant_engaged) {
+            if(current_method)current_method->route(current_method->collector,
+                ending?SourceRoute::Return:field?SourceRoute::Field:boundary?SourceRoute::Boundary:SourceRoute::Event,module,offset,s);
+            else if(!camera_cleanup_active)source_foreign.store(true);
+            return true;
+        }
         if(field || boundary)return true; // legacy engine has no such PC handler
         if(!source_observing)return true;
         if(ending) {
