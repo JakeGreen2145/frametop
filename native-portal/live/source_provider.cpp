@@ -29,7 +29,7 @@ bool ClientSourceBinding::read(uint64_t address,void* out,size_t size) noexcept 
         reader_(reader_context_,address,out,size) && held();
 }
 bool ClientSourceBinding::begin(uint64_t ticket,const CameraBinding& b,coordination::Action action,
-    uint64_t comp,uint64_t client,const char* comp_digest,const char* client_digest) noexcept {
+    uint64_t comp,uint64_t client,const char* comp_digest,const char* client_digest,bool native_inputs) noexcept {
     if(!owner())return refuse();
     if(active_ || failed_.load() || b.camera>UINT64_MAX-0x500 || !comp_digest || !client_digest ||
        std::strcmp(comp_digest,compositor_sha) || std::strcmp(client_digest,client_sha) ||
@@ -39,13 +39,28 @@ bool ClientSourceBinding::begin(uint64_t ticket,const CameraBinding& b,coordinat
     ticket_=ticket;binding_=b;
     if(!held())return refuse();
     bound_=true;compositor_base_=comp;client_base_=client;observation_={};call_={};metadata_={};
-    observation_.action=action;active_=true;return true;
+    native_inputs_=native_inputs;observation_.action=action;active_=true;return true;
 }
-bool ClientSourceBinding::event(Module module,uint64_t pc,const arena::Saved& s) noexcept {
+bool ClientSourceBinding::event(Module module,uint64_t pc,const arena::Saved& s,const NativeSelectedId* selected) noexcept {
     if(!owner())return refuse();
-    if(!active_ || !held())return refuse();
-    if(observation_.action==coordination::Action::None)return metadata_event(module,pc,s);
-    return module==Module::Compositor?compositor(pc,s):client(pc,s);
+    if(!active_ || !held() || selected_)return refuse();
+    selected_=selected;
+    const bool ok=observation_.action==coordination::Action::None?metadata_event(module,pc,s):
+        module==Module::Compositor?compositor(pc,s):client(pc,s);
+    selected_=nullptr;return ok;
+}
+bool ClientSourceBinding::native_connect_output(const arena::Saved& s) noexcept {
+    if(!owner() || !held() || !active_ || !native_inputs_ || observation_.action!=coordination::Action::Connect ||
+       !call_.pending || !call_.entered || call_.output || call_.sp<0xc0 || s.sp!=call_.sp-0xc0 ||
+       s.x[20]!=provider_ || s.x[23]!=call_.slot || !s.x[19] || s.x[19]!=call_.alias ||
+       !(call_.existing || (call_.new_path && call_.inserted && call_.header)))return refuse();
+    call_.id=s.x[19];call_.output=true;return true;
+}
+ClientSourceBinding::NativeReadContext ClientSourceBinding::native_read_context() const noexcept {
+    if(!owner() || !active_ || !held())return {};
+    return {call_.pending,call_.entered,call_.new_path,call_.sp,call_.slot,call_.alias,
+        metadata_.pending,metadata_.releasing,metadata_.entered,metadata_.inner_entered,metadata_.queue,
+        metadata_.sp,metadata_.return_pc,metadata_.id,provider_,metadata_.object,metadata_.header,metadata_.ref_address};
 }
 bool ClientSourceBinding::compositor(uint64_t pc,const arena::Saved& s) noexcept {
     unsigned q=0;uint64_t ret=0;bool entry=false;
@@ -73,7 +88,12 @@ bool ClientSourceBinding::compositor(uint64_t pc,const arena::Saved& s) noexcept
         if(!read(s.x[0],&vptr,8) || vptr!=client_base_+0x60f108 ||
            !read(vptr+(connecting?8:16),&method,8) || method!=target)return refuse();
         uint64_t id=0;
-        if(!connecting && (!read(slot,&id,8) || !id || id!=s.x[1]))return refuse();
+        if(!connecting) {
+            if(native_inputs_) {
+                if(!selected_ || selected_->queue!=q || selected_->value!=s.x[1])return refuse();
+                id=selected_->value;if(!id)return refuse();
+            } else if(!read(slot,&id,8) || !id || id!=s.x[1])return refuse();
+        }
         provider_=s.x[0];observation_.provider=provider_;call_={};call_.pending=true;call_.queue=q;
         call_.sp=s.sp;call_.slot=slot;call_.path=path;call_.return_pc=ret;call_.id=id;
         return true;
@@ -82,7 +102,8 @@ bool ClientSourceBinding::compositor(uint64_t pc,const arena::Saved& s) noexcept
     auto& out=observation_.queues[call_.queue];
     out.observed=true;out.result=static_cast<int32_t>(s.x[0]);out.id=call_.id;
     if(connecting && out.result==0) {
-        if(!read(call_.slot,&out.id,8) || !out.id)return refuse();
+        if(native_inputs_) {if(!call_.output || !out.id)return refuse();}
+        else if(!read(call_.slot,&out.id,8) || !out.id)return refuse();
         out.alias=call_.alias;out.header=call_.header;
         if(out.alias && out.alias!=out.id)return refuse();
         if(call_.inserted && call_.header && call_.alias==out.id)out.ownership=Entry::NewEntry;

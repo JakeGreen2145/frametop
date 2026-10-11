@@ -1,5 +1,7 @@
 # Stock source receipt handoff
 
+Historical component handoff. The `.state` callback and pre-RET completion sections below are superseded by [the native field/scoped-read handoff](stock-native-source-handoff.md). Do not wire the old snapshot API. Current identity/bootstrap/render admission is a separate follow-up in [the current API handoff](native-source-current-api-handoff.md).
+
 ## Delivered scope
 
 Branch `feat/native-portal-stock-source-receipts`, base `33877a86468b2a4422c1014d81414e4136f46b3c`. The implementation is a production-usable collector/transport and a fold API on the real default `NativeSourceAdmission`. It is not installed in Runtime. No edits to Runtime, camera_owner, source_router, Evidence, recording, graph, native hooks or GPU/source-command settlement.

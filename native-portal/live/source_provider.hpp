@@ -46,18 +46,29 @@ public:
     // Action::None denotes Update observation only, never a demand transition.
     bool begin(uint64_t retained_ticket,const CameraBinding&,coordination::Action,
                uint64_t compositor_base,uint64_t client_base,
-               const char* compositor_digest,const char* client_digest) noexcept;
+               const char* compositor_digest,const char* client_digest,bool native_inputs=false) noexcept;
     // Saved registers BEFORE the named instruction. Calls are observed only;
     // every original instruction/result remains untouched. Missing events never
     // become inferred ownership. Foreign-thread events revoke without reading.
-    bool event(Module,uint64_t relative_pc,const arena::Saved&) noexcept;
+    // Explicit native-register selection, not a memory-reader substitution.
+    struct NativeSelectedId { unsigned queue=0;uint64_t value=0; };
+    bool event(Module,uint64_t relative_pc,const arena::Saved&,const NativeSelectedId* =nullptr) noexcept;
+    bool native_connect_output(const arena::Saved&) noexcept;
+    struct NativeReadContext {
+        bool connect_pending=false,connect_entered=false,new_path=false;
+        uint64_t call_sp=0,slot=0,alias=0;
+        bool pending=false,releasing=false,entered=false,inner_entered=false;
+        unsigned queue=0;
+        uint64_t sp=0,return_pc=0,id=0,provider=0,object=0,header=0,ref=0;
+    };
+    NativeReadContext native_read_context() const noexcept;
     bool finish(uint64_t actual_camera_return) noexcept;
     void cancel() noexcept {refuse();}
     bool failed() const noexcept {return !owner() || failed_.load();}
     Observation snapshot() const noexcept;
 private:
     struct Call {
-        bool pending=false,entered=false,new_path=false,inserted=false,existing=false;
+        bool pending=false,entered=false,new_path=false,inserted=false,existing=false,output=false;
         unsigned queue=0;
         uint64_t sp=0,slot=0,path=0,return_pc=0,alias=0,header=0,id=0;
     } call_{};
@@ -82,7 +93,8 @@ private:
     const int process_;
     const std::thread::id owner_;
     std::atomic<bool> failed_{false};
-    bool active_=false;
+    bool active_=false,native_inputs_=false;
+    const NativeSelectedId* selected_=nullptr; // call-local input, never retained
     uint64_t ticket_=0,compositor_base_=0,client_base_=0,provider_=0;
     bool bound_=false;
     CameraBinding binding_{};

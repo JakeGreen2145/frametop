@@ -1,0 +1,706 @@
+{
+  "schema": "stock-native-source-hook-request/v1",
+  "activated": false,
+  "contract_sha256": "f17510461c5d96330f4a41db362730ae52ddf799376af7d2e67c8e90c6483fd1",
+  "permissions_sha256": "bc95f7474990c13630870fafd4fb56c955982e6d05209295604f0ebfd26b52d0",
+  "module_pins": {
+    "compositor": "9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265",
+    "client": "fe967dcc0d97dab984bd9acc1dc522fcecbcf9beb794fdd7ec156334ec31e313"
+  },
+  "saved_abi_size": 800,
+  "new_callbacks": [
+    {
+      "module": "compositor",
+      "pc": "0x15f9fc",
+      "callback_pc": "0x15f9fc",
+      "word": "0x54000400",
+      "instruction_bytes": "00040054",
+      "guard16": "0004005460824d39a0040035d02a0494",
+      "guard_sha256": "1d3b89779eaff406e2317dadddd1ad8d4cdfe04f582d7da6bd8d0b10e2250551",
+      "kind_candidate": null,
+      "meaning": "poststr low8(x0)",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "loader_note": "Branch/indirect-dispatch relocation must use actual existing prepare/loader site contract; guard is exact, no new emitter claimed.",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa60",
+      "callback_pc": "0x15fa60",
+      "word": "0x34000060",
+      "instruction_bytes": "60000034",
+      "guard16": "6000003460824d398001003500008052",
+      "guard_sha256": "c67e9ce9e366ab012fb0196081b5010c6ab354ea0f87755bf72c355e25dbe691",
+      "kind_candidate": 3,
+      "meaning": "postload active x0",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa94",
+      "callback_pc": "0x15fa94",
+      "word": "0x34fffec0",
+      "instruction_bytes": "c0feff34",
+      "guard16": "c0feff3420008052f35341a9fd7bc2a8",
+      "guard_sha256": "fd5a515cba343931c49a783917f85971685210f6454b8e584ae397dbee9d9228",
+      "kind_candidate": 3,
+      "meaning": "postload active x0",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fbc4",
+      "callback_pc": "0x15fbc4",
+      "word": "0x350000c0",
+      "instruction_bytes": "c0000035",
+      "guard16": "c0000035200080527f260d39f30b40f9",
+      "guard_sha256": "adcc7ea2799d9c019eb6aae13f6c5e97529f674f713eb402e15c7b3afee13433",
+      "kind_candidate": 3,
+      "meaning": "poststr active0",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fd30",
+      "callback_pc": "0x15fd30",
+      "word": "0x390d0660",
+      "instruction_bytes": "60060d39",
+      "guard16": "60060d39001c001254030034610e4d39",
+      "guard_sha256": "c4643c6c2c4e231bd052c309710e320907a2179b2919b6c538eb6947b2117d6f",
+      "kind_candidate": 0,
+      "meaning": "postload active low8(x20)",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa04",
+      "callback_pc": "0x15fa04",
+      "word": "0x350004a0",
+      "instruction_bytes": "a0040035",
+      "guard16": "a0040035d02a049474620d91030040f9",
+      "guard_sha256": "509ee128354fb302fd4c1e8bdd947ff03dcf00157d26570b20a96f587a51884d",
+      "kind_candidate": 3,
+      "meaning": "Connect postload x0",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa8c",
+      "callback_pc": "0x15fa8c",
+      "word": "0x34fffbe0",
+      "instruction_bytes": "e0fbff34",
+      "guard16": "e0fbff34602a4d39c0feff3420008052",
+      "guard_sha256": "d2566b5e8e963cbbe2d7a39c817ffa80347ce7ab5dcec9a793f58017a7512b12",
+      "kind_candidate": 3,
+      "meaning": "Connect alternate postload x0",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fabc",
+      "callback_pc": "0x15fabc",
+      "word": "0x17fffff5",
+      "instruction_bytes": "f5ffff17",
+      "guard16": "f5ffff17e103002a801700b000200c91",
+      "guard_sha256": "f7a8ec2a40ce599ee0c0c0f95593f4be5601f1709cdd87871c8bc15355d3079d",
+      "kind_candidate": null,
+      "meaning": "connected1 committed",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "loader_note": "Branch/indirect-dispatch relocation must use actual existing prepare/loader site contract; guard is exact, no new emitter claimed.",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fbc0",
+      "callback_pc": "0x15fbc0",
+      "word": "0x390d2a7f",
+      "instruction_bytes": "7f2a0d39",
+      "guard16": "7f2a0d39c0000035200080527f260d39",
+      "guard_sha256": "adfe9562306ce8232e13a41e73dd8e03598953e8f0a073374f1c14d6fa937c78",
+      "kind_candidate": 0,
+      "meaning": "Release postload x0 BEFORE active0 store",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fc4c",
+      "callback_pc": "0x15fc4c",
+      "word": "0x394d2a61",
+      "instruction_bytes": "612a4d39",
+      "guard16": "612a4d39edffff171f2003d5211c0072",
+      "guard_sha256": "8373ab17cc5b25d8bdabc0cb772473a88e6c74adcebdb1fd1f0502779e36fb40",
+      "kind_candidate": 0,
+      "meaning": "connected0 committed",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fd48",
+      "callback_pc": "0x15fd48",
+      "word": "0x34000421",
+      "instruction_bytes": "21040034",
+      "guard16": "210400340004003561fa4c3960164d39",
+      "guard_sha256": "231e1c7ebe923eba84b2b333b040fb6a4eccb129fa4a0de40095c59de67c5203",
+      "kind_candidate": 3,
+      "meaning": "Update postload x1",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fd90",
+      "callback_pc": "0x15fd90",
+      "word": "0x34000080",
+      "instruction_bytes": "80000034",
+      "guard16": "80000034740e4d39f4010035f403002a",
+      "guard_sha256": "9d9a1f37bf278a6fafe74f4af2b8b4af461cdde16270e165bcf1c92b7b84bc1d",
+      "kind_candidate": 3,
+      "meaning": "Update postload x0",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fbd0",
+      "callback_pc": "0x15fbd0",
+      "word": "0xf9400bf3",
+      "instruction_bytes": "f30b40f9",
+      "guard16": "f30b40f9fd7bc2a8c0035fd65b2a0494",
+      "guard_sha256": "60cb748f53506f0f19fd0478aff6c2ad4cef02d25edbbc7d71ff86b1f096d018",
+      "kind_candidate": 0,
+      "meaning": "external0 committed no-pair",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fc08",
+      "callback_pc": "0x15fc08",
+      "word": "0x52800000",
+      "instruction_bytes": "00008052",
+      "guard16": "0000805221feff3560824d39f30b40f9",
+      "guard_sha256": "ee7631c1b4a0555ffc52f8efa7bbeb767a4f4dbe56d288cacfea254a64c895f7",
+      "kind_candidate": 0,
+      "meaning": "external0 committed connected/failed path",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x16013c",
+      "callback_pc": "0x16013c",
+      "word": "0x90001780",
+      "instruction_bytes": "80170090",
+      "guard16": "8017009000001691f3500094e03b40f9",
+      "guard_sha256": "ca543a98f5d34517deb02f81844fe05954b80395eeb0faaa5bb2cc2af2629636",
+      "kind_candidate": 0,
+      "meaning": "external=low8(x0) committed",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "camera_fact"
+    },
+    {
+      "module": "client",
+      "pc": "0x32a628",
+      "callback_pc": "0x800000000032a628",
+      "word": "0x17ffff3f",
+      "instruction_bytes": "3fffff17",
+      "guard16": "3fffff17000c40f900eaffb555ffff17",
+      "guard_sha256": "b1303b4fe2f0666143044ef57fe1818ce31c032c41eb97a1fb709d92371b611a",
+      "kind_candidate": null,
+      "meaning": "committed native output ID",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "loader_note": "Branch/indirect-dispatch relocation must use actual existing prepare/loader site contract; guard is exact, no new emitter claimed.",
+      "route": "camera_fact"
+    },
+    {
+      "module": "client",
+      "pc": "0x3280ec",
+      "callback_pc": "0x80000000003280ec",
+      "word": "0x350004c0",
+      "instruction_bytes": "c0040035",
+      "guard16": "c0040035853e40f994c20191c50300b4",
+      "guard_sha256": "d898db67a0d40dcb96212902fc8b58cf42c877dabe958bdd0b9f04d5bf616227",
+      "kind_candidate": 3,
+      "meaning": "manager lock raw pthread-style result=0 conditional branch",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "boundary_event"
+    },
+    {
+      "module": "client",
+      "pc": "0x327678",
+      "callback_pc": "0x8000000000327678",
+      "word": "0x35000480",
+      "instruction_bytes": "80040035",
+      "guard16": "80040035833e40f994c20191830300b4",
+      "guard_sha256": "70f2f9a87698962e5588a10751e0b5ae05a5c7df18d5c8598c0ea7f4ad8b87e8",
+      "kind_candidate": 3,
+      "meaning": "Return manager lock raw result=0",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "boundary_event"
+    },
+    {
+      "module": "client",
+      "pc": "0x328150",
+      "callback_pc": "0x8000000000328150",
+      "word": "0x97f59d2c",
+      "instruction_bytes": "2c9df597",
+      "guard16": "2c9df597e003132af35341a9f55b42a9",
+      "guard_sha256": "8b7414716aaffd233ddf279b929d82c31991756972b5889ac3164b142439cfd7",
+      "kind_candidate": 1,
+      "meaning": "revoke before manager unlock",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "boundary_event"
+    },
+    {
+      "module": "client",
+      "pc": "0x3276d8",
+      "callback_pc": "0x80000000003276d8",
+      "word": "0x97f59fca",
+      "instruction_bytes": "ca9ff597",
+      "guard16": "ca9ff597e003132af35341a9f55b42a9",
+      "guard_sha256": "860ef00afe443c6e3e1ad5dfaf4ad7d966cb9663691502fafb4ebca32785e384",
+      "kind_candidate": 1,
+      "meaning": "Return revoke before unlock",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "boundary_event"
+    },
+    {
+      "module": "client",
+      "pc": "0x258438",
+      "callback_pc": "0x8000000000258438",
+      "word": "0xa9bd7bfd",
+      "instruction_bytes": "fd7bbda9",
+      "guard16": "fd7bbda9fd030091f35301a954d03bd5",
+      "guard_sha256": "66727f6c598199f83972c9435bca88720d01a5ffffb406cd2df38427cffee6ac",
+      "kind_candidate": 0,
+      "meaning": "guard begin",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "boundary_event"
+    },
+    {
+      "module": "client",
+      "pc": "0x2584c4",
+      "callback_pc": "0x80000000002584c4",
+      "word": "0xf9400261",
+      "instruction_bytes": "610240f9",
+      "guard16": "610240f920c0403900010034601e0090",
+      "guard_sha256": "9512d5bbb7f1cf3a6c5d8351e379afb577adc40f4da43ed1fd3fb42fa6a9ed0f",
+      "kind_candidate": 0,
+      "meaning": "actual bool before displaced LDR and2584c8 overwrites w0",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "boundary_event"
+    },
+    {
+      "module": "client",
+      "pc": "0x258508",
+      "callback_pc": "0x8000000000258508",
+      "word": "0xd53bd041",
+      "instruction_bytes": "41d03bd5",
+      "guard16": "41d03bd5e20300aafd7bbfa9601e0090",
+      "guard_sha256": "70cf1326b85922b436bebccb5432df2c76a5e7b681d693697939c8ceb282b5ed",
+      "kind_candidate": 0,
+      "meaning": "witness revoke",
+      "installation": "not claimed; Pan loader lane owns prepare/ABI/coverage",
+      "route": "boundary_event"
+    }
+  ],
+  "existing_engine_callbacks": {
+    "compositor": [
+      "0x15fa78",
+      "0x15faa4",
+      "0x15fbd8",
+      "0x15fc20",
+      "0x15fa24",
+      "0x15fa28",
+      "0x15fa44",
+      "0x15fa48",
+      "0x15fae8",
+      "0x15faec",
+      "0x15fbec",
+      "0x15fbf0",
+      "0x15fc34",
+      "0x15fc38",
+      "0x15fdc8",
+      "0x15fee4",
+      "0x15fee8",
+      "0x160164",
+      "0x160168",
+      "0x160184",
+      "0x160188",
+      "0x160380",
+      "0x160384",
+      "0x1605c4",
+      "0x1605c8"
+    ],
+    "client": [
+      "0x32a270",
+      "0x32a398",
+      "0x32a39c",
+      "0x32a49c",
+      "0x32a504",
+      "0x32750c",
+      "0x327e54",
+      "0x3280a8",
+      "0x32813c",
+      "0x328140",
+      "0x327640",
+      "0x3276c4",
+      "0x3276c8",
+      "0x327e18",
+      "0x327f2c",
+      "0x327f30",
+      "0x327f70",
+      "0x327f74",
+      "0x3274d8",
+      "0x32758c",
+      "0x327590",
+      "0x3275a0",
+      "0x3275a4"
+    ]
+  },
+  "method_entries": [
+    "0x15f9e0",
+    "0x15fba8",
+    "0x15fcc0"
+  ],
+  "aggregate_held_decision": "0x15fbb8",
+  "completion": "Save StockSourceCollector::Invocation call=collector.invocation() immediately after successful begin. camera_return(pc,Saved) captures pre-RET candidate only. Call complete_own_bypass(call, actual) ONLY after this exact native-method ft_native_portal_call_saved returns. Invocation matches runtime/version/stream/sequence/ticket/method/SP/LR and actual result. Never use outer-handler result. No new RET-retirement hook required.",
+  "routing": "camera_fact handles field-only callbacks; boundary_event handles manager/guard-only callbacks. event handles existing engine callbacks and selected-ID facts. Never send unsupported PC to binding engine.",
+  "coverage_gate": "All existing_engine_callbacks, new_callbacks, method_entries and aggregate_held_decision must be authenticated in actual installed inventory; missing coverage means unavailable. Null kind_candidate is deliberately unresolved, not invented emitter support.",
+  "no_lock_mode": "Unavailable: no executed single-thread branch witness in delivered table. Locked direct-manager path only.",
+  "optional_not_required": [
+    "constructor facts",
+    "vptr register replacement",
+    "header native load replacement",
+    "ref register replacement including retry327624",
+    "accessor RET2584f8"
+  ],
+  "callback_api": {
+    "backend": "StockSourceReadBoundary { Read read=nullptr; void* context; Covered covered; ProviderLive provider_live; }",
+    "Read": "bool(void*, const StockSourceReadScope&, uint64_t address, void* out, size_t bytes) noexcept. Bounded backend called only after concrete allowlist. nullptr selects process_vm_readv.",
+    "Covered": "bool(void*, ClientSourceBinding::Module, uint64_t relative_pc) noexcept. Must consult actual installed/pinned inventory, not stale full-mask macro. Every required callback must be covered.",
+    "ProviderLive": "bool(void*, const StockSourceReadScope&, uint64_t provider) noexcept. Identity-only proof of same-original provider lifetime and loader-pinned immutable vtable. A camera gate ticket alone is not proof; no camera tuple reads.",
+    "begin": "bool begin(ticket, binding, version, method, entrySaved, compositorBase, clientBase, compDigest, clientDigest)",
+    "field": "bool camera_fact(Module, pc, Saved)",
+    "guard": "bool boundary_event(Module, pc, Saved)",
+    "engine": "bool event(Module, pc, Saved), internally uses named NativeSelectedId instead of camera ID reread",
+    "candidate": "bool camera_return(pc, Saved)",
+    "complete": "bool complete_own_bypass(const Invocation&, uint64_t actual)",
+    "held": "bool held_disconnect(0x15fbb8, Saved) only after actual aggregate decision selects no-op",
+    "owner": "fold_stock_history(transport) only after all stock originals excluded, with explicit StockOwner at render handoff",
+    "retained_caller": "Parent RetainedCaller::observe_scope(const Observer&) const; Observer=std::function<void(CameraAccessGate&,uint64_t,const CameraBinding&)>; handle remains live and unmoved/unreleased throughout complete native method."
+  },
+  "required_callbacks": [
+    {
+      "module": "compositor",
+      "pc": "0x15f9e0"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fba8"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fcc0"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fbb8"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa78"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15faa4"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fbd8"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fc20"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fdc8"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa24"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa28"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa44"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa48"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fae8"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15faec"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fbec"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fbf0"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fc34"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fc38"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fee4"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fee8"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x160164"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x160168"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x160184"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x160188"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x160380"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x160384"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x1605c4"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x1605c8"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15f9fc"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa60"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa94"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fbc4"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fd30"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa04"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fa8c"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fabc"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fbc0"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fc4c"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fd48"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fd90"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fbd0"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x15fc08"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x16013c"
+    },
+    {
+      "module": "client",
+      "pc": "0x32a270"
+    },
+    {
+      "module": "client",
+      "pc": "0x32a398"
+    },
+    {
+      "module": "client",
+      "pc": "0x32a39c"
+    },
+    {
+      "module": "client",
+      "pc": "0x32a49c"
+    },
+    {
+      "module": "client",
+      "pc": "0x32a504"
+    },
+    {
+      "module": "client",
+      "pc": "0x32a628"
+    },
+    {
+      "module": "client",
+      "pc": "0x32750c"
+    },
+    {
+      "module": "client",
+      "pc": "0x327e54"
+    },
+    {
+      "module": "client",
+      "pc": "0x3280a8"
+    },
+    {
+      "module": "client",
+      "pc": "0x32813c"
+    },
+    {
+      "module": "client",
+      "pc": "0x328140"
+    },
+    {
+      "module": "client",
+      "pc": "0x327640"
+    },
+    {
+      "module": "client",
+      "pc": "0x3276c4"
+    },
+    {
+      "module": "client",
+      "pc": "0x3276c8"
+    },
+    {
+      "module": "client",
+      "pc": "0x327e18"
+    },
+    {
+      "module": "client",
+      "pc": "0x327f2c"
+    },
+    {
+      "module": "client",
+      "pc": "0x327f30"
+    },
+    {
+      "module": "client",
+      "pc": "0x327f70"
+    },
+    {
+      "module": "client",
+      "pc": "0x327f74"
+    },
+    {
+      "module": "client",
+      "pc": "0x3274d8"
+    },
+    {
+      "module": "client",
+      "pc": "0x32758c"
+    },
+    {
+      "module": "client",
+      "pc": "0x327590"
+    },
+    {
+      "module": "client",
+      "pc": "0x3275a0"
+    },
+    {
+      "module": "client",
+      "pc": "0x3275a4"
+    },
+    {
+      "module": "client",
+      "pc": "0x3280ec"
+    },
+    {
+      "module": "client",
+      "pc": "0x327678"
+    },
+    {
+      "module": "client",
+      "pc": "0x328150"
+    },
+    {
+      "module": "client",
+      "pc": "0x3276d8"
+    },
+    {
+      "module": "client",
+      "pc": "0x258438"
+    },
+    {
+      "module": "client",
+      "pc": "0x2584c4"
+    },
+    {
+      "module": "client",
+      "pc": "0x258508"
+    }
+  ],
+  "required_callback_count": 75,
+  "new_callback_count": 23,
+  "current_auth_status": "Unchanged ENGAGED API for compatibility, NOT declared production-ready. Current identity/bootstrap/render selection API follow-up specified in native-source-current-api-handoff.md. Do not use receipts to grant broad current camera tuple reads."
+}

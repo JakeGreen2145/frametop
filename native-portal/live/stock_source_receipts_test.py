@@ -5,10 +5,10 @@ import argparse
 import ast
 import json
 import os
-from pathlib import Path
 import resource
 import subprocess
 import uuid
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / 'build/stock-source-receipts'
@@ -17,6 +17,7 @@ BUILD = ROOT / 'build/stock-source-receipts'
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--sanitize', action='store_true')
+    parser.add_argument('--native-vectors', type=Path, help='replay generated pinned producer Saved vectors')
     parser.add_argument('--runtime', action='store_true', help='also build/link complete unchanged Runtime and run its CPU smoke test')
     parser.add_argument('--vulkan-include', type=Path, default=Path('/home/jakeg/.hermes/work/frame-native-pipeline-review/include'))
     args = parser.parse_args()
@@ -37,7 +38,7 @@ def main():
         unit = 'stock-receipts-' + uuid.uuid4().hex + '.scope'
         actual = ['systemd-run', '--user', '--scope', '--unit=' + unit, '-p', 'MemoryMax=256M', '-p', 'MemorySwapMax=0', *cmd] if capped else cmd
         try:
-            r = subprocess.run(actual, capture_output=True, text=True, env=env, timeout=180)
+            r = subprocess.run(actual, capture_output=True, text=True, env=env, timeout=180, check=False)
         except subprocess.TimeoutExpired:
             if capped:
                 subprocess.run(['systemctl', '--user', 'stop', unit], check=False, timeout=15)
@@ -46,6 +47,7 @@ def main():
         results.append({'command': actual, 'exit': r.returncode, 'output': r.stdout + r.stderr})
         (output / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
         r.check_returncode()
+        return r.stdout
 
     objects = {}
 
@@ -63,6 +65,15 @@ def main():
         # ASan reserves virtual address space independently of resident RAM.
         run([str(binary)])
 
+    target('native-contract', ['live/stock_native_contract_test.cpp', 'live/source_provider.cpp', 'control/camera_gate.cpp'])
+    inventory = run([str(output / 'native-contract'), '--inventory'])
+    actual_sites = [tuple(line.split()) for line in inventory.splitlines()]
+    requested = json.loads((ROOT / 'live/stock-native-source-hook-request.json').read_text())
+    expected_sites = {(s['module'], s['pc']) for s in requested['required_callbacks']}
+    assert len(actual_sites) == len(set(actual_sites)) == requested['required_callback_count']
+    assert set(actual_sites) == expected_sites
+    if args.native_vectors:
+        run([str(output / 'native-contract'), str(args.native_vectors)])
     target('stock-receipts', ['live/stock_source_receipts_test.cpp', 'live/source_provider.cpp', 'control/camera_gate.cpp'])
     target('existing-admission', ['live/native_source_admission_test.cpp'])
     if args.runtime:

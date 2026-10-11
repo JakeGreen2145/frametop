@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "base": "bfad7b1a9d79482345b92b4c5b8eb7270289322d",
+  "runtime_activation": false,
+  "independent_review": "parent-owned, not claimed",
+  "tests": {
+    "plain": {
+      "log": "/home/jakeg/.hermes/work/frametop-native-source-native-facts/native-portal/build/stock-source-receipts/plain/results.json",
+      "log_sha256": "6b8b520e77faa2fa4b694949f37b3903397dedef91e1c3c19ef2ef7884b30ac3",
+      "command_count": 32,
+      "compile_count": 22,
+      "all_exit_zero": true,
+      "all_memory_capped": true,
+      "outputs": [
+        "PASS native contract: field provenance, own completion, masked fold and scoped read allowlist",
+        "PASS replayed 30 native-executed full Saved vectors through real collector",
+        "PASS stock source receipts: native-input binding/provider, warm borrow, ordered callers, sticky refusals",
+        "runtime: default stock continuation, exact pin, unsupported ownership, bounded real-memory queue payload parsing PASS"
+      ]
+    },
+    "sanitize": {
+      "log": "/home/jakeg/.hermes/work/frametop-native-source-native-facts/native-portal/build/stock-source-receipts/sanitize/results.json",
+      "log_sha256": "eef6a776f5471055c3b2b5e3f72dee37cd70fd8f0499b7ffc271f1e13154ac38",
+      "command_count": 32,
+      "compile_count": 22,
+      "all_exit_zero": true,
+      "all_memory_capped": true,
+      "outputs": [
+        "PASS native contract: field provenance, own completion, masked fold and scoped read allowlist",
+        "PASS replayed 30 native-executed full Saved vectors through real collector",
+        "PASS stock source receipts: native-input binding/provider, warm borrow, ordered callers, sticky refusals",
+        "runtime: default stock continuation, exact pin, unsupported ownership, bounded real-memory queue payload parsing PASS"
+      ]
+    }
+  },
+  "native_vectors": {
+    "count": 30,
+    "producer_count": 16,
+    "scope": "isolated pinned producer execution, synthetic memory and caller inputs",
+    "sha256": "289fc0c2362c695bb3715d09f0c9791cbc4770b8d63ccfedf86f4f1a29794aad"
+  },
+  "required_callbacks": 75,
+  "new_callbacks": 23,
+  "current_readiness_followup": "native-source-current-api-handoff.md; API proposal only, identity/bootstrap/current-render implementation not included",
+  "sources": {
+    "stock_native_facts.hpp": "a16327abe3c5d6d4f592bf324b100d4dad2d6258ab676c9c285b7faf9f98bd4c",
+    "stock_native_boundary.hpp": "e733f0d3d733979272735f9ddcf3f155207e1a905089a6ff10bd36f420e0dba1",
+    "stock_source_receipts.hpp": "7ea397b0520a4e485cbcec13710c3e6a455d04917fd82bb97b568cdcf26f3144",
+    "native_source_admission.hpp": "604635d458b3b66772d0aab1635126a5874b7937d9cffa1984d17500d605d1f8",
+    "source_provider.hpp": "7d20ab24c02c32ddc4d7cad0217f681fae2ea2b2996c1be4983f781e4afdff53",
+    "source_provider.cpp": "7efb043237578a1c69294b6ffe3e0e72f2c74b0602c1ffd5c404904675118acc",
+    "source_metadata.inc": "24d647ef49e30d2ae6cefa9a71613ec3701f6f31ef158d95cc470114a9a75d37",
+    "stock_native_contract_test.cpp": "3916fc04bff5088bbb74c4b9f5f435e2fd8108a81719d372c07875e067b4ea0e",
+    "stock_source_receipts_test.cpp": "d23724abeb5af560fcf121e3f457d3be177b01077f16f4612208644e42bd42af",
+    "stock_source_receipts_test.py": "a1d259d93b8b6763fe7870fbf6082c0ca63f8793362ab53568208b80ecf8a4d1",
+    "stock_native_vectors.py": "cf3a6741c808165d60786743079e8c7b93970a43670afae33ea6c61d3d8ee61a"
+  }
+}

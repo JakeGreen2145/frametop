@@ -19,7 +19,11 @@ bool ClientSourceBinding::metadata_event(Module module,uint64_t pc,const arena::
             if(m.pending || s.sp>UINT64_MAX-0x98)return refuse();
             uint64_t id=0,vptr=0,target=0;
             const uint64_t expected=client_base_+(releasing?0x327640:0x3280a8);
-            if(!read(binding_.camera+0x350+q*8,&id,8) || !id || s.x[1]!=id ||
+            if(native_inputs_) {
+                if(!selected_ || selected_->queue!=q || selected_->value!=s.x[1])return refuse();
+                id=selected_->value;
+            } else if(!read(binding_.camera+0x350+q*8,&id,8))return refuse();
+            if(!id || s.x[1]!=id ||
                (provider_ && s.x[0]!=provider_) || !read(s.x[0],&vptr,8) || vptr!=client_base_+0x60f108 ||
                !read(vptr+(releasing?0x38:0x30),&target,8) || target!=expected ||
                s.x[releasing?3:5]!=expected)return refuse();
