@@ -54,7 +54,7 @@ bool NativeStockFactCollector::scalar(uint64_t pc,uint64_t a,uint64_t &out) noex
 }
 void NativeStockFactCollector::finish() noexcept {
     if(!owner()) {deny(0);return;}
-    fields_={};fields_count_=0;active_pc_=0;active_={};
+    fields_={};fields_count_=0;active_pc_=0;active_={};unrelated_=false;
 }
 bool NativeStockFactCollector::bootstrap(uint64_t b,const render::Identity &i,uint64_t w,uint64_t c,uint64_t vk) noexcept {
     if(!owner() || !coverage_ || failure_.load() || i.process_instance!=uint64_t(pid_) || !ptr(i.renderer,0x16c0) || !i.renderer_generation || !ptr(b,0x600000))return deny(active_pc_);
@@ -86,10 +86,42 @@ bool NativeStockFactCollector::complete() const noexcept {
 bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexcept {
     if(!owner())return deny(pc);
     if(failure_.load() || !coverage_ || active_pc_)return deny(pc);
-    active_pc_=pc;active_={pc,s.sp,s.x[30],uint64_t(tid_.load())};fields_count_=0;fields_={};
-    if(!base_)return pc==0x7fda0 || deny(pc);
+    active_pc_=pc;active_={pc,s.sp,s.x[30],uint64_t(tid_.load())};fields_count_=0;fields_={};unrelated_=false;
+    // Before Evidence qualifies the renderer at 7fda0 there can be no known
+    // member or constructor/Begin/turnover scope: all are created below this
+    // gate. Global callbacks for unrelated lifetimes carry no facts for us.
+    // Keep the synchronous PC scope for the qualified bootstrap, but grant no
+    // fields, identity or readiness. Prior coverage/owner/scope failures above
+    // remain sticky; once base_ exists every original guard below still applies.
+    if(!base_)return true;
     const auto R=identity_.renderer;
     auto bad=[&] {return deny(pc);};
+    bool obligation=ctor_.phase || begin_.c || turn_.phase || factory_.phase || dispose_.phase;
+    for(const auto& m:members_)obligation=obligation || m.reset;
+    auto unrelated=[&] {unrelated_=true;return true;};
+    // These hooks are process-global. Entry qualifies a new command by device;
+    // descendants can only describe an existing owned invocation/member. Never
+    // ask Evidence to read a missing scalar for an unrelated native invocation.
+    if(!obligation) {
+        switch(pc) {
+        case 0x301800:
+            if(!member(s.x[0]) && s.x[1]!=R+0x50)return unrelated();
+            break;
+        case 0x303d10:case 0x303d70:case 0x300a28:case 0x300a38:case 0x300c54:
+            if(!member(s.x[19]))return unrelated();
+            break;
+        case 0x301804:case 0x30180c:
+            if(!member(s.x[20]))return unrelated();
+            break;
+        case 0x301808:case 0x300a08:case 0x300b20:
+            if(!member(s.x[0]))return unrelated();
+            break;
+        case 0x311648:
+            if(!member(s.x[1]))return unrelated();
+            break;
+        default:break;
+        }
+    }
     switch(pc) {
     case 0x301800: {
         if(ctor_.phase || begin_.c || !ptr(s.x[0],0x7b0) || s.x[20]!=s.x[0] || s.x[1]!=R+0x50 || s.x[2]!=s.x[19] || !ptr(s.x[2],0xd0) || s.sp<0xa0 || member(s.x[0]))return bad();
@@ -244,6 +276,7 @@ bool NativeStockFactCollector::capture(uint64_t pc,const arena::Saved &s) noexce
         publication_=factory_;factory_={};turn_={};return ok;
     }
     case 0x3003d0:case 0x4b3d0: {
+        if(s.x[0] && (s.x[0]==R || s.x[0]==current_w_ || s.x[0]==turn_.w || s.x[0]==factory_.w))return bad();
         auto *m=member(s.x[0]);if(!m)return true;
         const bool live=m->c==current_c_ || m->c==ctor_.c || m->c==begin_.c || m->c==turn_.c || m->c==factory_.c;
         *m={};return !live || bad(); // delete revokes before same-address reuse

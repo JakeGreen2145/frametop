@@ -87,13 +87,15 @@ struct Chain:Fixture {
     std::array<std::byte,0x7b0> bootstrap_command{};
     std::array<std::byte,0x10> bootstrap_wrapper{};
     std::array<std::byte,0x400> bootstrap_pool{};
-    void begin_command(uint64_t C) {
+    void begin_command(uint64_t C,uint64_t device=0) {
 #ifdef FT_DORMANT_CURRENT_TEST
-        s={};s.x[0]=s.x[20]=C;s.x[1]=addr(r)+0x50;s.x[2]=s.x[19]=addr(bootstrap_pool);
+        s={};s.x[0]=s.x[20]=C;s.x[1]=device?device:addr(r)+0x50;s.x[2]=s.x[19]=addr(bootstrap_pool);
         s.sp=addr(stack)+0x100;s.x[3]=0x50000000;s.x[30]=base+0x3017f0;event(0x301800);
         s.sp-=0xa0;s.x[19]=C;s.x[30]=base+0x301804;event(0x303d10);
         s.x[22]=addr(bootstrap_pool);s.x[30]=base+0x303d38;event(0x303d70);
         s.sp+=0xa0;s.x[20]=C;s.x[30]=base+0x301804;event(0x301804);
+#else
+        (void)device;
 #endif
         s.x[0]=s.x[20]=C;s.sp=addr(stack)+0x100;event(0x301808);
         s.sp-=0x40;s.x[19]=C;s.x[30]=base+0x300ae0;event(0x300a08);

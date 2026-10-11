@@ -16,6 +16,9 @@ class NativeStockFactCollector {
     bool install_coverage(const uint64_t *sites,size_t count) noexcept;
     Evidence::StockFactReader reader() noexcept;
     bool capture(uint64_t pc,const arena::Saved &) noexcept;
+    // Only after successful capture, on this owner before finish. No scalar
+    // answer or Evidence obligation belongs to this classified global event.
+    bool unrelated() const noexcept {return unrelated_;}
     void finish() noexcept;
     // Only after actual Evidence Run handoff and parent exclusion. No graph loan.
     bool handoff(const Evidence &) noexcept;
@@ -40,7 +43,7 @@ class NativeStockFactCollector {
     std::array<Field,6> fields_{};size_t fields_count_=0;
     const pid_t pid_;std::atomic<pid_t> tid_;
     std::atomic<uint64_t> failure_{0};
-    bool coverage_=false,bootstrapped_=false;
+    bool coverage_=false,bootstrapped_=false,unrelated_=false;
     uint64_t base_=0,active_pc_=0,current_w_=0,current_c_=0;
     render::Identity identity_{};
     Point active_{};

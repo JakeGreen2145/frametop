@@ -13,7 +13,7 @@ struct PolicyDiagnostic {
 struct LiveDiagnostics {
     uint64_t pc=0,first_pc=0,phases=0,seals=0,events=0,frames=0;
     // Collector overlays independent atomic facts, including foreign Run refusal.
-    uint64_t first_owner_rejection=0,first_evidence_pc=0,first_stop_pc=0;
+    uint64_t first_owner_rejection=0,first_evidence_pc=0,first_stop_pc=0,first_stock_pc=0;
     runtime::PublicationDiagnostic publication{};
     uint64_t stop_flags=0,stop_lr=0;
     uint64_t assoc_checked=0,assoc_passed=0,assoc_failed=0,assoc_lr=0,assoc_frame=0;
@@ -57,7 +57,7 @@ public:
         const auto &a=last_;const auto &p=d.policy_detail;const auto &q=a.policy_detail;
         if(lines_>=limit)return 0;
         if(lines_ && owners==owners_ && d.first_owner_rejection==a.first_owner_rejection &&
-           d.first_evidence_pc==a.first_evidence_pc && d.first_stop_pc==a.first_stop_pc &&
+           d.first_evidence_pc==a.first_evidence_pc && d.first_stop_pc==a.first_stop_pc && d.first_stock_pc==a.first_stock_pc &&
            d.publication.predicate==a.publication.predicate && d.stop_flags==a.stop_flags && d.stop_lr==a.stop_lr &&
            d.assoc_checked==a.assoc_checked && d.assoc_passed==a.assoc_passed && d.assoc_failed==a.assoc_failed &&
            d.assoc_owner==a.assoc_owner && d.assoc_lr==a.assoc_lr && d.assoc_fallback==a.assoc_fallback &&
@@ -76,6 +76,7 @@ public:
         const int n=std::snprintf(out,size,
             "ft-native-live line=%u pc=0x%llx phases=0x%llx owner_events=0x%llx handoff=%u "
             "first_owner_pc=0x%llx first_owner_pred=%u first_evidence_pc=0x%llx first_stop_pc=0x%llx "
+            "first_stock_pc=0x%llx "
             "stop_flags=0x%llx stop_lr=0x%llx pub_pred=%llu pub_phase=%llu pub_flags=0x%llx "
             "pub_checked=0x%llx pub_passed=0x%llx pub_caller=0x%llx pub_return=0x%llx "
             "pub_recording=%llu pub_generation=%llu pub_renewal=%llu pub_entries=%llu pub_attempt=%llu "
@@ -91,6 +92,7 @@ public:
             lines_+1,(unsigned long long)d.pc,(unsigned long long)d.phases,(unsigned long long)owners,unsigned(bool(owners&(1ull<<5))),
             (unsigned long long)(d.first_owner_rejection>>16),unsigned(d.first_owner_rejection&0xffff),
             (unsigned long long)d.first_evidence_pc,(unsigned long long)d.first_stop_pc,
+            (unsigned long long)d.first_stock_pc,
             (unsigned long long)d.stop_flags,(unsigned long long)d.stop_lr,
             (unsigned long long)d.publication.predicate,(unsigned long long)d.publication.phase,
             (unsigned long long)d.publication.flags,(unsigned long long)d.publication.checked,

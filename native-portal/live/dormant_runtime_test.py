@@ -27,6 +27,7 @@ def main():
     p.add_argument('--baseline-red', action='store_true')
     p.add_argument('--sanitize', action='store_true')
     p.add_argument('--current', action='store_true', help='Default Runtime first stereo and settlement')
+    p.add_argument('--modes', help='Comma-separated focused cases from the selected suite')
     p.add_argument('--fixtures', type=Path, default=Path('/home/jakeg/.hermes/work/frametop-native-live-integration/native-portal/build/camera-runtime-asan'))
     args = p.parse_args()
     if not args.in_scope:
@@ -99,6 +100,7 @@ def main():
                            STOCK_POOL_LR=0x297cb4, INITIAL_POOL_LR=0x29a8b8,
                            OUTER_LR=0x14a5cc)
         flags += ['-DFT_' + key + '=' + hex(value) for key, value in coordinates.items()]
+        flags += ['-Wl,--wrap=syscall', '-Wl,--wrap=process_vm_readv']
     inputs = [p for p in ROOT.rglob('*') if p.is_file() and 'build' not in p.relative_to(ROOT).parts
               and p.suffix in ('.cpp', '.hpp', '.inc', '.h', '.py')]
     hashes = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}
@@ -133,6 +135,18 @@ def main():
     if args.current:
         modes = ['cold', 'warm', 'stock-render', 'update-three', 'missing-hook', 'partial-upload', 'rejected-enqueue',
                  'source-uncertainty', 'identity-migration', 'actual-return', 'no-gpu', 'no-cpu', 'no-source']
+        modes += ['prebootstrap-cause', 'prebootstrap-runtime-cause', 'prebootstrap-scope-guards', 'prebootstrap-delete', 'prebootstrap-zero', 'prebootstrap-reuse',
+                  'prebootstrap-destroy', 'prebootstrap-return', 'prebootstrap-constructor',
+                  'bootstrap-known-delete', 'bootstrap-known-destroy', 'bootstrap-constructor-fault', 'bootstrap-vtable',
+                  'bound-known-delete', 'bound-known-destroy']
+        modes += ['postbootstrap-return', 'postbootstrap-null-return', 'postbootstrap-constructor',
+                  'bootstrap-delete-renderer', 'bootstrap-delete-wrapper']
+        modes += ['bootstrap-return-pool', 'bootstrap-return-lr', 'bootstrap-return-duplicate',
+                  'bootstrap-reset-subject', 'bootstrap-disposal-subject']
+    if args.modes:
+        requested = args.modes.split(',')
+        assert requested and all(mode in modes for mode in requested)
+        modes = requested
     for mode in modes:
         reader, writer = socket.socketpair();chunks = []
         def drain():
@@ -169,6 +183,37 @@ def main():
             passed = exact_red
         if args.current:
             passed = code == 0 and text.count('stereo=1 pending-Off=1 exact-settlement=1 disconnects=0 clean-teardown=1') == 2
+            if mode.startswith('prebootstrap-'):
+                if mode == 'prebootstrap-cause':
+                    passed = code == 0 and 'earlier_stock=0x0 first_evidence=0x0 bootstrap=1 reads=1' in text
+                elif mode == 'prebootstrap-runtime-cause':
+                    passed = code == 0 and 'PREBOOTSTRAP runtime bootstrap-armed=1' in text
+                elif mode == 'prebootstrap-scope-guards':
+                    passed = code == 0 and 'PREBOOTSTRAP scope guards=1 reads=0' in text
+                else:
+                    passed = passed and text.count('reads=0 readiness=0 saved-unchanged=1') == 2
+            if mode.startswith('bootstrap-'):
+                expected = {
+                    'bootstrap-known-delete': ('0x4b3d0', '0x4b3d0'),
+                    'bootstrap-delete-renderer': ('0x4b3d0', '0x4b3d0'),
+                    'bootstrap-delete-wrapper': ('0x4b3d0', '0x4b3d0'),
+                    'bootstrap-return-pool': ('0x311648', '0x311648'),
+                    'bootstrap-return-lr': ('0x311648', '0x311648'),
+                    'bootstrap-return-duplicate': ('0x311648', '0x311648'),
+                    'bootstrap-reset-subject': ('0x300c54', '0x300c54'),
+                    'bootstrap-disposal-subject': ('0x311648', '0x0'),
+                    'bootstrap-known-destroy': ('0x3003d0', '0x3003d0'),
+                    'bootstrap-constructor-fault': ('0x303d10', '0x0'),
+                    'bootstrap-vtable': ('0x0', '0x7fda0'),
+                }[mode]
+                live = [dict(word.split('=', 1) for word in line.split()[1:])
+                        for line in text.splitlines() if line.startswith('ft-native-live ')]
+                passed = (code == 0 and 'guard=' + mode + ' refused=1' in text and
+                          any((row.get('first_stock_pc'), row.get('first_evidence_pc')) == expected for row in live))
+            if mode.startswith('bound-known-'):
+                pc = '0x4b3d0' if mode == 'bound-known-delete' else '0x3003d0'
+                passed = (code == 0 and text.count('CURRENT ' + mode + ' refused=1 clean-teardown=1') == 2
+                          and ('first_stock_pc=' + pc) in text and ('first_evidence_pc=' + pc) in text)
             if mode == 'missing-hook':
                 passed = code == 0 and text.count('CURRENT missing-hook refused=1 clean-teardown=1') == 2
             if mode in ('partial-upload', 'rejected-enqueue', 'source-uncertainty', 'identity-migration',

@@ -182,6 +182,7 @@ struct Runtime::Impl {
                 if(live_published.read(snapshot)) {
                     snapshot.first_owner_rejection=first_owner_rejection.load();
                     snapshot.first_evidence_pc=evidence.first_failure_pc();
+                    snapshot.first_stock_pc=stock_facts.failure_pc();
                     const auto stop=first_stop.load();
                     snapshot.first_stop_pc=stop&0xffffff;snapshot.stop_flags=(stop>>24)&255;snapshot.stop_lr=stop>>32;
                     const size_t n=log.format(snapshot,owner_events.load(),line,sizeof line);
@@ -537,7 +538,9 @@ struct Runtime::Impl {
         // Native queue instructions always run, including mixed stock submissions.
         if(!dormant){source_command_event(pc,s);queue_event(pc,s);}
         const bool fact=dormant_fact_site(pc);
-        if(fact)stock_facts.capture(pc,s);
+        if(fact && stock_facts.capture(pc,s) && stock_facts.unrelated()) {
+            stock_facts.finish();publish();return; // original global callback remains untouched
+        }
         if(pc==0x7fda0 || pc==0x29a14c || pc==0x29a150 || pc==0x7fdbc) {
             if(!evidence.route(bridge,pc,s))refuse(Refusal::NativeInitialization);
             if(fact)stock_facts.finish();

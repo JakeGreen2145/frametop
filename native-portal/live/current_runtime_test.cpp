@@ -73,14 +73,25 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t* x,uint64_t x8) n
     }
     return fixture_native_call(target,x,x8);
 }
+#include "prebootstrap_runtime_fixture.inc"
 static void scenario() {
     const unsigned connects_before=connect_calls;
     auto f=std::make_unique<Chain>();active=f.get();f->source_map();f->borrowed_fixture=true;
     auto saved=f->s;f->s={};f->s.sp=addr(f->stack);f->s.x[19]=addr(f->app);
     f->s.x[20]=addr(f->app)+0x20000;f->s.x[26]=addr(f->camera);f->event(0x8dc1c);f->s=saved;
-    f->initial_camera_resources();f->bootstrap_router();f->publish_worker();
+    prebootstrap_observe(*f);
+    f->initial_camera_resources();f->bootstrap_router();postbootstrap_observe(*f);f->publish_worker();
     std::thread owner([&]{
         f->run_enter();
+        if(current_mode=="bound-known-delete" || current_mode=="bound-known-destroy") {
+            const auto binding=f->router.camera_binding_diagnostics();
+            assert(binding.run_authenticated && binding.runtime_bound && binding.barrier_retained);
+            f->s={};f->s.x[0]=addr(f->executable);
+            const auto before=native_reads.load();f->event(current_mode=="bound-known-delete"?0x4b3d0:0x3003d0);
+            assert(native_reads.load()==before);
+            f->frame_start();f->frame_end();
+            assert(!f->router.diagnostics().capable && !f->router.diagnostics().pending && !f->enqueues);
+        } else {
         if(current_mode=="warm") {
             put(f->camera,0x34a,uint8_t(1));put(f->camera,0x360,uint8_t(1));
             put(f->camera,0x350,uint64_t(11));put(f->camera,0x358,uint64_t(12));
@@ -133,6 +144,7 @@ static void scenario() {
         assert(!f->native_releases && updates);
         assert(connect_calls-connects_before==unsigned(current_mode!="warm"));
         }
+        }
         f->router.stop();arena::Saved pump{};f->router.event(0,pump);
     });owner.join();
     put(f->worker,8,uint64_t(0x123456));f->s={};f->s.sp=0x990000;
@@ -145,11 +157,16 @@ static void scenario() {
     if(negative){std::fputs("CURRENT unexpected cleanup return\n",stderr);_Exit(71);}
     f->s={};f->s.x[0]=addr(f->camera);f->event(0x15df70);assert(f->s.pad==arena::SkipOwned && f->s.x[0]==0xabcdef);
     f->source_unmap();f.reset();active=nullptr;
-    if(current_mode=="missing-hook")std::puts("CURRENT missing-hook refused=1 clean-teardown=1");
+    if(current_mode.rfind("bound-known-",0)==0)std::printf("CURRENT %s refused=1 clean-teardown=1\n",current_mode.c_str());
+    else if(current_mode=="missing-hook")std::puts("CURRENT missing-hook refused=1 clean-teardown=1");
     else std::printf("CURRENT %s stereo=1 pending-Off=1 exact-settlement=1 disconnects=0 clean-teardown=1\n",current_mode.c_str());
 }
 int main(int argc,char** argv){
     current_mode=argc>1?argv[1]:"cold";
+    if(current_mode=="prebootstrap-cause")return prebootstrap_cause();
+    if(current_mode=="prebootstrap-runtime-cause")return prebootstrap_runtime_cause();
+    if(current_mode=="prebootstrap-scope-guards")return prebootstrap_scope_guards();
+    if(current_mode.rfind("bootstrap-",0)==0)return bootstrap_guard(current_mode);
     negative=current_mode=="partial-upload" || current_mode=="rejected-enqueue" || current_mode=="actual-return" ||
         current_mode=="source-uncertainty" || current_mode=="identity-migration" || current_mode=="no-gpu" || current_mode=="no-cpu" || current_mode=="no-source";
     if(current_mode=="partial-upload")assert(!setenv("FT_CURRENT_PARTIAL_UPLOAD","1",1));

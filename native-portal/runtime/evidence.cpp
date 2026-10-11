@@ -132,6 +132,10 @@ bool Evidence::event_impl(uint64_t pc,const arena::Saved &s) noexcept {
     }
     if(!constructed_) return false;
     const auto R=identity_.renderer;
+    // Generic free observes the allocation identity, not just command members.
+    // Revoke retained renderer/wrapper dependencies before native deletion.
+    if((pc==0x4b3d0 || pc==0x3003d0) && s.x[0] &&
+       (s.x[0]==R || s.x[0]==command_wrapper_ || s.x[0]==turnover_.wrapper))return fail(pc);
     if(pc==0x301808 || pc==0x30180c || pc==0x300a08 || pc==0x300a38 ||
        pc==0x300b20 || pc==0x300c54 || pc==0x3003d0 || pc==0x311648 || pc==0x4b3d0 ||
        pc==0x305260 || pc==0x2953a0 || pc==0x3018b0 || pc==0x2a1e18 || pc==0x2a2230 ||
