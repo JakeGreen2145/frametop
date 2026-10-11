@@ -66,6 +66,17 @@ STOCK_OBSERVERS = [
     ('factory_output_committed', 'compositor', 0x305490, 4, 'f0ffff179b19f597f40300aa05000014'),
 ]
 SOURCE_CLIENT += [pc for _,module,pc,_,_ in STOCK_OBSERVERS if module=='client']
+# Additional admission branch observations use the installed-PC API.
+# Keep the established STOCK_OBSERVERS v1 bit order and masks unchanged.
+ADMISSION_CLIENT = [
+    (0x3280e0, 3, '800000b4e00316aab29ef597c0040035', 'bb0057363789bfa02b1783d97db5e393d6025b8f2f91bab77cfa9701f728e4ca'),
+    (0x32766c, 3, '800000b4e00316aa4fa1f59780040035', '009bf79969c8ee95fef9a57a6fa92fe6331a5c6aebd53d4ec0591a1cc33628e5'),
+    (0x328148, 3, '750000b4e00316aa2c9df597e003132a', '26625e2a1e5d6c4362452d0bd694fc227ae5d9b85d4b52c73ca30953455b6bfe'),
+    (0x3276d0, 3, '750000b4e00316aaca9ff597e003132a', 'ef15295f0faf2061290b74e238dcb40131da594518629ee2f9f8f3c3d8db3900'),
+    (0x327e60, 3, '600b0054bf060071a00a0054bf0a0071', 'c4f2f72bf4b57de9a8ac84f718e1da0d8ba9a8175f3f37cefce52fdcd15a4cd1'),
+]
+SOURCE_CLIENT += [pc for pc,_,_,_ in ADMISSION_CLIENT]
+
 SOURCE_COMP += [0x15fdc8,0x15fee4,0x15fee8,0x160164,0x160168,0x160184,0x160188,0x160380,0x160384,0x1605c4,0x1605c8]
 ARENA = [0x161d64,0x29a14c,0x299110,0x2988b0,0x29f358,0x7fdbc,0x2987d4,0x161d68,0x29a150]
 PASS = [0x2a1e18,0x2a1c18]
@@ -201,6 +212,7 @@ def prepare(elf, output, manifest=None, client=CLIENT_ELF):
         specs += runtime['sites']
     rows=merge(at,specs)
     client_pins={pc:dict(guard=guard,kind=k) for _,module,pc,k,guard in STOCK_OBSERVERS if module=='client'}
+    client_pins.update({pc:dict(guard=guard,kind=k,guard_sha256=sha) for pc,k,guard,sha in ADMISSION_CLIENT})
     client_rows=merge(image(client,CLIENT_PIN),[dict(name="client_source_"+hex(pc),pc=pc,emitter="observer",**client_pins.get(pc,{})) for pc in SOURCE_CLIENT])
     coverage=stock_observer_coverage(rows,client_rows)
     output.mkdir(parents=True,exist_ok=True)

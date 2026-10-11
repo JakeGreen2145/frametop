@@ -53,6 +53,27 @@ EXPORT int ft_loader_test_dual(const char *path) {
     assert(!mprotect((void*)(bad&~4095ULL),4096,PROT_READ|PROT_WRITE));
     *(unsigned char*)(bad+15)^=1;
     assert(!mprotect((void*)(bad&~4095ULL),4096,PROT_READ|PROT_EXEC));
+    // Authenticate selected guards in both modules before any text page
+    // becomes writable, including each new observer. Perturb the first word
+    // and the tail byte independently; neither may reach the patch phase.
+    for(unsigned module=0;module<2;++module) {
+        const struct site *table=module?client_sites:sites;
+        const unsigned count=module?CLIENT_SITE_COUNT:SITE_COUNT;
+        const uintptr_t base=module?cb:comp;
+        for(unsigned i=0;i<count;++i)for(unsigned byte=0;byte<16;byte+=15) {
+            const uintptr_t at=base+table[i].offset+byte,page=at&~4095ULL;
+            assert(!mprotect((void*)page,4096,PROT_READ|PROT_WRITE));
+            *(unsigned char*)at^=1;
+            assert(!mprotect((void*)page,4096,PROT_READ|PROT_EXEC));
+            protections=0;
+            assert(!install_modules(comp,comp+0x600000,cb,(uintptr_t)ci,4096,protect) && !protections);
+            test_installed_unavailable();
+            assert(!mprotect((void*)page,4096,PROT_READ|PROT_WRITE));
+            *(unsigned char*)at^=1;
+            assert(!mprotect((void*)page,4096,PROT_READ|PROT_EXEC));
+            assert(guards(comp) && client_guards(cb));
+        }
+    }
     pid_t child=fork();assert(child>=0);
     if(!child) {
         protections=0;fail_at=pages()+cp+pages()+1;

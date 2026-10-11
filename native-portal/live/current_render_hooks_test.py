@@ -77,8 +77,11 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(len(L.prepare.STOCK_OBSERVERS),44)
         from stock_observer_test import StockObserverTests
         StockObserverTests('test_complete_consumer_inventories').test_complete_consumer_inventories()
-        self.assertEqual(len(r['sites']),len(OLD_ROWS)+len(NEW))
-        self.assertEqual(len(r['client_sites']),32)
+        from admission_hooks_test import PINS as ADMISSION_PINS
+        added_comp={pc for module,pc in ADMISSION_PINS if module=='compositor'}
+        added_client={pc for module,pc in ADMISSION_PINS if module=='client'}
+        self.assertEqual(len(r['sites']),len({s['pc'] for s in OLD_ROWS}|set(NEW)|added_comp))
+        self.assertEqual(len(r['client_sites']),32+len(added_client))
 
 
 def installed_matrix(sanitize=False):

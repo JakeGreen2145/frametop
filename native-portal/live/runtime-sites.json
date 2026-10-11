@@ -8,6 +8,76 @@
   "requires_explicit_shutdown_fail_stop": true,
   "sites": [
     {
+      "relative_pc": 1445024,
+      "pc": "0x160ca0",
+      "guard": "8706003460834d3940060034f96b04a9",
+      "guard_sha256": "73048e44ccc50d51c2daf16f061964e8f4da782161ed3733c65e506903c61dd9",
+      "word": "0x34000687",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x160ca4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1445296,
+      "pc": "0x160db0",
+      "guard": "21030054f55b42a9f76343a9fb7345a9",
+      "guard_sha256": "5f9591a611c75cb42944733ae0f29007b9121bcb262979b3939e023feea67f64",
+      "word": "0x54000321",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x160db4",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1445428,
+      "pc": "0x160e34",
+      "guard": "04fcff5401102a1ef96b04a91020211e",
+      "guard_sha256": "2c6cedf024a0ce122c961097f8b652daa5f2014ce22c6856b77528919dd65872",
+      "word": "0x54fffc04",
+      "kind": 3,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x160e38",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1450436,
+      "pc": "0x1621c4",
+      "guard": "27fbff17664b40f9f1feff1700fc43bd",
+      "guard_sha256": "90248c61fa5db1476a40547b845960ce339aaae2ad01b73faf42e1b89d806a0e",
+      "word": "0x17fffb27",
+      "kind": 4,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x1621c8",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
+      "relative_pc": 1445472,
+      "pc": "0x160e60",
+      "guard": "a0527539e10e40bde1bb00bd00010034",
+      "guard_sha256": "70d4fb03148f8253b20f8019e475afaf7f52fe62ad07190e2c2120a0025d5d53",
+      "word": "0x397552a0",
+      "kind": 0,
+      "emitter": "observer",
+      "site_id": null,
+      "continuation": "0x160e64",
+      "selectors": {
+        "0": "relocated-original"
+      }
+    },
+    {
       "relative_pc": 1444840,
       "pc": "0x160be8",
       "guard": "ff8311d1fd7b00a9fd030091f35301a9",

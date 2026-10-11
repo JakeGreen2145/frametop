@@ -2,9 +2,18 @@
 // Called only AFTER the real CPU dual-image installer succeeds. The client RX
 // mapping and file identity are real; this token models the retained dlopen
 // reference since an ARM DSO cannot be dlopened on the x86 host.
+static void test_installed_unavailable(void) {
+    uint64_t out[ALL_SITE_COUNT],prior[ALL_SITE_COUNT];
+    memset(out,0xa5,sizeof out);memcpy(prior,out,sizeof out);
+    for(unsigned module=0;module<2;++module) {
+        assert(!ft_native_portal_installed_sites(FT_INSTALLED_SITES_VERSION,
+            module?SOURCE_CLIENT_TAG:0,out,ALL_SITE_COUNT));
+        assert(!memcmp(out,prior,sizeof out));
+    }
+}
 static void test_stock_coverage(uintptr_t comp,uintptr_t client,uintptr_t ci,int fd) {
     struct ft_stock_observer_coverage_v1 s,zero={0};
-    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));
+    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));test_installed_unavailable();
     assert(!memcmp(&s,&zero,sizeof s));
     self_pid=getpid();image_base=comp;client_base=client;
     image_islands=comp+0x600000;client_islands=ci;
@@ -62,6 +71,24 @@ static void test_stock_coverage(uintptr_t comp,uintptr_t client,uintptr_t ci,int
     assert(missing==(FT_TEST_CURRENT_COVERAGE?0:1));
     printf("PASS current-render actual installed inventory complete=%u missing=%u; V1/camera intact\n",missing==0,missing);
 #endif
+#ifdef FT_TEST_ADMISSION_COVERAGE
+#include "admission-required.h"
+    uint64_t admission_pcs[ALL_SITE_COUNT];
+    const size_t comp_count=ft_native_portal_installed_sites(FT_INSTALLED_SITES_VERSION,0,admission_pcs,ALL_SITE_COUNT);
+    const size_t client_count=ft_native_portal_installed_sites(FT_INSTALLED_SITES_VERSION,SOURCE_CLIENT_TAG,
+        admission_pcs+comp_count,ALL_SITE_COUNT-comp_count);
+    assert(comp_count==SITE_COUNT && client_count==CLIENT_SITE_COUNT);
+    unsigned admission_missing=0;
+    for(size_t r=0;r<sizeof admission_required/sizeof admission_required[0];++r) {
+        unsigned found=0;
+        for(size_t i=0;i<comp_count+client_count;++i)found+=admission_pcs[i]==admission_required[r];
+        assert(found<=1);
+        if(!found) {++admission_missing;assert(admission_required[r]==FT_TEST_ADMISSION_OMITTED);}
+    }
+    assert(admission_missing==(FT_TEST_ADMISSION_COVERAGE?0:1));
+    printf("PASS admission actual dual-module installed inventory complete=%u missing=%u; stale V1 full mask intact\n",
+        admission_missing==0,admission_missing);
+#endif
     memset(&s,0xa5,sizeof s);struct ft_stock_observer_coverage_v1 prior=s;
     assert(!ft_native_portal_stock_observer_coverage(2,&s,sizeof s));
     assert(!memcmp(&s,&prior,sizeof s));
@@ -70,23 +97,23 @@ static void test_stock_coverage(uintptr_t comp,uintptr_t client,uintptr_t ci,int
     assert(!ft_native_portal_stock_observer_coverage(1,NULL,sizeof s));
     pid_t child=fork();assert(child>=0);
     if(!child) {
-        assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));
+        assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));test_installed_unavailable();
         assert(!memcmp(&s,&zero,sizeof s));_exit(0);
     }
     int status;assert(waitpid(child,&status,0)==child && status==0);
     atomic_store(&enabled,0);
-    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));
+    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));test_installed_unavailable();
     assert(!memcmp(&s,&zero,sizeof s));atomic_store(&enabled,1);
     client_handle=NULL;
-    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));client_handle=&s;
+    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));test_installed_unavailable();client_handle=&s;
     client_fd=-1;
-    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));client_fd=fd;
+    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));test_installed_unavailable();client_fd=fd;
     ++client_stat.st_ino;
-    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));--client_stat.st_ino;
+    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));test_installed_unavailable();--client_stat.st_ino;
     client_islands=0;
-    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));client_islands=ci;
+    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));test_installed_unavailable();client_islands=ci;
     image_islands=0;
-    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));
+    assert(!ft_native_portal_stock_observer_coverage(1,&s,sizeof s));test_installed_unavailable();
     client_fd=-1;client_handle=NULL;client_islands=client_base=image_base=0;atomic_store(&enabled,0);
     printf("PASS stock observer installed mask=%#llx; legacy camera mask unchanged; version/fork/lifetime gates\n",
            (unsigned long long)FT_TEST_STOCK_MASK);

@@ -1,0 +1,406 @@
+{
+  "schema": 1,
+  "base_commit": "6674da53a3d319f9de360655a0f6ed17182a66de",
+  "contract_path": "/home/jakeg/.hermes/work/frame-native-product-ops/admission-closure-hook-contract.json",
+  "contract_sha256": "195acb0c6d44d9226ae25a93e53fe2e9bb6d27bd79418b2d02e719119f6e40e8",
+  "proof_source_hashes": {
+    "/home/jakeg/.hermes/work/desktop-compositor-re/proactive-closure-f9adb38/lane-b-ff2c967309a9/REPORT.md": "ff2c967309a9d3348d59dd71fc93ab2af7f62b8a1bd440cc07a29182262ce11d",
+    "/home/jakeg/.hermes/work/desktop-compositor-re/proactive-closure-f9adb38/lane-b-ff2c967309a9/HOOK-INVENTORY.json": "553f5cdfcd24d2afc7eae74d90bd5dad0fcc4157cf8b9cfe8291994d29347e91",
+    "/home/jakeg/.hermes/work/desktop-compositor-re/proactive-closure-f9adb38/lane-b-ff2c967309a9/CONTRACT.json": "6f195fd4ffe1b49d146f423deb4958448fc8b48e683d740bed59700094f812db",
+    "/home/jakeg/.hermes/work/desktop-compositor-re/proactive-closure-f9adb38/lane-b-ff2c967309a9/verified-payloads/client-closure.asm": "34afe5af4bf565f2e873931517b3dde4e7e55aabfc508104fa4fa9e823417556",
+    "/home/jakeg/.hermes/work/desktop-compositor-re/proactive-closure-f9adb38/lane-b-ff2c967309a9/verified-payloads/compositor-closure.asm": "09ca813c0a29daef4379c469000bda00902d9a015daeb5b03352529e864597dd"
+  },
+  "canonical_added_set": [
+    {
+      "module": "client",
+      "pc": "0x32766c",
+      "callback_pc": "0x800000000032766c",
+      "emitter": "observer",
+      "guard": "800000b4e00316aa4fa1f59780040035",
+      "index": 0,
+      "kind": 3,
+      "names": [
+        "client_source_0x32766c"
+      ],
+      "word": 3019899008
+    },
+    {
+      "module": "client",
+      "pc": "0x3276d0",
+      "callback_pc": "0x80000000003276d0",
+      "emitter": "observer",
+      "guard": "750000b4e00316aaca9ff597e003132a",
+      "index": 0,
+      "kind": 3,
+      "names": [
+        "client_source_0x3276d0"
+      ],
+      "word": 3019898997
+    },
+    {
+      "module": "client",
+      "pc": "0x327e60",
+      "callback_pc": "0x8000000000327e60",
+      "emitter": "observer",
+      "guard": "600b0054bf060071a00a0054bf0a0071",
+      "index": 0,
+      "kind": 3,
+      "names": [
+        "client_source_0x327e60"
+      ],
+      "word": 1409289056
+    },
+    {
+      "module": "client",
+      "pc": "0x3280e0",
+      "callback_pc": "0x80000000003280e0",
+      "emitter": "observer",
+      "guard": "800000b4e00316aab29ef597c0040035",
+      "index": 0,
+      "kind": 3,
+      "names": [
+        "client_source_0x3280e0"
+      ],
+      "word": 3019899008
+    },
+    {
+      "module": "client",
+      "pc": "0x328148",
+      "callback_pc": "0x8000000000328148",
+      "emitter": "observer",
+      "guard": "750000b4e00316aa2c9df597e003132a",
+      "index": 0,
+      "kind": 3,
+      "names": [
+        "client_source_0x328148"
+      ],
+      "word": 3019898997
+    },
+    {
+      "module": "compositor",
+      "pc": "0x160ca0",
+      "callback_pc": "0x160ca0",
+      "continuation": "0x160ca4",
+      "emitter": "observer",
+      "guard": "8706003460834d3940060034f96b04a9",
+      "index": 0,
+      "kind": 3,
+      "names": [
+        "0x160ca0"
+      ],
+      "word": 872416903
+    },
+    {
+      "module": "compositor",
+      "pc": "0x160db0",
+      "callback_pc": "0x160db0",
+      "continuation": "0x160db4",
+      "emitter": "observer",
+      "guard": "21030054f55b42a9f76343a9fb7345a9",
+      "index": 0,
+      "kind": 3,
+      "names": [
+        "0x160db0"
+      ],
+      "word": 1409286945
+    },
+    {
+      "module": "compositor",
+      "pc": "0x160e34",
+      "callback_pc": "0x160e34",
+      "continuation": "0x160e38",
+      "emitter": "observer",
+      "guard": "04fcff5401102a1ef96b04a91020211e",
+      "index": 0,
+      "kind": 3,
+      "names": [
+        "0x160e34"
+      ],
+      "word": 1426062340
+    },
+    {
+      "module": "compositor",
+      "pc": "0x160e60",
+      "callback_pc": "0x160e60",
+      "continuation": "0x160e64",
+      "emitter": "observer",
+      "guard": "a0527539e10e40bde1bb00bd00010034",
+      "index": 0,
+      "kind": 0,
+      "names": [
+        "0x160e60"
+      ],
+      "word": 963990176
+    },
+    {
+      "module": "compositor",
+      "pc": "0x1621c4",
+      "callback_pc": "0x1621c4",
+      "continuation": "0x1621c8",
+      "emitter": "observer",
+      "guard": "27fbff17664b40f9f1feff1700fc43bd",
+      "index": 0,
+      "kind": 4,
+      "names": [
+        "0x1621c4"
+      ],
+      "word": 402651943
+    }
+  ],
+  "module_counts_before": {
+    "compositor": 200,
+    "client": 32
+  },
+  "module_counts_after": {
+    "compositor": 205,
+    "client": 37
+  },
+  "preserved_rows": 232,
+  "canonical_rows": 242,
+  "all_old_selected_rows_equal": true,
+  "old_manifest_records_and_top_level_metadata_equal": true,
+  "excluded_diagnostic_only": [
+    {
+      "module": "client",
+      "pc": "0x328170"
+    }
+  ],
+  "coverage_api": {
+    "name": "ft_native_portal_installed_sites",
+    "version": 1,
+    "compositor_tag": "0x0",
+    "client_tag": "0x8000000000000000",
+    "new_mask_abi": false,
+    "legacy_coverage_unchanged": true
+  },
+  "installed_matrices": {
+    "normal": [
+      {
+        "omitted": null,
+        "complete": true
+      },
+      {
+        "omitted": [
+          "client",
+          "0x3280e0"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "client",
+          "0x32766c"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "client",
+          "0x328148"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "client",
+          "0x3276d0"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "client",
+          "0x327e60"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "compositor",
+          "0x160ca0"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "compositor",
+          "0x160db0"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "compositor",
+          "0x160e34"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "compositor",
+          "0x1621c4"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "compositor",
+          "0x160e60"
+        ],
+        "complete": false
+      }
+    ],
+    "asan_ubsan": [
+      {
+        "omitted": null,
+        "complete": true
+      },
+      {
+        "omitted": [
+          "client",
+          "0x3280e0"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "client",
+          "0x32766c"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "client",
+          "0x328148"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "client",
+          "0x3276d0"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "client",
+          "0x327e60"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "compositor",
+          "0x160ca0"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "compositor",
+          "0x160db0"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "compositor",
+          "0x160e34"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "compositor",
+          "0x1621c4"
+        ],
+        "complete": false
+      },
+      {
+        "omitted": [
+          "compositor",
+          "0x160e60"
+        ],
+        "complete": false
+      }
+    ],
+    "stale_v1_mask_retained": true
+  },
+  "instruction_checks": 195,
+  "native_block_vectors": 29,
+  "native_vectors": {
+    "path": "/home/jakeg/.hermes/work/frametop-native-admission-hooks/native-portal/build/live-loader-test/admission-native-vectors.json",
+    "sha256": "bca7a1da598b555baec2dd8790aba8a900afaf839849850f93019b5448f06b39"
+  },
+  "source_hashes": {
+    "live/prepare.py": "58d575f36613d59ebe981d896aa9d7160335d986041d25e14276217ad45e28d2",
+    "live/runtime-sites.json": "f06315b41e5343f3396df6c742d526086b8a967f2b2c0cefe999a448f746354c",
+    "live/loader.c": "48de106f49c45dfb7e366a51700190359c4d4b298fc760a8b91f171ef8c44b09",
+    "live/loader_emit.c": "3d2e0cdc1237db768a80bb72726e14171a4284ce4f8f58deba936cf56dfef7fa",
+    "live/runtime-emit.c": "506a0ee0afb926f5672b99f41e97b36cbde27b0878c83cbca4bd321c8fc157ce",
+    "live/source_loader.inc": "13c3064ac473d8e7dd2d66d647d51d6fbf3a0b7d46d576b06df1da039aeaec7f",
+    "live/source_loader_test.inc": "e4d1464beea85dc3f30b876db6b4de6509410bf6d89a4732f891dd958f629387",
+    "live/stock_observer_test.inc": "bbc2f8aba6faee497ebedcf8b0825b5b79e26cd97635ec9f123e8902345979cf",
+    "live/stock_observer_coverage.h": "528354e54c7e5a0a6e549ca9bbda512e0ae98b37a7198fdee6d65aa98f997a76",
+    "live/loader_test.c": "7aeba3b38cc6bd5b278ff6a716ead64cbecb524e75628c558ec10aa73bca48e8",
+    "live/loader_test.py": "a218ce101f7b2bcc332163ded1a804c9000afef2830f47d98782642f659da544",
+    "live/stock_observer_machine.py": "b4e653da7f35bb8bf0f64e761975be4744abd5ffee1ad675254f3359f274d308",
+    "live/admission_hooks_test.py": "0d3160310675372c51dcabb410306237dc9444ab97aee4bdbba5c68668cc4e48",
+    "live/admission_hooks_machine.py": "41eff2d80b9ff068e9b2bb9c440a4dff4ca0b289f859d38408c7c36b2324e224",
+    "live/current_render_hooks_test.py": "f1401b013fa31d7769501b72a86905b0fedc6a4acbfb57a3b037b90c605d9344",
+    "live/build.py": "87e3b25e8ab216d3bcc0bfb8d0281ac0418dd6f7a21a4db496a9d401accbf50c",
+    "hooks/emit.h": "b5c4e2aa8d0edf2eb8ef4fe5fe89be8dbff2f58cb79f5b2d3ca534ff1498feff",
+    "arena/emit.c": "a85521d50f7c4cbc0200f20d784040623c5578281864d2c0aedc52000a283eb1",
+    "binding/pass_emit.c": "b246f9720a88bfec0cb8dd10495df28767eed088fba23670300f410de2fcf328",
+    "binding/lifecycle_emit.c": "dcaec0172cbee4d68d899bc9ad06f7acb88f423afbb5c31a31d539e25383c1e2"
+  },
+  "logs": {
+    "admission-red.log": {
+      "path": "/home/jakeg/.hermes/work/frametop-native-admission-hooks/native-portal/build/admission-red.log",
+      "sha256": "822e42510cf8a3a19ef4954f7786f35a193b06d804cba302563f8709a2ef9994",
+      "expected_exit": 1
+    },
+    "admission-full.log": {
+      "path": "/home/jakeg/.hermes/work/frametop-native-admission-hooks/native-portal/build/admission-full.log",
+      "sha256": "a2ed457c26fa88129064eb5b437fc1132adad2fc88bd31f5cd8fd689bbb11dfd",
+      "expected_exit": 0
+    },
+    "admission-sanitize.log": {
+      "path": "/home/jakeg/.hermes/work/frametop-native-admission-hooks/native-portal/build/admission-sanitize.log",
+      "sha256": "f4dd8e47d524080dcb4e45f0ea8f1e3274727d73491f8b15dafb33d27e140cdc",
+      "expected_exit": 0
+    },
+    "admission-loader-regression.log": {
+      "path": "/home/jakeg/.hermes/work/frametop-native-admission-hooks/native-portal/build/admission-loader-regression.log",
+      "sha256": "38037b1c1a8cfe07ca62eacf43faf6bf006bf755391de6a50000f05456738ce4",
+      "expected_exit": 0
+    },
+    "admission-stock-regression.log": {
+      "path": "/home/jakeg/.hermes/work/frametop-native-admission-hooks/native-portal/build/admission-stock-regression.log",
+      "sha256": "8b56ac81307db70c645d31a401a9b074e24cccd7340e8b81e5c17462901c2e7c",
+      "expected_exit": 0
+    },
+    "admission-current-regression.log": {
+      "path": "/home/jakeg/.hermes/work/frametop-native-admission-hooks/native-portal/build/admission-current-regression.log",
+      "sha256": "9ad31ea26b6972d980a0557b25d58badde12244857edccf3c51226d2e52bccdf",
+      "expected_exit": 0
+    }
+  },
+  "memory_max": 268435456,
+  "memory_swap_max": 0,
+  "remaining": [
+    "Parent must compare actual consumer required arrays/request with canonical_added_set and run combined default Runtime proof.",
+    "dormant_runtime_test.py:70 consumer-owned count assertion must change from (200,32) to derived (205,37).",
+    "Independent review, combined ARM build and activation are parent-owned."
+  ],
+  "limits": [
+    "No new source/current-admission, graph, factory or ownership permissions.",
+    "Pinned instructions execute over synthetic objects and explicit clock/guard/pthread boundaries.",
+    "Host retained dlopen handle is a fixture token for ARM client; actual files/RX mappings are authenticated.",
+    "Unicorn uses normal emitted code in both runs; separate full/omission installer executables and emitters are sanitized.",
+    "Arbitrary 1621c4 arrival is observational only; predecessor-authenticated acceptance belongs to the source consumer.",
+    "No SSH, headset, activation, installs, or new opaque native analysis."
+  ]
+}
