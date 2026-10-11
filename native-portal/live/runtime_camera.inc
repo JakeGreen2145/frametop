@@ -104,6 +104,7 @@
         return pc==0x8b020 || pc==0x15e1c8 || pc==0x15df70 || pc==0x162360;
     }
     bool camera_original(uint64_t pc,arena::Saved& s) noexcept {
+        if(graph_active())camera_route_abort(CameraFatalReason::MutationDebt,pc);
         const auto target=ft_native_portal_original?ft_native_portal_original(pc):0;
         if(!target || getpid()!=pid || (tid()!=owner_tid && !(tid()==bootstrap_tid && joined)))return false;
         if(dormant_enabled && dormant_engaged && tid()==owner_tid) {
@@ -151,10 +152,11 @@
         return true;
     }
     bool camera_ready() noexcept {
+        if(production_source && !dormant_enabled)return false;
         CameraBinding held;
         const auto demand_state=camera_owner.snapshot();
         const uint64_t installed=ft_native_portal_camera_coverage?ft_native_portal_camera_coverage():0;
-        return (!dormant_enabled || (!current_render_failed && current_render_coverage())) &&
+        return (!dormant_enabled || (!current_render_failed && current_render_coverage() && graph_coverage())) &&
             (installed&0xfffff)==0xfffff && camera_bound.load() && !camera_closing && !demand_state.fault && !demand_state.stock_full_display &&
             camera_owner.retained_binding(held) && held==camera_binding && source && source_integrity() && source->connect_eligible(held);
     }
@@ -327,6 +329,7 @@
             return true;
         }
         if(!writer_pc(pc))return false;
+        if(tid()==owner_tid && graph_active())camera_route_abort(CameraFatalReason::MutationDebt,pc);
         if(camera_bound.load() && dormant_original(pc,s))return true;
         if(camera_bound.load()) {
             const bool app_entry=pc==0x6d6e0 || pc==0x6d6f0;
@@ -404,6 +407,7 @@
         s.pad=arena::SkipOwned;return true;
     }
     bool camera_owned_transition(bool acquiring) noexcept {
+        if(graph_active())camera_route_abort(CameraFatalReason::MutationDebt,acquiring?0x15f9e0:0x15fba8);
         transition_called=false;transition_result=0;
         bool accepted=false,borrowed_retirement=false;
         auto result=camera_owner.direct([&](const CameraBinding& held,coordination::DemandArbiter& arbiter) {
@@ -473,6 +477,10 @@
     }
     void camera_maintenance(bool close=false) noexcept {
         if(!camera_bound.load() || tid()!=owner_tid || camera_active || camera_closed)return;
+        if(graph_active()) {
+            if(close)dormant_admission.begin_close(dormant_version);
+            return; // withhold pump/direct/destructive drain before native execution
+        }
         if(dormant_enabled && close && !camera_closing) {
             if(!dormant_admission.begin_close(dormant_version))return;
             // Retained callers keep their observation permission until the whole

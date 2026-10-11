@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "status": "required bounded dispatch adapter extension",
+  "module": "compositor",
+  "callback": "ft_native_portal_event(relative_pc, Saved*)",
+  "emitter": "observer; conflict is production fail-stop before displaced instruction",
+  "required_sites": [
+    {"pc":"0x2a2498","role":"restored normal/early RET, exact entry SP/LR; last dependent use, not settlement"},
+    {"pc":"0x2a2564","role":"restored alternate RET, exact entry SP/LR; never release unmatched outer"},
+    {"pc":"0x2a2870","role":"EH tail, fail-stop with retained debt and caller, never normal return"},
+    {"pc":"0x2983c8","role":"selected R sampled cleanup before original; special image bypasses pipeline cache deletion"},
+    {"pc":"0x298750","role":"selected R Begin before deferred destructive drain, recursive Begin conflict"},
+    {"pc":"0x29ce00","role":"selected R optimizer before pass rewrite, recursive optimizer conflict"},
+    {"pc":"0x29b278","role":"selected R record entry before packet append"},
+    {"pc":"0x299a60","role":"selected R target binding before pass/vector mutation"},
+    {"pc":"0x2993f8","role":"selected R upload recording before native writer"},
+    {"pc":"0x2990c8","role":"selected R update recording before native writer"},
+    {"pc":"0x2988a8","role":"selected R uniform recording before native writer"}
+  ],
+  "additional_site_rationale": "Entry guards are needed, not later passive observers: existing 2987d4 follows Begin's destructive drain; 299110 and 2988b0 are interior classification sites. EH cannot borrow either normal RET. These exact entry families and native receiver x0=R are identified by the delivered native mutation contract; no new ancestry analysis is requested.",
+  "permission": "Installed presence alone grants no heap reads. Admission reader plus retained caller, exact binding/recording/invocation, and conditional native ownership remain required. Present remains closed."
+}

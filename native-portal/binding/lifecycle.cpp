@@ -62,6 +62,17 @@ bool Lifecycle::complete() const noexcept {
     render::Binding b{};b.identity=owner_.identity;
     return command_.completed(b,command_.token_);
 }
+bool Lifecycle::disposal_preflight(Site site,uint64_t renderer,uint64_t sp) const noexcept {
+    if(!command_.thread() || !state_.bound || !command_.lifetime_ || state_.unsupported ||
+       !sp || renderer!=owner_.identity.renderer || !command_.pair_recorded())return false;
+    switch(site) {
+    case Site::CurrentEnter:return !current_open_ && !state_.current;
+    case Site::CurrentPost:return current_open_ && !state_.current && sp==current_sp_;
+    case Site::RetainedEnter:return state_.current && !retained_open_ && !state_.retained;
+    case Site::RetainedPost:return retained_open_ && !state_.retained && sp==retained_sp_;
+    default:return false;
+    }
+}
 bool Lifecycle::capture(Site site,const Capture &r,uint64_t tid,uint64_t generation,uint64_t vk) noexcept {
     if(!command_.thread()) return false; // no mutable reads on foreign threads/processes
     if(!state_.bound || !command_.lifetime_) return false;

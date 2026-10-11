@@ -18,8 +18,10 @@ bool read_self(uint64_t, void *, size_t) noexcept;
 // before native teardown. Event arguments are exact saved native registers, not
 // IPC inputs. A digest supplied here is a preparer contract, not live-image proof.
 // Native objects remain owned by the compositor; this object owns only evidence.
-// Recording attachment is event-issued; dynamic graph retention is not proved.
-// PassReader::live remains unsupported. Staging is a separate call-local borrow.
+// Recording attachment is event-issued. The default Runtime supplies its actual
+// dispatch loan and callback-local disposal reader through graph_authority.
+// Standalone embedders still own the conditional native exclusion contract;
+// event coverage or pointer equality alone never supplies storage retention.
 struct PublicationDiagnostic {
     uint64_t predicate=0,phase=0,flags=0,checked=0,passed=0;
     uint64_t caller=0,return_pc=0,recording=0,generation=0,renewal=0,entries=0,attempt=0;
@@ -102,6 +104,9 @@ class Evidence {
     PublicationDiagnostic publication_diagnostic() const noexcept {return owner()?publication_:PublicationDiagnostic{};}
     CommandDiagnostic command_diagnostic() const noexcept {return owner()?command_diagnostic_:CommandDiagnostic{};}
     bool graph_event(uint64_t,const arena::Saved &) noexcept;
+    // Configure before pin. Runtime supplies its real dispatch or callback-local
+    // admission loan; this callback performs metadata checks only.
+    bool graph_authority(void*,bool (*)(void*,bool preparation) noexcept) noexcept;
     bool graph_capable() const noexcept;
     // Exact identities authenticated at worker Run; no read/write registry.
     struct ApplicationOwner {uint64_t worker=0,context=0,scheduler=0,application=0;};
@@ -142,11 +147,14 @@ class Evidence {
     std::atomic<unsigned> handoff_{0};
     bool run_=false,dispatch_=false,graph_scope_=false,graph_owned_=false,transferred_=false;
     uint64_t dispatch_sp_=0;
+    uint64_t disposal_sequence_=0,retained_anchor_=0,retained_anchor_sp_=0,retained_anchor_generation_=0;
     struct GraphSpan {uint64_t begin=0,size=0;};
     std::array<GraphSpan,196> graph_spans_{};
     size_t graph_count_=0;
     bool graph_capture(bool attachments) noexcept;
     bool graph_read(uint64_t,void *,size_t) const noexcept;
+    void* graph_authority_user_=nullptr;
+    bool (*graph_authority_live_)(void*,bool) noexcept=nullptr;
     uint64_t base_=0,epoch_=0,allocation_sp_=0,allocation_slot_=0,borrowed_slot_=0;
     arena::Bridge *bridge_=nullptr;
     struct ClassifierField {uint64_t address=0,value=0;size_t size=0;};

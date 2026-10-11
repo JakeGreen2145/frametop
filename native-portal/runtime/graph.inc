@@ -49,8 +49,13 @@ Evidence::ApplicationOwner Evidence::application_owner() const noexcept {
 bool Evidence::graph_capable() const noexcept {
     return initialized() && !dormant_stock() && run_ && handoff_.load()==2 && recording_;
 }
+bool Evidence::graph_authority(void* user,bool (*live)(void*,bool) noexcept) noexcept {
+    if(!owner() || pinned_ || graph_authority_live_ || !user || !live)return false;
+    graph_authority_user_=user;graph_authority_live_=live;return true;
+}
 bool Evidence::graph_read(uint64_t p,void *out,size_t n) const noexcept {
     if(!owner() || dormant_stock() || failed_ || !graph_scope_ || !p || !n || n>UINT64_MAX-p)return false;
+    if(graph_authority_live_ && !graph_authority_live_(graph_authority_user_,dispatch_))return false;
     for(size_t i=0;i<graph_count_;++i) {
         const auto &s=graph_spans_[i];
         if(p>=s.begin && p-s.begin<=s.size && n<=s.size-(p-s.begin))return read_self(p,out,n);
@@ -60,6 +65,7 @@ bool Evidence::graph_read(uint64_t p,void *out,size_t n) const noexcept {
 bool Evidence::graph_capture(bool attachments) noexcept {
     graph_count_=0;graph_scope_=false;graph_owned_=false;
     if(!initialized() || dormant_stock() || !run_)return false;
+    if(graph_authority_live_ && !graph_authority_live_(graph_authority_user_,attachments))return false;
     auto add_graph=[&](uint64_t begin,uint64_t end,uint64_t stride,size_t cap)->bool {
         if(end<begin || (!begin && end) || (begin&7) || (end-begin)%stride || (end-begin)/stride>cap)return false;
         if(end==begin)return true;
@@ -107,15 +113,38 @@ bool Evidence::graph_event(uint64_t pc,const arena::Saved &s) noexcept {
         // End preparation/pipeline borrowing BEFORE native move/free. The new
         // call-local disposal scope separately follows current and retained roles.
         dispatch_=false;graph_scope_=false;graph_count_=0;
-        return s.x[19]==identity_.renderer && graph_capture(false);
+        return initialized() && s.x[19]==identity_.renderer && turnover_.phase==1 &&
+            s.sp==turnover_.sp && dispatch_sp_>=0xd0 && s.sp==dispatch_sp_-0xd0 &&
+            turnover_.generation==recording_ && lifecycle_ && lifecycle_owner_.generation==turnover_.generation &&
+            lifecycle_->disposal_preflight(binding::Site::CurrentEnter,s.x[19],s.sp) && graph_capture(false);
     }
-    if(pc==0x2a2320 || pc==0x2987d8 || pc==0x298840) {
+    if(pc==0x2987d4) {
+        const bool nested=retained_anchor_!=0;retained_anchor_=retained_anchor_sp_=retained_anchor_generation_=0;
+        if(nested || !initialized() || !lifecycle_ || disposal_sequence_==UINT64_MAX ||
+           !lifecycle_->disposal_preflight(binding::Site::RetainedEnter,s.x[22],s.sp))return false;
+        retained_anchor_=++disposal_sequence_;retained_anchor_sp_=s.sp;
+        retained_anchor_generation_=lifecycle_owner_.generation;return true;
+    }
+    if(pc==0x2a2320) {
         graph_scope_=false;graph_count_=0;
-        const auto R=pc==0x2a2320?s.x[19]:s.x[22];
-        const bool ok=R==identity_.renderer && graph_capture(false);
-        if(pc==0x2a2320)transferred_=ok;
+        const bool ok=initialized() && turnover_.phase==2 && s.sp==turnover_.sp && lifecycle_ &&
+            lifecycle_owner_.generation==turnover_.generation &&
+            lifecycle_->disposal_preflight(binding::Site::CurrentPost,s.x[19],s.sp) && graph_capture(false);
+        // An unowned native turnover has no Lifecycle or broad scan obligation.
+        transferred_=ok || (initialized() && !lifecycle_ && !graph_owned_ && turnover_.phase==2 &&
+            s.x[19]==identity_.renderer && s.sp==turnover_.sp);
         return ok;
     }
+    if(pc==0x2987d8 || pc==0x298840) {
+        graph_scope_=false;graph_count_=0;
+        const bool ok=initialized() && lifecycle_ && retained_anchor_ && s.sp==retained_anchor_sp_ &&
+            retained_anchor_generation_==lifecycle_owner_.generation &&
+            lifecycle_->disposal_preflight(pc==0x2987d8?binding::Site::RetainedEnter:binding::Site::RetainedPost,s.x[22],s.sp) &&
+            graph_capture(false);
+        if(!ok || pc==0x298840)retained_anchor_=retained_anchor_sp_=retained_anchor_generation_=0;
+        return ok;
+    }
+    if(pc==0x2a2498 || pc==0x2a2564) {dispatch_=false;graph_scope_=false;graph_count_=0;return true;}
     if(pc==0) {graph_scope_=false;graph_count_=0;return true;}
     return false;
 }

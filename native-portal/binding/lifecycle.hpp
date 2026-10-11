@@ -45,6 +45,8 @@ class Lifecycle {
     // Observation only: false is NOT permission to suppress a native instruction.
     // generation is the immutable old owner, never a lookup through current R.
     bool capture(Site,const Capture &,uint64_t tid,uint64_t generation,uint64_t vk_command) noexcept;
+    // Pure scalar preflight. No graph/command memory read and no transition.
+    bool disposal_preflight(Site,uint64_t renderer,uint64_t sp) const noexcept;
     LifecycleState state() const noexcept;
     bool settled(const render::Binding &,const render::Provenance &,const render::Provenance &,
                  const render::Completion &) const noexcept;

@@ -9,6 +9,40 @@ namespace native_portal::live {
 // Adapter/Command/SourceCommand remain the only work-settlement authorities.
 class RuntimeAdmission final {
 public:
+    struct Graph {
+        uint64_t invocation=0,renderer=0,wrapper=0,command=0;
+        uint64_t pipelines[2]{};
+        bool preparation=false;
+    };
+    Graph graph() const noexcept {
+        if(!process())return {};
+        std::lock_guard<std::mutex> lock(mutex_);return graph_;
+    }
+    template<class Retain> bool graph_begin(uint64_t version,Graph graph,Retain retain) noexcept {
+        if(!process())return false;
+        std::lock_guard<std::mutex> lock(mutex_);
+        if(!matches(version) || phase_!=Phase::Engaged || graph_.invocation || !graph.invocation ||
+           originals_ || readers_==64 || !retain())return false;
+        ++readers_;graph_=graph;return true;
+    }
+    bool graph_pipeline(uint64_t version,uint64_t invocation,unsigned eye,uint64_t object) noexcept {
+        if(!process())return false;
+        std::lock_guard<std::mutex> lock(mutex_);
+        if(!matches(version) || graph_.invocation!=invocation || !graph_.preparation || eye>1 || !object)return false;
+        graph_.pipelines[eye]=object;return true;
+    }
+    void graph_cutoff(uint64_t version,uint64_t invocation) noexcept {
+        if(!process())std::abort();
+        std::lock_guard<std::mutex> lock(mutex_);
+        if(!matches(version) || graph_.invocation!=invocation)std::abort();
+        graph_.preparation=false;
+    }
+    void graph_end(uint64_t version,uint64_t invocation) noexcept {
+        if(!process())std::abort();
+        std::lock_guard<std::mutex> lock(mutex_);
+        if(!matches(version) || graph_.invocation!=invocation || !readers_)std::abort();
+        graph_={};--readers_;
+    }
     enum class Phase {Prebind,Dormant,Engaged,Closing,Closed,Invalid};
     RuntimeAdmission() noexcept=default;
     RuntimeAdmission(const RuntimeAdmission&)=delete;
@@ -92,5 +126,6 @@ private:
     bool engaged_=false;
     uint64_t version_=0;
     unsigned originals_=0,readers_=0;
+    Graph graph_{};
 };
 }

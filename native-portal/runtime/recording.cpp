@@ -305,6 +305,7 @@ bool Evidence::recording_event(uint64_t pc,const arena::Saved &s) noexcept {
         for(auto &c:recordings_)if(c.command==s.x[0])return fail(pc);
     }
     if(!lifecycle_)return false;
+    if((pc==0x2a2230 || pc==0x2a2320 || pc==0x2987d8 || pc==0x298840) && !graph_scope_)return false;
     const auto previous=lifecycle_->state();
     if((pc==0x2a2230 || pc==0x2a2320) && previous.current)return true;
     if((pc==0x2987d8 || pc==0x298840) && previous.retained)return true;

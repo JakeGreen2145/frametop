@@ -173,7 +173,11 @@ class LoaderTests(unittest.TestCase):
                             self.assertEqual(actual.mem_read(0x70000000,sp-800-0x70000000),expected.mem_read(0x70000000,sp-800-0x70000000))
                             self.assertEqual(actual.mem_read(sp,0x10000),expected.mem_read(sp,0x10000))
                             native_sp=expected.reg_read(ar.UC_ARM64_REG_SP)
-                            if native_sp!=sp:self.assertEqual(actual.mem_read(native_sp,16),expected.mem_read(native_sp,16))
+                            # A displaced SUB SP allocates uninitialized scratch, not a
+                            # native store. Compare new-frame bytes only when the
+                            # displaced instruction actually writes them (STP).
+                            if native_sp!=sp and s['word'] & 0x3b000000 == 0x29000000:
+                                self.assertEqual(actual.mem_read(native_sp,16),expected.mem_read(native_sp,16))
                             actual.hook_del(handle);del actual,expected;gc.collect();count+=1
         print('PASS actual merged loader emitter instruction replays:',count)
 

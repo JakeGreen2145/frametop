@@ -89,6 +89,7 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t* x,uint64_t x8) n
 }
 #include "prebootstrap_runtime_fixture.inc"
 static unsigned source_test_reads(){return native_reads.load();}
+extern "C" unsigned graph_test_reads(){return native_reads.load();}
 static uint64_t admission_scalar(const char* name,uint64_t pc,unsigned word) {
     assert(word<100);
     for(const auto& vector:admission_vectors)if(vector.pc==pc && !std::strcmp(vector.name,name))return vector.words[word];
@@ -113,7 +114,7 @@ static void scenario() {
     updates=0;source_fault_active=false;
     const bool retired_bad=current_mode.rfind("retired-bad-",0)==0 || current_mode.rfind("retired-engaged-bad-",0)==0;
     const unsigned connects_before=connect_calls;
-    auto f=std::make_unique<Chain>();active=f.get();f->source_map();f->borrowed_fixture=true;
+    auto f=std::make_unique<Chain>();active=f.get();f->resource_map();f->source_map();f->borrowed_fixture=true;
     f->alternative_render=current_mode;
     auto saved=f->s;f->s={};f->s.sp=addr(f->stack);f->s.x[19]=addr(f->app);
     f->s.x[20]=addr(f->app)+0x20000;f->s.x[26]=addr(f->camera);f->event(0x8dc1c);f->s=saved;

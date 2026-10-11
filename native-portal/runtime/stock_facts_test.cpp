@@ -286,7 +286,7 @@ template<class FixtureType=StockFixture> static void recovery() {
         if(pc==0x2a23f8)put(f.r,0x1380,addr(f.next));
         f.evidence.event(pc,call);f.s=call;
     });
-    f.s.x[22]=addr(f.r);assert(f.evidence.graph_event(0x2987d8,f.s));assert(f.evidence.event(0x2987d8,f.s));assert(f.evidence.graph_event(0,f.s));
+    f.s.x[22]=addr(f.r);assert(f.evidence.graph_event(0x2987d4,f.s));assert(f.evidence.graph_event(0x2987d8,f.s));assert(f.evidence.event(0x2987d8,f.s));assert(f.evidence.graph_event(0,f.s));
     put(f.r,0x15c0,addr(passes));assert(f.evidence.graph_event(0x298840,f.s));assert(f.evidence.event(0x298840,f.s));assert(f.evidence.graph_event(0,f.s));
     assert(!f.evidence.release_lifecycle()); // disposed + GPU is not executable reset
     f.recycle(addr(f.executable));assert(f.evidence.initialized());

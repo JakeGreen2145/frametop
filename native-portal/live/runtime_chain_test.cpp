@@ -10,9 +10,14 @@
 #undef main
 #pragma GCC diagnostic pop
 #include <filesystem>
+#include <algorithm>
+#include <vector>
 #include "pump.private.hpp"
 #include "camera.private.hpp"
 using namespace native_portal::live;
+#ifdef FT_FIRST_CONSUMER_TEST
+extern "C" void graph_test_probe(Runtime&,const char*);
+#endif
 struct Chain:Fixture {
     Runtime router;
 #ifdef FT_FIRST_CONSUMER_TEST
@@ -20,6 +25,7 @@ struct Chain:Fixture {
 #endif
 #ifdef FT_DORMANT_CURRENT_TEST
     #include "dormant_source_fixture.inc"
+    #include "resource_provider_fixture.inc"
 #endif
     #include "source_command_fixture.inc"
     alignas(4096) std::array<std::byte,0xe40> context_padding{};
@@ -38,6 +44,7 @@ struct Chain:Fixture {
     std::array<std::byte,0x40> cache{};
     std::array<std::byte,0x150> attachment{};
     std::array<std::byte,0x80> pipeline_object{},sync{};
+    std::array<std::byte,0x80> pipeline_right{};
     std::array<std::byte,0x80080> mapped{};
     std::array<uint64_t,15> system_table{};
     uint64_t system_interface=0,signal_pointer=0;
@@ -80,6 +87,7 @@ struct Chain:Fixture {
         put(cache,0,uint64_t(0xa001));put(cache,8,uint64_t(0xa002));put(cache,0x10,addr(attachment));
         put(cache,0x30,uint64_t(0x1234));put(cache,0x38,uint32_t(0x101));put(attachment,0x14c,uint32_t(37));
         put(pipeline_object,0x60,uint64_t(0xa003));put(sync,0x58,uint64_t(0xa004));
+        put(pipeline_right,0x60,uint64_t(0xa003));
         signal_pointer=addr(sync);put(executable,0x428,uint64_t(&signal_pointer));put(executable,0x430,uint64_t(&signal_pointer)+8);
         put(executable,0x50,addr(bootstrap_pool));
         put(executable,0x4f0,uint64_t(&signal_value));
@@ -549,7 +557,12 @@ extern "C" bool ft_native_portal_call(uint64_t target,uint64_t *x,uint64_t x8) n
         std::memcpy(f.packets.data()+off+0x170,reinterpret_cast<void*>(x[2]),16);
         uint32_t offset=0;std::memcpy(&offset,f.wrapper.data()+0x18,4);render::Descriptor d{0x999,offset,592};
         std::memcpy(f.packets.data()+off+0x1c8,&d,24);std::memcpy(f.packets.data()+off+0x1c8+4*24,&d,24);break;}
-    case 0x29dac0:++f.lookups;x[0]=addr(f.pipeline_object);break;
+    case 0x29dac0:
+        ++f.lookups;
+#ifdef FT_FIRST_CONSUMER_TEST
+        graph_test_probe(f.router,f.lookups%2?"lookup-first":"lookup-second");
+#endif
+        x[0]=std::getenv("FT_GRAPH_DISTINCT") && f.lookups%2==0?addr(f.pipeline_right):addr(f.pipeline_object);break;
     default:std::fprintf(stderr,"unmodeled native call %llx\n",(unsigned long long)(target-Chain::base));std::abort();
     }
     if(target==Chain::base+0x15f9e0 || target==Chain::base+0x15fba8) {
@@ -874,7 +887,7 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     if(mode=="--reject-graph")put(f.r,0x1478,addr(f.r));
     const bool source_rejected=mode=="--source-rejected";
     if(source_rejected)put(f.cache,0x38,uint32_t(0)); // real cold pass, full scan still valid
-    f.s={};f.s.x[0]=addr(f.r);f.s.sp=0x900000;f.s.x[30]=Chain::base+0x6caf0;f.event(0x2a1e18);
+    f.s={};f.s.x[0]=addr(f.r);f.s.sp=addr(f.source_stack)+0xb10;f.s.x[30]=Chain::base+0x6caf0;f.event(0x2a1e18);
     if(mode=="--reject-graph") {
         for(unsigned eye=0;eye<2;++eye) {
             f.s={};f.s.x[21]=addr(f.r);f.s.x[19]=addr(f.packets)+eye*0x2b0;f.s.x[22]=addr(f.passes)+eye*0x98;f.event(0x2a1c18);assert(f.s.pad==1);
@@ -891,9 +904,9 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         if(source_rejected){assert(f.s.pad==1);continue;}
         assert(f.s.pad==0);
         f.s.x[0]=addr(f.r);f.s.x[1]=addr(f.packets)+eye*0x2b0;f.s.x[2]=0xa001;f.s.x[3]=37;f.s.x[30]=Chain::base+0x2a1c58;
-        f.event(0x29f1e8);f.event(0x29f200);assert(f.s.pad==arena::SkipOwned && f.s.x[0]==addr(f.pipeline_object));
+        f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f1e8);f.event(0x29f200);assert(f.s.pad==arena::SkipOwned && f.s.x[0]==addr(f.pipeline_object));
         f.source_sample(eye);
-        f.s.x[30]=Chain::base+0x2a1c58;f.event(0x29f518);
+        f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f518);
         if(eye==0 && mode=="--stop-after-left")f.router.stop();
     }
     d=f.router.diagnostics();assert(d.uploads[0]==cycle+1 && d.uploads[1]==cycle+1 && d.encoded[0]==(source_rejected?0:cycle+1) && d.encoded[1]==(source_rejected?0:cycle+1) && d.pending);
@@ -936,13 +949,13 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     f.s.sp-=0x40;f.s.x[0]=0;f.event(0x316110);f.s.sp+=0x40;f.s.x[0]=1;f.event(0x316120);
     }
     ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
-    f.s.sp=0x8fff30;f.s.x[19]=addr(f.r);f.event(0x2a2230);
+    f.s.sp=addr(f.source_stack)+0xa40;f.s.x[19]=addr(f.r);f.event(0x2a2230);
     put(f.r,0x15a8,addr(f.passes));put(f.r,0x15b8,addr(f.passes));put(f.r,0x15c0,addr(f.passes)+f.passes.size());f.event(0x2a2320);
     // The real dispatcher relinquishes its current command wrapper after the
     // transfer. That does not destroy the pooled executable retained by lifecycle.
     put(f.r,0x1380,uint64_t(0));f.s.x[0]=f.s.x[20]=addr(f.command);f.s.x[30]=Chain::base+FT_BOOT_RELEASE_LR;f.event(0x305260);
     put(f.executable,0x50,addr(f.bootstrap_pool));
-    f.completed_wrapper_cleanup(addr(f.command),addr(f.executable),0x8fff30);
+    f.completed_wrapper_cleanup(addr(f.command),addr(f.executable),addr(f.source_stack)+0xa40);
     if(std::getenv("FT_RETIRED_MISSING_RETURN")) {
         assert(f.router.diagnostics().pending);
         ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
@@ -958,7 +971,8 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     f.s.sp-=0x30;put(f.stack,0x98,uint64_t(Chain::base+0x300ae0));f.s.x[0]=0;f.event(0x300a38);
     f.s.sp=addr(f.stack)+0x100;f.s.x[20]=addr(next_command);f.s.x[0]=1;f.event(0x30180c);
     }
-    f.replacement_factory(addr(next_wrapper),addr(next_command),0x8fff30);
+    f.replacement_factory(addr(next_wrapper),addr(next_command),addr(f.source_stack)+0xa40);
+    {const auto saved=f.s;f.s.sp=addr(f.source_stack)+0xb10;f.s.x[30]=Chain::base+0x6caf0;f.event(0x2a2498);f.s=saved;}
     if(mode=="--pool-owned-retained") {
         f.stock_pool_return("");
         assert(f.router.diagnostics().pending && f.router.diagnostics().queue_success==1);
@@ -966,7 +980,7 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         std::puts("stock pool exception cannot settle retained owned debt PASS");return 0;
     }
     f.s.x[22]=addr(f.r);
-    if(!no_disposal)f.event(0x2987d8);
+    if(!no_disposal){f.event(0x2987d4);f.event(0x2987d8);}
     put(f.r,0x15c0,addr(f.passes));
     if(!no_disposal)f.event(0x298840);
     ++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
@@ -1040,13 +1054,13 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
     f.s.x[22]=addr(f.r);f.event(0x2987d4);put(f.r,0x1418,uint32_t(0));
     put(f.r,0x15a0,addr(f.passes));put(f.r,0x15a8,addr(f.passes)+f.passes.size());f.enqueues=0;
     f.frame_start();f.record(0);f.record(1);f.frame_end();
-    f.s={};f.s.x[0]=addr(f.r);f.s.sp=0x900000;f.s.x[30]=Chain::base+0x6caf0;f.event(0x2a1e18);assert(f.lookups==4);
+    f.s={};f.s.x[0]=addr(f.r);f.s.sp=addr(f.source_stack)+0xb10;f.s.x[30]=Chain::base+0x6caf0;f.event(0x2a1e18);assert(f.lookups==4);
     for(unsigned eye=0;eye<2;++eye) {
         f.s={};f.s.sp=0x8ff000;f.s.x[19]=addr(f.packets)+eye*0x2b0;f.s.x[21]=addr(f.r);f.s.x[22]=addr(f.passes)+eye*0x98;
         f.event(0x2a1c18);assert(f.s.pad==0);
         f.s.x[0]=addr(f.r);f.s.x[1]=addr(f.packets)+eye*0x2b0;f.s.x[2]=0xa001;f.s.x[3]=37;f.s.x[30]=Chain::base+0x2a1c58;
-        f.event(0x29f1e8);f.event(0x29f200);assert(f.s.pad==arena::SkipOwned && f.s.x[0]==addr(f.pipeline_object));
-        f.s.x[30]=Chain::base+0x2a1c58;f.event(0x29f518);
+        f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f1e8);f.event(0x29f200);assert(f.s.pad==arena::SkipOwned && f.s.x[0]==addr(f.pipeline_object));
+        f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f518);
     }
     f.s={};f.s.sp=0x880000;f.s.x[0]=0xbeef;f.s.x[1]=addr(next_command);f.s.x[30]=Chain::base+FT_BOOT_QUEUE_LR;f.event(0x3018b0);
     cb=0xc002;f.s.x[19]=addr(next_command);f.s.x[0]=0xa005;f.s.x[1]=1;f.s.x[2]=uint64_t(&submit);f.s.x[3]=0;f.event(0x3021d4);

@@ -362,6 +362,7 @@ bool Evidence::live_callback(void *u,const render::Context &c) noexcept {
     if(!u)return false;
     const auto &e=*static_cast<Evidence*>(u);
     return e.graph_capable() && e.dispatch_ && e.graph_scope_ &&
+        (!e.graph_authority_live_ || e.graph_authority_live_(e.graph_authority_user_,true)) &&
         e.same_identity(c.identity) && c.recording_generation && c.recording_generation==e.recording_;
 }
 bool Evidence::same_identity(const render::Identity &i) const noexcept {

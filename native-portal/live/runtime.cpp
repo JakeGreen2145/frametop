@@ -2,6 +2,7 @@
 #include "runtime.hpp"
 #include "native_source_admission.hpp"
 #include "runtime_admission.hpp"
+#include "graph_resource_names.hpp"
 #include "../runtime/native_stock_facts.hpp"
 #include "stock_observer_coverage.h"
 #pragma weak ft_native_portal_installed_sites
@@ -74,6 +75,7 @@ bool read_submit(const arena::Saved &r,uint64_t device,binding::SubmitSnapshot &
 }
 struct Runtime::Impl {
     const pid_t pid=getpid();const uint64_t bootstrap_tid=tid();
+    const bool production_source;
     std::atomic<uint64_t> owner_tid{bootstrap_tid};uint64_t base=0;
     uint64_t worker=0,context=0,native_handle=0,wait_sp=0;
     bool shutdown_wait=false,join_attempt=false,join_ok=false;
@@ -159,9 +161,13 @@ struct Runtime::Impl {
     #include "runtime_camera.inc"
     #include "runtime_dormant.inc"
     #include "runtime_current_source.inc"
+    #include "runtime_graph.inc"
     #include "source_router.inc"
     #include "source_command.inc"
-    explicit Impl(SourceAdmission* admission,bool production=false):source(production?&legacy_source:admission){published.publish(diag);live_published.publish(live);}
+    explicit Impl(SourceAdmission* admission,bool production=false):production_source(production),source(production?&legacy_source:admission){
+        if(!evidence.graph_authority(this,graph_authority))std::abort();
+        published.publish(diag);live_published.publish(live);
+    }
     ~Impl(){collector_stop=true;if(collector.joinable())collector.join();}
     void collect() {
         collector=std::thread([this] {
@@ -274,10 +280,12 @@ struct Runtime::Impl {
     static bool pipeline(void *u,const Provenance &v,Registers &r) noexcept {
         auto &p=*static_cast<Impl*>(u);auto reader=p.evidence.pass_reader();
         Context context{v.identity,v.recording_generation};
-        if(!reader.live || !reader.live(reader.user,context) || !ft_pipeline_begin || !ft_pipeline_end || !ft_pipeline_approved || v.eye>1)return false;
+        if((p.dormant_enabled && !p.graph_live()) || !reader.live || !reader.live(reader.user,context) || !ft_pipeline_begin || !ft_pipeline_end || !ft_pipeline_approved || v.eye>1)return false;
+        if(p.dormant_enabled && !p.graph_provider(v))return false;
         const auto device=reinterpret_cast<VkDevice>(v.identity.device);
         const auto token=ft_pipeline_begin(device,v.identity.device_generation,v.vs,v.ps);if(!token)return false;
         bool ok=p.call(r);const bool ended=ft_pipeline_end(token)!=0;
+        if(ok && p.dormant_enabled && !p.dormant_admission.graph_pipeline(p.dormant_version,p.graph_loan.invocation,v.eye,r.x[0]))return false;
         uint64_t handle=0;FtPipelineRecord record{};
         // Native pipeline object stores VkPipeline at +0x60, separately from layout +0x68.
         ok=ok && ended && r.x[0] && get(r.x[0]+0x60,handle) && handle &&
@@ -444,6 +452,7 @@ struct Runtime::Impl {
     }
     void event(uint64_t pc,arena::Saved &s) noexcept {
         if(!pinned || getpid()!=pid)return;
+        graph_conflict(pc,s); // before routing, owner pumping, or any native original
         if(source_route(pc,s))return;
         if(camera_route(pc,s))return;
         if(tid()==owner_tid && !camera_bound.load() && (pc==0 || pc==0x147a48 || pc==0x1480b8))camera_handoff();
@@ -528,7 +537,7 @@ struct Runtime::Impl {
             ~ReaderReservation(){if(self)self->dormant_admission.reader_return(self->dormant_version);}
         } reader;
         if(dormant_enabled && dormant_engaged) {
-            if(camera_closed || !dormant_admission.reader(dormant_version,camera_closing || stopped.load() || current_render_active))return;
+            if(camera_closed || !dormant_admission.reader(dormant_version,camera_closing || stopped.load() || current_render_active || graph_loan.invocation))return;
             reader.self=this;
         }
         current_render_event(pc,s); // original Saved, before any Evidence/staging rewrite
@@ -548,8 +557,10 @@ struct Runtime::Impl {
             if(!dormant && pc==0x7fdbc && evidence.initialized())attach();
             publish();return;
         }
-        const bool graph_boundary=!dormant && (pc==0x2a1e18 || pc==0x2a2230 || pc==0x2a2320 || pc==0x2987d8 || pc==0x298840);
-        if(graph_boundary)evidence.graph_event(pc,s);
+        graph_boundary(pc,s);
+        const bool graph_boundary=!dormant && (pc==0x2a1e18 || pc==0x2a2230 || pc==0x2a2320 || pc==0x2987d4 || pc==0x2987d8 || pc==0x298840);
+        graph_disposal_reader=graph_boundary && pc!=0x2a1e18 && (!dormant_enabled || reader.self==this);
+        if(graph_boundary && (pc!=0x2a1e18 || graph_begin(s)))evidence.graph_event(pc,s);
         evidence.event(pc,s);
         if(fact)stock_facts.finish();
         if(runtime::command_trace_pc(pc)) {
@@ -557,6 +568,7 @@ struct Runtime::Impl {
             command_trace.push(pc,s,base,tid(),owner_tid.load(),CommandTrace::Owner,&diagnostic);
         }
         if(graph_boundary && pc!=0x2a1e18)evidence.graph_event(0,s);
+        graph_disposal_reader=false;
         if(pc==0x3018b0 && adapter)native_queue_entry=s;
         unsigned arena_site=arena::SiteCount;
         if(pc==0x299110)arena_site=arena::Admission;
@@ -791,9 +803,17 @@ struct Runtime::Impl {
             Observation observation{};
             if(evidence.snapshot(wrapper,marker,observation)) {
                 binding::PassRequest request{{binding.identity,observation.arena.recording_generation},marker,base,0};
-                auto reader=evidence.pass_reader();prepared=binding::extract_passes(reader,request).pair;
+                auto reader=evidence.pass_reader();const auto scan=binding::extract_passes(reader,request);prepared=scan.pair;
                 pass.emplace(*adapter,reader,request);backend_scope=scope(s,observation.arena.command);
                 binding::PassRegisters regs{};std::memcpy(&regs,&s,sizeof s);pass->callback(regs,0);std::memcpy(&s,&regs,sizeof s);
+                if(dormant_enabled && graph_loan.invocation && scan.reason==binding::PassReason::PreDispatchMutation) {
+                    // Unsupported native pre-work stays native. No added lookup
+                    // was admitted; revoke read/use rights before its writers,
+                    // while retaining root lifetime through the matched end.
+                    graph_loan.preparation=false;
+                    dormant_admission.graph_cutoff(graph_loan.version,graph_loan.invocation);
+                    evidence.graph_event(0,s);prepared={};
+                }
                 if(adapter->state().pending && !adapter->state().committed)refuse(Refusal::Adapter);
             }
         }
@@ -818,6 +838,8 @@ struct Runtime::Impl {
         }
         if(adapter && pc==0x29f1e8) {
             for(unsigned i=0;i<2;++i)if(prepared.eyes[i].lookup.x[1]==s.x[1]) {
+                if(dormant_enabled && (!graph_live() || backend_open || s.sp!=graph_loan.sp-0x830 ||
+                   s.x[30]!=base+0x2a1cf0))camera_route_abort(CameraFatalReason::MutationDebt,pc);
                 const auto &e=prepared.eyes[i];Registers lookup=e.lookup;
                 for(unsigned k=0;k<4;++k)lookup.x[k]=s.x[k];
                 backend_scope=scope(s,s.x[0]);backend_open=true;

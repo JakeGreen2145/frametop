@@ -33,6 +33,10 @@ def main():
     p.add_argument('--fixtures', type=Path, default=Path('/home/jakeg/.hermes/work/frametop-native-live-integration/native-portal/build/camera-runtime-asan'))
     p.add_argument('--admission-vectors', type=Path, default=ROOT / 'build/admission-frozen/admission-native-vectors.json')
     p.add_argument('--factory-vectors', type=Path, default=Path('/home/jakeg/.hermes/work/desktop-compositor-re/factory-call-arguments-a374d89/SAVED-VECTORS.json'))
+    from resource_names_data import DEFAULT as resource_default
+    p.add_argument('--resource-facts', type=Path, default=resource_default)
+    from present_runtime_fixture import PINS as consumer_pins
+    p.add_argument('--consumer-pins', type=Path, default=consumer_pins)
     args = p.parse_args()
     if args.first_consumer:
         args.current = True
@@ -76,7 +80,7 @@ def main():
     client = set(values['SOURCE_CLIENT'])
     client.update(pc for _, module, pc, _, _ in values['STOCK_OBSERVERS'] if module == 'client')
     client.update(pc for pc, _, _, _ in values['ADMISSION_CLIENT'])
-    assert (len(comp), len(client)) == (205, 37), 'canonical merged inventory changed; reconcile rather than guess'
+    assert (len(comp), len(client)) == (216, 37), 'canonical merged inventory changed; reconcile rather than guess'
     # Canonical producer 35a2d77, provisionally merged. No consumer-added PCs.
     requested = json.loads((ROOT / 'live/admission-alternatives-hook-request.json').read_text())['new_required_sites']
     assert len(requested) == 10
@@ -98,6 +102,8 @@ def main():
     private_hashes = {}
     if args.current:
         from admission_vectors_data import header as admission_header, PIN as admission_pin
+        from resource_names_data import header as resource_header, PIN as resource_pin
+        (BUILD / 'resource-names.private.hpp').write_text(resource_header(args.resource_facts))
         (BUILD / 'admission-native.private.hpp').write_text(admission_header(args.admission_vectors))
         from factory_arguments_data import header, PIN
         (BUILD / 'factory-arguments.private.hpp').write_text(header(args.factory_vectors))
@@ -114,6 +120,7 @@ def main():
         private_hashes['admission-native-vectors.json'] = admission_pin
         private_hashes['admission-native.private.hpp'] = hashlib.sha256((BUILD / 'admission-native.private.hpp').read_bytes()).hexdigest()
         private_hashes['SAVED-VECTORS.json'] = PIN
+        private_hashes['resource-STATIC-FACTS.json'] = resource_pin
         private_hashes['factory-arguments.private.hpp'] = hashlib.sha256((BUILD / 'factory-arguments.private.hpp').read_bytes()).hexdigest()
         # Source-model coordinates already present in the owning fixture and
         # published native contracts, not a fresh instruction-execution claim.
@@ -126,7 +133,7 @@ def main():
         flags += ['-Wl,--wrap=syscall', '-Wl,--wrap=process_vm_readv']
     if args.first_consumer:
         from present_runtime_fixture import generate
-        private_hashes.update(generate(BUILD))
+        private_hashes.update(generate(BUILD,args.consumer_pins))
         flags += ['-DFT_FIRST_CONSUMER_TEST']
         sources = ['live/present_runtime_observer_test.cpp' if source == 'live/runtime.cpp' else source for source in sources]
     inputs = [p for p in ROOT.rglob('*') if p.is_file() and 'build' not in p.relative_to(ROOT).parts
@@ -167,6 +174,7 @@ def main():
                  'source-uncertainty', 'identity-migration', 'actual-return', 'no-gpu', 'no-cpu', 'no-source']
         modes += ['source-negative-' + name for name in ('4', '5', '7', 'unpaired', 'no-ret')]
         modes += ['missing-alt-' + site['module'] + '-' + site['pc'][2:] for site in requested]
+        modes += ['missing-alt-compositor-' + site['pc'][2:] for site in json.loads((ROOT / 'live/graph-hook-request.json').read_text())['required_sites']]
         modes += ['prebootstrap-cause', 'prebootstrap-runtime-cause', 'prebootstrap-scope-guards', 'prebootstrap-delete', 'prebootstrap-zero', 'prebootstrap-reuse',
                   'prebootstrap-destroy', 'prebootstrap-return', 'prebootstrap-constructor',
                   'bootstrap-known-delete', 'bootstrap-known-destroy', 'bootstrap-constructor-fault', 'bootstrap-vtable',
