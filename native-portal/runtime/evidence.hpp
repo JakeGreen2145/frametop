@@ -37,7 +37,7 @@ inline bool command_trace_pc(uint64_t pc) noexcept {
     case 0x301808:case 0x30180c:case 0x300a08:case 0x300a38:
     case 0x300b20:case 0x300c54:case 0x3003d0:case 0x311648:case 0x4b3d0:
     case 0x305260:case 0x2953a0:case 0x29a528:case 0x2a23f4:
-    case 0x2a1e18:case 0x2a2230:case 0x2a2320: return true;
+    case 0x2a1e18:case 0x2a2230:case 0x2a2320:case 0x2a23f8: return true;
     default:return false;
     }
 }
@@ -46,6 +46,28 @@ class Evidence {
     Evidence() noexcept;
     Evidence(const Evidence &)=delete;
     Evidence &operator=(const Evidence &)=delete;
+    // Explicit pre-pin opt-in only. Runtime defaults remain unchanged. The
+    // caller must authenticate the native-local scopes in stock-facts-handoff.md.
+    // This is owner-serialized command history, NOT cross-thread admission.
+    // No default native reader in stock mode. Resolve an exact scalar at its
+    // actual event, or supply an authenticated by-value fact, otherwise refuse.
+    // Addresses here identify requested fields; they are NOT read permission.
+    // The callback/user must outlive Evidence, and must not reenter it.
+    struct StockFactReader {
+        void *user=nullptr;
+        bool (*scalar)(void *,uint64_t pc,uint64_t address,uint64_t &value) noexcept=nullptr;
+    };
+    bool begin_dormant_stock(StockFactReader) noexcept;
+    uint64_t unsupported_stock_pc() const noexcept {return owner()?stock_unsupported_pc_:0;}
+    struct StockCommandFacts {
+        uint64_t wrapper=0,command=0,vk=0,generation=0,pool=0;
+        bool begun=false;
+    };
+    StockCommandFacts stock_command_facts() const noexcept; // values, no read grant
+    // Caller must first exclude conflicting native work/readers. No reads here;
+    // exact identity/generation and complete event history are necessary, not a
+    // substitute for that external exclusion. One-way, never reset by Off.
+    bool engage_stock(const render::Identity &,uint64_t generation) noexcept;
     bool pin(uint64_t image_base, const char *sha256) noexcept;
     bool event(uint64_t relative_pc, const arena::Saved &) noexcept;
     // Compose only bootstrap Bridge sites; borrow allocation output for the
@@ -94,6 +116,19 @@ class Evidence {
     binding::PassReader pass_reader() noexcept;
     static bool observe(void *, const render::Binding &,uint64_t,uint64_t,render::Observation &) noexcept;
  private:
+    enum class ReadMode { Production, DormantStock, Engaged };
+    ReadMode read_mode_=ReadMode::Production;
+    StockFactReader stock_reader_{};
+    bool stock_fact_gap_=false;uint64_t stock_unsupported_pc_=0;
+    bool stock_native_scope_=false;
+    uint64_t stock_retained_sp_=0;
+    bool dormant_stock() const noexcept {return read_mode_==ReadMode::DormantStock;}
+    bool stock_turnover_owner(uint64_t pc,StockCommandFacts &) noexcept;
+    bool stock_publication_pool(uint64_t pc,uint64_t command,uint64_t &pool) noexcept;
+    bool recording_read(uint64_t pc,uint64_t address,void *,size_t) noexcept;
+    template<class T> bool recording_at(uint64_t pc,uint64_t p,T &v) noexcept {
+        return dormant_stock()?recording_read(pc,p,&v,sizeof v):at(p,v);
+    }
     struct Span { uint64_t begin=0,size=0,epoch=0; };
     const pid_t pid_;pid_t tid_;
     uint64_t worker_=0,context_=0,scheduler_=0,application_=0;
@@ -126,7 +161,7 @@ class Evidence {
     std::array<Span,8> spans_{};
     struct Recording { uint64_t command=0,vk=0,generation=0;bool begun=false;
         uint64_t reset_sp=0,reset_lr=0;unsigned renewal=0;
-        uint64_t stock_pool=0;bool published=false; };
+        uint64_t stock_pool=0;bool published=false;uint64_t native_pool=0; };
     std::array<Recording,64> recordings_{};
     binding::Generations generations_;
     std::optional<binding::Lifecycle> lifecycle_;
@@ -151,7 +186,7 @@ class Evidence {
     bool add(unsigned,uint64_t,size_t) noexcept;
     bool read(uint64_t,void *,size_t) const noexcept;
     template<class T> bool at(uint64_t p,T &v) const noexcept {return read(p,&v,sizeof v);}
-    bool arena(render::Arena &) const noexcept;
+    bool arena(render::Arena &,bool command_graph=true) const noexcept;
     std::atomic<uint64_t> first_failure_pc_{0};
     bool fail(uint64_t pc) noexcept;
     static bool read_callback(void *,uint64_t,void *,size_t) noexcept;

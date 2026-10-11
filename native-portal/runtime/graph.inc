@@ -47,10 +47,10 @@ Evidence::ApplicationOwner Evidence::application_owner() const noexcept {
     return {worker_,context_,scheduler_,application_};
 }
 bool Evidence::graph_capable() const noexcept {
-    return initialized() && run_ && handoff_.load()==2 && recording_;
+    return initialized() && !dormant_stock() && run_ && handoff_.load()==2 && recording_;
 }
 bool Evidence::graph_read(uint64_t p,void *out,size_t n) const noexcept {
-    if(!owner() || failed_ || !graph_scope_ || !p || !n || n>UINT64_MAX-p)return false;
+    if(!owner() || dormant_stock() || failed_ || !graph_scope_ || !p || !n || n>UINT64_MAX-p)return false;
     for(size_t i=0;i<graph_count_;++i) {
         const auto &s=graph_spans_[i];
         if(p>=s.begin && p-s.begin<=s.size && n<=s.size-(p-s.begin))return read_self(p,out,n);
@@ -59,7 +59,7 @@ bool Evidence::graph_read(uint64_t p,void *out,size_t n) const noexcept {
 }
 bool Evidence::graph_capture(bool attachments) noexcept {
     graph_count_=0;graph_scope_=false;graph_owned_=false;
-    if(!initialized() || !run_)return false;
+    if(!initialized() || dormant_stock() || !run_)return false;
     auto add_graph=[&](uint64_t begin,uint64_t end,uint64_t stride,size_t cap)->bool {
         if(end<begin || (!begin && end) || (begin&7) || (end-begin)%stride || (end-begin)/stride>cap)return false;
         if(end==begin)return true;
@@ -96,7 +96,7 @@ bool Evidence::graph_capture(bool attachments) noexcept {
     graph_scope_=true;return true;
 }
 bool Evidence::graph_event(uint64_t pc,const arena::Saved &s) noexcept {
-    if(!owner() || !run_)return false;
+    if(!owner() || !run_ || dormant_stock())return false;
     if(pc==0x2a1e18) {
         if(s.x[0]!=identity_.renderer || uint32_t(s.x[1]) || s.x[30]!=base_+0x6caf0)return false;
         if(dispatch_)return fail(pc);
@@ -121,7 +121,7 @@ bool Evidence::graph_event(uint64_t pc,const arena::Saved &s) noexcept {
 }
 bool Evidence::command_owner(binding::Owner &out) const noexcept {
     out={};render::Arena a{};
-    if(!initialized() || !recording_ || !arena(a))return false;
+    if(!initialized() || dormant_stock() || !recording_ || !arena(a))return false;
     out.identity=identity_;out.recording=out.generation=recording_;
     out.command=a.command;out.arena=a.resource;out.buffer=a.buffer;out.map=a.map;
     out.capacity=a.capacity;out.alignment=a.alignment;

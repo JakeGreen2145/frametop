@@ -33,6 +33,26 @@ bool read_self(uint64_t p,void *out,size_t n) noexcept {
 }
 Evidence::Evidence() noexcept : pid_(getpid()),tid_(static_cast<pid_t>(syscall(SYS_gettid))) {}
 bool Evidence::owner() const noexcept {return getpid()==pid_ && syscall(SYS_gettid)==tid_;}
+bool Evidence::begin_dormant_stock(StockFactReader reader) noexcept {
+    if(!owner() || pinned_ || read_mode_!=ReadMode::Production)return false;
+    stock_reader_=reader;read_mode_=ReadMode::DormantStock;return true;
+}
+Evidence::StockCommandFacts Evidence::stock_command_facts() const noexcept {
+    if(!initialized() || !recording_ || !command_wrapper_ || turnover_.phase)return {};
+    for(const auto &c:recordings_)if(c.command==spans_[6].begin && c.generation==recording_ && c.begun && c.published)
+        return {command_wrapper_,c.command,c.vk,c.generation,c.native_pool,c.begun};
+    return {};
+}
+bool Evidence::engage_stock(const render::Identity &i,uint64_t generation) noexcept {
+    if(!owner() || !dormant_stock() || !initialized() || !run_ || handoff_.load()!=2 ||
+       !same_identity(i) || !identity_.device_generation || !generation || generation!=recording_ ||
+       stock_fact_gap_ || creation_ || begin_open_ || turnover_.phase || stock_retained_sp_ || lifecycle_ ||
+       wrapper_ || marker_ || call_ || staging_ticket_ || staging_writer_ || staging_poisoned_.load() ||
+       stock_native_scope_ || dispatch_ || graph_scope_ || graph_owned_)return false;
+    for(const auto &c:recordings_)if(c.renewal)return false;
+    if(!stock_command_facts().command)return false;
+    read_mode_=ReadMode::Engaged;return true;
+}
 bool Evidence::pin(uint64_t base,const char *sha) noexcept {
     if(!owner() || pinned_ || !sha || std::strcmp(sha,elf_sha256) || !base || base>UINT64_MAX-0x600000) return false;
     base_=base;pinned_=true;return true;
@@ -114,7 +134,7 @@ bool Evidence::event_impl(uint64_t pc,const arena::Saved &s) noexcept {
     if(pc==0x301808 || pc==0x30180c || pc==0x300a08 || pc==0x300a38 ||
        pc==0x300b20 || pc==0x300c54 || pc==0x3003d0 || pc==0x311648 || pc==0x4b3d0 ||
        pc==0x305260 || pc==0x2953a0 || pc==0x3018b0 || pc==0x2a1e18 || pc==0x2a2230 ||
-       pc==0x2a2320 || pc==0x2987d8 || pc==0x298840 || pc==0x2a23f4) return recording_event(pc,s);
+       pc==0x2a2320 || pc==0x2987d8 || pc==0x298840 || pc==0x2a23f4 || pc==0x2a23f8) return recording_event(pc,s);
     if(pc==0x29bd18 || pc==0x29c238) {
         if(s.x[0]!=R) return false;
         fail(pc);return true; // revoke before native teardown, never retire native objects
@@ -163,6 +183,7 @@ bool Evidence::event_impl(uint64_t pc,const arena::Saved &s) noexcept {
             if(!add(6,command,0x7b0)) return fail(pc);
             uint64_t vk=0,D=0;
             if(!at(command+0x738,vk) || vk!=c.vk || !at(command+8,D) || D!=R+0x50) return fail(pc);
+            if(dormant_stock() && !stock_publication_pool(pc,command,c.native_pool))return fail(pc);
             // Issue only for the published owner, not the last-created pool member.
             c.generation=generations_.issue();if(!c.generation) return fail(pc);
             c.published=true;recording_=c.generation;break;
@@ -209,12 +230,14 @@ bool Evidence::route(arena::Bridge &bridge,uint64_t pc,arena::Saved &s) noexcept
     }
     if(pc==0x7fdbc) {
         if(!event(pc,s)) return false;
+        stock_native_scope_=true;
         bridge.dispatch(s,arena::Initialized,epoch_,static_cast<uint64_t>(tid_));
+        stock_native_scope_=false;
         return bridge.ready();
     }
     return event(pc,s);
 }
-bool Evidence::arena(render::Arena &a) const noexcept {
+bool Evidence::arena(render::Arena &a,bool command_graph) const noexcept {
     const auto R=identity_.renderer;uint64_t D=0,allocator_D=0,backing=0,map_owner=0,mapped=0,allocation_size=0,device=0;
     uint32_t capacity=0,cursor=0,index=0,count=0,flags=0;int32_t refs=0;
     if(!at(R+0xa78,device) || device!=identity_.device || !at(R+0x1390,a.resource) || a.resource!=resource_ ||
@@ -227,15 +250,16 @@ bool Evidence::arena(render::Arena &a) const noexcept {
        !at(resource_+0x98,refs) || refs<=0 || !at(resource_+0xa0,mapped) ||
        !at(R+0x1408,map_owner) || map_owner!=resource_ || !at(R+0x1410,a.map) ||
        a.map!=mapped || !bounded(a.map,capacity) || !at(R+0x328,a.alignment) || a.alignment!=64 ||
-       !at(R+0x1418,cursor) || cursor>capacity || !at(R+0x1380,a.command_wrapper) ||
+       !at(R+0x1418,cursor) || cursor>capacity)return false;
+    if(command_graph && (!at(R+0x1380,a.command_wrapper) ||
        a.command_wrapper!=command_wrapper_ || !at(command_wrapper_+8,a.command) || !a.command ||
        !at(R+0x15a0,a.pass_begin) || !at(R+0x15a8,a.pass_end) ||
        a.pass_end<a.pass_begin || (a.pass_begin&7) || (!a.pass_begin && a.pass_end) ||
-       (a.pass_end-a.pass_begin)%0x98 || (a.pass_end-a.pass_begin)/0x98>binding::pass_limit) return false;
+       (a.pass_end-a.pass_begin)%0x98 || (a.pass_end-a.pass_begin)/0x98>binding::pass_limit)) return false;
     if(ready_ && (backing!=backing_ || index!=type_index_ || flags!=type_flags_ || count!=type_count_ ||
                   a.map!=map_ || a.buffer!=buffer_ || allocation_size!=allocation_bytes_)) return false;
     a.capacity=capacity;a.cursor=cursor;a.recording_generation=recording_;
-    if(recording_) {
+    if(command_graph && recording_) {
         uint64_t vk=0,D=0;bool found=false;
         if(!at(a.command+0x738,vk) || !at(a.command+8,D) || D!=R+0x50) return false;
         for(const auto &c:recordings_) if(c.command==a.command && c.vk==vk && c.generation==recording_) found=true;
@@ -244,11 +268,11 @@ bool Evidence::arena(render::Arena &a) const noexcept {
     return true;
 }
 bool Evidence::coherent(uint64_t resource) const noexcept {
-    if(!initialized() || resource!=resource_) return false;
-    render::Arena a{};return arena(a);
+    if(!initialized() || resource!=resource_ || (dormant_stock() && !stock_native_scope_)) return false;
+    render::Arena a{};return arena(a,!dormant_stock());
 }
 bool Evidence::call_enter(const render::Registers &r) noexcept {
-    if(!initialized()) return false;
+    if(!initialized() || dormant_stock()) return false;
     if(call_) return fail(call_-base_); // the already authenticated native method
     if(r.x[0]!=identity_.renderer) return false;
     if(r.target==base_+0x296c00) {
@@ -279,7 +303,7 @@ bool Evidence::call_return(const render::Registers &r) noexcept {
     return true;
 }
 bool Evidence::snapshot(uint64_t wrapper,uint64_t marker,render::Observation &out) const noexcept {
-    out={};if(!initialized() || !wrapper_ || !marker_ || wrapper!=wrapper_ || marker!=marker_) return false;
+    out={};if(!initialized() || dormant_stock() || !wrapper_ || !marker_ || wrapper!=wrapper_ || marker!=marker_) return false;
     // During authenticated Run an old wrapper offset can outlive an arena cursor
     // reset. Reading that bounded metadata is not descriptor authorization:
     // Adapter/Bridge demand a fresh charged copy and exact post-upload offset.
@@ -291,7 +315,7 @@ bool Evidence::snapshot(uint64_t wrapper,uint64_t marker,render::Observation &ou
        !read(marker+8,o.attachment.data(),sizeof o.attachment) || o.attachment!=source_over) return false;
     o.wrapper_size=size;o.wrapper_offset=offset;out=o;return true;
 }
-bool Evidence::read_callback(void *p,uint64_t a,void *out,size_t n) noexcept {return p && static_cast<Evidence*>(p)->read(a,out,n);}
+bool Evidence::read_callback(void *p,uint64_t a,void *out,size_t n) noexcept {return p && static_cast<Evidence*>(p)->owner() && !static_cast<Evidence*>(p)->dormant_stock() && static_cast<Evidence*>(p)->read(a,out,n);}
 bool Evidence::write_callback(void *p,uint64_t destination,const void *source,size_t size) noexcept {
     if(!p) return false;
     auto &e=*static_cast<Evidence*>(p);
@@ -346,7 +370,9 @@ bool Evidence::arena_event(arena::Bridge &bridge,unsigned site,arena::Saved &s) 
            !read_self(s.x[24]+0x1c0,&size,4))return refuse();
         classifier_[0]={s.x[24]+0x1c0,size,4};
     }
+    stock_native_scope_=true;
     bridge.dispatch(s,site,epoch_,static_cast<uint64_t>(tid_));
+    stock_native_scope_=false;
     classifier_={}; // no callback return, thread handoff or graph read inherits it
     return s.pad!=arena::Unsupported;
 }
@@ -357,6 +383,8 @@ bool Evidence::bridge_read_callback(void *p,uint64_t a,void *out,size_t n) noexc
     for(const auto &field:e.classifier_)if(field.size && a==field.address && n==field.size) {
         std::memcpy(out,&field.value,n);return true;
     }
+    if(e.dormant_stock() && !e.stock_native_scope_ &&
+       !(e.borrowed_slot_ && a==e.borrowed_slot_ && n==8))return false;
     return e.read(a,out,n);
 }
 arena::Memory Evidence::bridge_memory() noexcept {return {this,bridge_read_callback,write_callback,coherent_callback};}

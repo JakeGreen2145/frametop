@@ -32,6 +32,7 @@ uint64_t Evidence::stage(render::Adapter &adapter,uint64_t pc,arena::Saved &s,
         }
         return 0;
     };
+    if(dormant_stock())return 0; // no Adapter or native memory access before engagement
     if(!initialized() || staging_poisoned_.load() || !bridge_ ||
        !adapter.staging_owner(bridge_,identity_,base_))return refuse();
     if(pc==0x161d64) {

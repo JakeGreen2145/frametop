@@ -1,0 +1,82 @@
+{
+  "base_commit": "27e908b4c8086a9d09b9f9475902220e1cc1e18b",
+  "scope": "Actual Evidence, Adapter, Command, Lifecycle, PassGate and default Runtime smoke. Native operations and collector authority are modeled. No installed ABI, qualified native collector, full Runtime scheduling repair or hardware proof.",
+  "memory_max": 268435456,
+  "memory_swap_max": 0,
+  "final_commands": [
+    "systemd-run --user --scope -p MemoryMax=256M -p MemorySwapMax=0 --unit=stock-facts-delivery-green python3 -B native-portal/runtime/stock_facts_test.py --runtime-smoke",
+    "systemd-run --user --scope -p MemoryMax=256M -p MemorySwapMax=0 --unit=stock-facts-delivery-asan python3 -B native-portal/runtime/stock_facts_test.py --sanitize --runtime-smoke",
+    "git diff --check"
+  ],
+  "final_exit_codes": [0, 0, 0],
+  "red_runs": [
+    {
+      "name": "legacy-read-coupling",
+      "raw_report": "build/stock-facts/red/results.json",
+      "raw_sha256": "3dd89478a8f966c18e23116f0e3682d6ed74018f6ee428dd75380486b60ecb02",
+      "test_exit": -6,
+      "failure": "forbidden_reads==0 && stock history dereferenced optional graph/backing",
+      "production_was_unmodified": true
+    },
+    {
+      "name": "unpaired-native-phase",
+      "raw_report": "build/stock-facts/gap-red.json",
+      "raw_sha256": "1a9624bf160b29b833441596938cada0f69fadc48cf567c7693d585e9f3523e5",
+      "test_exit": -6,
+      "failure": "!f->evidence.engage_stock(f->evidence.identity(),facts.generation)"
+    },
+    {
+      "name": "missing-observed-pool",
+      "raw_report": "build/stock-facts/pool-red.json",
+      "raw_sha256": "10fe01e0fc4a4bd30a83f7b27c98b2d6c38a86d7d31f764aa7023dce4fdf1d26",
+      "test_exit": -6,
+      "failure": "current StockCommandFacts lacked the observed pool identity"
+    },
+    {
+      "name": "unsupported-collector-bypass",
+      "raw_report": "build/stock-facts/reader-red.json",
+      "raw_sha256": "747ac396fa4f0bee9a13ab89182438e4afea019172a12e08594743afbe9efe39",
+      "test_exit": -6,
+      "failure": "!f->turn(addr(f->command),addr(f->executable),addr(f->next))"
+    },
+    {
+      "name": "partial-bootstrap-reader-leak",
+      "raw_report": "build/stock-facts/early-red.json",
+      "raw_sha256": "7430c9ff90a6665bf3efcbf36bc2bf214450feb3caa5a99a1e4a8a4ec7fe8f0b",
+      "test_exit": -6,
+      "failure": "!memory.read(memory.user,addr(early.r),&value,8)"
+    }
+  ],
+  "normal": {
+    "raw_report": "build/stock-facts/green/results.json",
+    "raw_sha256": "bbb6868d99fb7f9cc7085175cd1736fec8f45c1b3b0d45cd7c685c76afa70a55",
+    "memory_peak": 129011712,
+    "commands": 30,
+    "all_commands_zero": true,
+    "test_exits": {"stock_facts_test": 0, "evidence_test": 0, "evidence-no-layer": 0, "runtime-smoke": 0}
+  },
+  "asan_ubsan": {
+    "raw_report": "build/stock-facts/asan/results.json",
+    "raw_sha256": "ed270c09f59d88ed548a7431a885921cd9d9d8f1ff78b2ae27b847881428ff46",
+    "memory_peak": 218570752,
+    "commands": 30,
+    "all_commands_zero": true,
+    "test_exits": {"stock_facts_test": 0, "evidence_test": 0, "evidence-no-layer": 0, "runtime-smoke": 0}
+  },
+  "stock_stdout": "stock facts: pool reuse -> engagement -> stereo commit/backend -> exact queue/wait/disposal/reset and lifecycle release PASS\nstock facts: protected graph and read counters, strict history negatives PASS\n",
+  "evidence_stdout": "evidence: real self-read, scoped begin/publication, Bridge bootstrap, bounded staging with 35 synthetic cases, Adapter descriptor capture, Lifecycle bind/refusal and fail-closed PassGate passed\n",
+  "no_layer_stdout": "evidence: no-layer initialization refusal and existing self-read/lifetime negatives passed; positive staging skipped without the synthetic layer export\n",
+  "runtime_stdout": "runtime: default stock continuation, exact pin, unsupported ownership, bounded real-memory queue payload parsing PASS\n",
+  "source_sha256": {
+    "native-portal/runtime/evidence.hpp": "114eeeeefbf754e37779b1e4370b91d673cde3e74b0a5cc7848aad1176d4ad07",
+    "native-portal/runtime/evidence.cpp": "45e6a166b03885ebea78c97b1aaa5177f6084efab0d20ff9a08829e5d2be7a34",
+    "native-portal/runtime/recording.cpp": "caf10f082739bee2055b684f183a49862f10592fbd9eb40c61ecc1ba65aec9c3",
+    "native-portal/runtime/graph.inc": "eb092da9847e8bf54cffd8cc3a570576d726655a2fc52dfd3606aa224968f43f",
+    "native-portal/runtime/staging.cpp": "94654bed3c684e1cd6e6ef2f86cdbdfd5d9eb617f944d0d37e951bbea816d685",
+    "native-portal/runtime/stock_facts_test.cpp": "85fd972cecfa97915f081eb780a0627dafa7b7fd4c833263aa1befa08ce243d6",
+    "native-portal/runtime/stock_facts_test.py": "7257183af4f7e80b3a88f1d7fc146696a0d5a65d4c4846389f658fddab643ae4"
+  },
+  "static_security_scan": [],
+  "independent_review": "Not performed: delegate tool and installed review CLI unavailable. Parent review required.",
+  "native_activation": "Unchanged. StockFactReader must be supplied by a qualified native collector. New committed publication observer 2a23f8 and the constructor/disposal collector bindings are parent-owned integration work. Missing facts remain unsupported and sticky."
+}
