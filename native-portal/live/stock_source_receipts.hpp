@@ -5,21 +5,25 @@
 #include <unistd.h>
 
 namespace native_portal::live {
-class StockSourceCollector;
+template<class Sink> class NativeSourceMethodCollector;
+class StockSourceTransport;
+using StockSourceCollector=NativeSourceMethodCollector<StockSourceTransport>;
 class NativeSourceAdmission;
 // Only a matching pre-RET candidate PLUS completed own bypass publishes this record. Queue/header,
 // stack and metadata addresses are historical opaque identities, never loans.
-class StockSourceReceipt final {
+template<uint64_t Method> class CurrentSourceCompletion;
+template<uint64_t Kind> class NativeSourceResult final {
 public:
     const ClientSourceBinding::Observation& observation() const noexcept{return observation_;}
     uint64_t sequence() const noexcept{return sequence_;}
     uint64_t runtime() const noexcept{return runtime_;}
     const NativeFieldFacts& native_fields() const noexcept{return facts_;}
 private:
-    friend class StockSourceCollector;
+    template<class Sink> friend class NativeSourceMethodCollector;
     friend class StockSourceTransport;
     friend class NativeSourceAdmission;
-    StockSourceReceipt()=default;
+    template<uint64_t Method> friend class CurrentSourceCompletion;
+    NativeSourceResult()=default;
     CameraBinding binding_{};
     NativeFieldFacts facts_{};
     ClientSourceBinding::Observation observation_{};
@@ -28,6 +32,7 @@ private:
     std::thread::id caller_{},owner_{};
     bool held_disconnect_=false;
 };
+using StockSourceReceipt=NativeSourceResult<0>;
 // One bounded, one-way history stream per binding/version. Construct with the
 // authenticated render owner's ID and nonzero Runtime identity. The transport
 // must outlive every caller collector. seal() is owner-only and called only
@@ -35,6 +40,7 @@ private:
 // invocations, not complete outer handlers. No mutex spans a read/native call.
 class StockSourceTransport final {
 public:
+    using Record=StockSourceReceipt;
     static constexpr size_t capacity=32;
     StockSourceTransport(const CameraBinding& b,uint64_t version,std::thread::id owner,uint64_t runtime) noexcept:
         binding_(b),version_(version),owner_(owner),process_(getpid()),stream_(next_stream_.fetch_add(1)),runtime_(runtime) {}
@@ -62,7 +68,7 @@ public:
     bool failed() const noexcept{return getpid()!=process_ || failed_.load();}
     bool invalidate() noexcept{failed_.store(true);return false;}
 private:
-    friend class StockSourceCollector;
+    template<class Sink> friend class NativeSourceMethodCollector;
     friend class NativeSourceAdmission;
     bool owner() const noexcept{return getpid()==process_ && std::this_thread::get_id()==owner_;}
     uint64_t begin(const CameraBinding& b,uint64_t version) noexcept {
@@ -96,14 +102,16 @@ private:
 // One persistent instance per owning caller, e.g. bounded Runtime TLS. Reuses
 // ClientSourceBinding's exact native event engine, behind the concrete native allowlist.
 // Caller owns the real gate ticket throughout begin/events/RET and publication.
-class StockSourceCollector final {
+template<class Sink> class NativeSourceMethodCollector final {
 public:
     using M=ClientSourceBinding::Module;
-    StockSourceCollector(CameraAccessGate& gate,StockSourceTransport& transport,StockSourceReadBoundary backend={}) noexcept:
+    using Transport=Sink;
+    using Record=typename Sink::Record;
+    NativeSourceMethodCollector(CameraAccessGate& gate,Sink& transport,StockSourceReadBoundary backend={}) noexcept:
         gate_(gate),transport_(transport),boundary_(gate,backend),binding_engine_(gate,read,this),
         process_(getpid()),caller_(std::this_thread::get_id()) {}
-    ~StockSourceCollector(){if(active_)transport_.abandon();}
-    StockSourceCollector(const StockSourceCollector&)=delete;
+    ~NativeSourceMethodCollector(){if(active_)transport_.abandon();}
+    NativeSourceMethodCollector(const NativeSourceMethodCollector&)=delete;
     bool begin(uint64_t ticket,const CameraBinding& b,uint64_t version,uint64_t method,const arena::Saved& s,
                uint64_t comp,uint64_t client,const char* comp_digest,const char* client_digest) noexcept {
         if(!owner() || active_ || binding_engine_.failed())return reject();
@@ -112,7 +120,7 @@ public:
         CameraBinding held;
         if(!ticket || !gate_.lookup(ticket,held) || !(held==b))return reject();
         const auto sequence=transport_.begin(b,version);if(!sequence)return reject();
-        active_=true;candidate_=false;receipt_=StockSourceReceipt{};
+        active_=true;candidate_=false;receipt_=Record{};
         receipt_.binding_=b;receipt_.ticket_=ticket;receipt_.version_=version;receipt_.sequence_=sequence;
         receipt_.method_=method;receipt_.sp_=s.sp;receipt_.lr_=s.x[30];receipt_.stream_=transport_.stream_;
         receipt_.process_=process_;receipt_.caller_=caller_;receipt_.owner_=transport_.owner_;receipt_.runtime_=transport_.runtime_;
@@ -240,12 +248,12 @@ private:
         return {receipt_.binding_,receipt_.ticket_,receipt_.version_,receipt_.sequence_,receipt_.method_,pc,receipt_.runtime_,module,s};
     }
     static bool read(void* p,uint64_t a,void* out,size_t size) {
-        auto& self=*static_cast<StockSourceCollector*>(p);
+        auto& self=*static_cast<NativeSourceMethodCollector*>(p);
         return self.in_callback_ && self.held_now() && self.boundary_.read(a,out,size) && self.held_now();
     }
-    CameraAccessGate& gate_;StockSourceTransport& transport_;NativeStockReadBoundary boundary_;
+    CameraAccessGate& gate_;Sink& transport_;NativeStockReadBoundary boundary_;
     ClientSourceBinding binding_engine_;const int process_;const std::thread::id caller_;
     bool active_=false,candidate_=false,in_callback_=false;uint64_t candidate_result_=0;
-    StockSourceReceipt receipt_{};
+    Record receipt_{};
 };
 }

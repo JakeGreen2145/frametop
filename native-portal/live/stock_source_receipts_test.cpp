@@ -11,7 +11,7 @@ using namespace native_portal;
 using namespace native_portal::live;
 using M=ClientSourceBinding::Module;
 using A=coordination::Action;
-struct Fixture {
+template<class Collector=StockSourceCollector> struct SourceFixture {
     CameraBinding b{1,2,0x90000000,4,5,6,7,8,9};
     CameraAccessGate gate;
     uint64_t epoch=0,ticket=0;
@@ -24,20 +24,20 @@ struct Fixture {
     const arena::Saved* native_output_vector=nullptr;
     struct ScopeRejected {};
     std::map<uint64_t,unsigned char> memory;
-    StockSourceTransport transport{b,1,std::this_thread::get_id(),1};
-    StockSourceCollector collector{gate,transport,{read,this,covered,provider_live}};
-    StockSourceCollector* current=&collector;
+    typename Collector::Transport transport{b,1,std::this_thread::get_id(),1};
+    Collector collector{gate,transport,{read,this,covered,provider_live}};
+    Collector* current=&collector;
     NativeSourceAdmission provider{this,auth};
-    Fixture() {
+    SourceFixture() {
         assert(gate.publish(b,std::this_thread::get_id(),epoch));assert(gate.retain(epoch,ticket));
         put(manager,client+0x60f108);put(client+0x60f110,client+0x32a270);
         put(client+0x60f118,client+0x328380);
         put(client+0x60f138,client+0x3280a8);put(client+0x60f140,client+0x327640);
     }
-    ~Fixture(){assert(gate.release(ticket));}
+    ~SourceFixture(){assert(gate.release(ticket));}
     void put(uint64_t a,uint64_t v,size_t size=8){for(size_t i=0;i<size;++i)memory[a+i]=static_cast<unsigned char>(v>>(i*8));}
     static bool read(void* p,const StockSourceReadScope& scope,uint64_t a,void* out,size_t n) noexcept {
-        auto& f=*static_cast<Fixture*>(p);++f.reads;
+        auto& f=*static_cast<SourceFixture*>(p);++f.reads;
         assert(scope.binding==f.b && scope.ticket==f.ticket && scope.version==1);
         if(!f.permitted || !scope.pc)return false;
         // Camera fields are never exposed by the backend, even if populated.
@@ -48,16 +48,16 @@ struct Fixture {
         return true;
     }
     static bool covered(void* p,M m,uint64_t pc) noexcept {
-        auto& f=*static_cast<Fixture*>(p);if(pc==f.missing_pc)return false;
+        auto& f=*static_cast<SourceFixture*>(p);if(pc==f.missing_pc)return false;
         for(const auto& site:NativeStockReadBoundary::required_sites)if(site.module==m && site.pc==pc)return true;
         return false;
     }
     static bool provider_live(void* p,const StockSourceReadScope& scope,uint64_t provider) noexcept {
-        auto& f=*static_cast<Fixture*>(p);
+        auto& f=*static_cast<SourceFixture*>(p);
         return f.provider_lifetime && scope.binding==f.b && scope.ticket==f.ticket && provider==manager;
     }
     static bool auth(void* p,const CameraBinding& b,NativeSourceAdmission::State& out) noexcept {
-        auto& f=*static_cast<Fixture*>(p);++f.auth_reads;if(!f.auth_live || !(b==f.b))return false;out=f.state;return true;
+        auto& f=*static_cast<SourceFixture*>(p);++f.auth_reads;if(!f.auth_live || !(b==f.b))return false;out=f.state;return true;
     }
     arena::Saved entry() const {arena::Saved s{};s.x[0]=b.camera;s.sp=sp;s.x[30]=0x123456;return s;}
     bool begin(uint64_t method=0x15f9e0){
@@ -139,6 +139,7 @@ struct Fixture {
         n.provenance.identity={1,b.renderer,b.renderer_generation,b.device,b.device_generation};return n;
     }
 };
+using Fixture=SourceFixture<>;
 void positive_connect(bool dedup) {
     Fixture f;f.connect(dedup);
     assert(!f.transport.take()); // immutable facts aren't visible before exclusion

@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "connect_inventory": "stock-native-source-hook-request.json",
+  "render_required_callback_count": 10,
+  "render_required_callbacks": [
+    {
+      "module": "compositor",
+      "pc": "0x160be8",
+      "word": "0xd11183ff",
+      "guard16": "ff8311d1fd7b00a9fd030091f35301a9"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x160ca8",
+      "word": "0x34000640",
+      "guard16": "40060034f96b04a9604b42fd616f42fd"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x161bc0",
+      "word": "0x97fffbb0",
+      "guard16": "b0fbff97017c7ad3e8030a9122501091"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x161be8",
+      "word": "0x2a0003fc",
+      "guard16": "fc03002a43c0df3c0669e93c29401091"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x161c74",
+      "word": "0xb9482018",
+      "guard16": "182048b98110874f8010864fa3188b4f"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x161c78",
+      "word": "0x4f871081",
+      "guard12": "8110874f8010864fa3188b4f",
+      "guard16": "8110874f8010864fa3188b4f2a41df3c",
+      "provenance": "Read from hash-pinned ELF PT_LOAD. First three words independently match Desktop 161c74 guard suffix."
+    },
+    {
+      "module": "compositor",
+      "pc": "0x161d64",
+      "word": "0xd63f00e0",
+      "guard16": "e0003fd6e05740f90000403940100034"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x161d68",
+      "word": "0xf94057e0",
+      "guard16": "e05740f90000403940100034f5324239"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x161e40",
+      "word": "0xf901c3e0",
+      "guard16": "e0c301f9840a0035600308917aeb42b9"
+    },
+    {
+      "module": "compositor",
+      "pc": "0x161ed8",
+      "word": "0xd63f0080",
+      "guard16": "80003fd6610340f983071c8b21804091"
+    }
+  ],
+  "activation": "Refuse unless all canonical module/PC/word/guard/emitter entries are installed; no hardcoded coverage.",
+  "observer_semantics": "Saved is pre-instruction; 161c74 precursor plus 161c78 actual slot, 161be8 x0 selector, 161e40 x0 texture.",
+  "non_hook_obligations": [
+    "own bypass completion for current Connect",
+    "render finish/abort with entry SP/LR and invocation",
+    "existing upload reservation ticket after 161d64 original Saved capture",
+    "synchronous with_selection inside existing NativeBorrow callback"
+  ]
+}

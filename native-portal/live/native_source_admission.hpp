@@ -2,6 +2,8 @@
 #pragma once
 #include "source_admission.hpp"
 #include "stock_source_receipts.hpp"
+#include "current_source_completion.hpp"
+#include "current_source_selection.hpp"
 #include <cstring>
 namespace native_portal::live {
 // Only Runtime supplies this retained observation boundary. It checks the gate,
@@ -16,6 +18,73 @@ public:
     using StockOwner=bool(*)(void*) noexcept;
     NativeSourceAdmission(void* context,Authenticate auth,StockOwner stock_owner=nullptr):
         context_(context),auth_(auth),stock_owner_check_(stock_owner) {}
+    NativeSourceAdmission(void* context,CurrentSourceContracts contracts,StockOwner owner):
+        context_(context),auth_(nullptr),stock_owner_check_(owner),identity_auth_(contracts.authenticate),current_mode_(true) {}
+    BootstrapEligibility bootstrap_eligible(const CameraBinding& b) noexcept {
+        SourceIdentity identity;
+        if(!current_mode_ || !identity_lifetime(b,identity) || uncertain_ || current_connect_ || current_update_ || watermark_)return {};
+        if(journal_ && !connected_)return {};
+        return {true,!journal_};
+    }
+    bool begin_current_connect(const CameraBinding& b,uint64_t invocation) noexcept {
+        if(!invocation || invocation<=last_current_invocation_ || !bootstrap_eligible(b).available)return false;
+        current_connect_=invocation;last_current_invocation_=invocation;before_local_=false;return true;
+    }
+    bool finish_current_connect(const CameraBinding& b,const CurrentConnectResult& r) noexcept {
+        SourceIdentity identity;
+        if(!current_mode_ || !identity_lifetime(b,identity) || !current_connect_ ||
+           !current_result(b,r) || r.sequence_!=current_connect_ || r.stream_!=current_connect_) {
+            uncertain_=true;return false;
+        }
+        current_connect_=0;last_=r.observation_;
+        const auto& f=r.facts_;const auto& o=r.observation_;
+        const bool queues=o.queues[0].observed || o.queues[1].observed;
+        if(uncertain_ || !o.valid || o.action!=coordination::Action::Connect || o.actual!=1 ||
+           !f.has(NativeFieldFacts::ACTIVE|NativeFieldFacts::CONNECTED) || !f.values.active || !f.values.connected ||
+           (queues?!f.has(NativeFieldFacts::ID0|NativeFieldFacts::ID1):(!journal_ || !connected_))) {
+            uncertain_=true;return false;
+        }
+        // An empty real already-connected return is neutral. No fabricated IDs.
+        if(!queues){last_use_=coordination::UseDisposition::AuthenticatedBorrowedUse;return true;}
+        if(journal_ && f.values.ids!=ids_){uncertain_=true;return false;}
+        before_local_=false;apply_observation(f.values,o,true);return !uncertain_;
+    }
+    bool begin_current_update(const CameraBinding& b,uint64_t invocation) noexcept {
+        SourceIdentity identity;
+        if(!current_mode_ || !identity_lifetime(b,identity) || uncertain_ || current_connect_ || current_update_ ||
+           !invocation || invocation<=last_current_invocation_)return false;
+        current_update_=last_current_invocation_=invocation;return true;
+    }
+    bool finish_current_update(const CameraBinding& b,const CurrentUpdateResult& r) noexcept {
+        SourceIdentity identity;
+        if(!current_mode_ || !identity_lifetime(b,identity) || !current_update_ || !current_result(b,r) ||
+           r.sequence_!=current_update_ || r.stream_!=current_update_) {uncertain_=true;return false;}
+        current_update_=0;
+        const auto& o=r.observation_;const auto& f=r.facts_;
+        if(uncertain_ || !o.valid || o.action!=coordination::Action::None ||
+           (provider_ && o.provider && provider_!=o.provider)) {uncertain_=true;return false;}
+        bool any=false,complete=true;
+        for(unsigned q=0;q<2;++q) {
+            const auto& read=o.reads[q];const auto bit=q?NativeFieldFacts::ID1:NativeFieldFacts::ID0;
+            if(journal_ && f.has(bit) && f.values.ids[q]!=ids_[q]) {uncertain_=true;return false;}
+            const bool attempted=read.acquire_observed || read.release_observed;
+            const bool paired=read.acquire_observed && !read.acquire_result && read.returned &&
+                read.release_observed && !read.release_result && read.increment && read.decrement &&
+                read.metadata_return_observed && read.metadata && read.data && read.ref_address &&
+                read.queue && read.header && f.has(bit) && read.id==f.values.ids[q];
+            if(attempted && !paired){uncertain_=true;return false;}
+            any|=attempted;complete&=paired;
+        }
+        if(any && (!f.has(NativeFieldFacts::ACTIVE|NativeFieldFacts::CONNECTED) || !f.values.active || !f.values.connected || !o.provider)) {
+            uncertain_=true;return false;
+        }
+        if(!journal_) {
+            if(!complete || !f.values.ids[0] || !f.values.ids[1] || f.values.ids[0]==f.values.ids[1]) {uncertain_=true;return false;}
+            apply_observation(f.values,o,true);
+        }
+        // With a good journal, q1 absent is a native conditional path, not failure.
+        return !uncertain_;
+    }
     // Owner folds only immutable history drained after stock-original exclusion.
     // No auth callback and no native pointer reads occur here. Current eligibility
     // still goes through lifetime()/Authenticate under the engagement read token.
@@ -69,12 +138,19 @@ public:
         return !uncertain_ && !stock_invalid_.load();
     }
     bool connect_eligible(const CameraBinding& b) noexcept override {
+        if(current_mode_)return bootstrap_eligible(b).available;
         State s;if(!lifetime(b,s) || uncertain_ || s.external)return false;
         if(!s.active && !s.connected && !s.ids[0] && !s.ids[1])return true;
         return journal_ && s.ids==ids_ && ((connected_ && s.active && s.connected) ||
             (detached_ && !s.active && !s.connected));
     }
     bool transition_eligible(const CameraBinding& b,coordination::Action action) noexcept override {
+        if(current_mode_) {
+            SourceIdentity identity;
+            if(!identity_lifetime(b,identity) || uncertain_)return false;
+            return action==coordination::Action::None ||
+                (action==coordination::Action::Connect && bootstrap_eligible(b).available);
+        }
         State s;if(!lifetime(b,s) || uncertain_)return false;
         if(action==coordination::Action::Connect)return connect_eligible(b);
         // Off and source settlement need no fresh image. A Disconnect still
@@ -83,6 +159,7 @@ public:
             (local_connection_ && connected_ && s.ids==ids_);
     }
     void before(const CameraBinding& b,coordination::Action action) noexcept override {
+        if(current_mode_)return; // current results are collector-issued only
         State s;before_ok_=lifetime(b,s) && !uncertain_;before_action_=action;
         held_disconnect_=false;
         before_local_=before_ok_ && !s.active && !s.connected &&
@@ -95,6 +172,7 @@ public:
         held_disconnect_=true;
     }
     void after(const CameraBinding& b,const ClientSourceBinding::Observation& o) noexcept override {
+        if(current_mode_)return;
         last_=o;State s;
         if(!before_ok_ || !lifetime(b,s) || !o.valid || o.action!=before_action_) {uncertain_=true;return;}
         before_ok_=false;
@@ -123,10 +201,23 @@ public:
         }
         return r;
     }
+    bool borrow_ready(const CameraBinding& b,const CurrentRenderSelection& selection,render::NativeBorrow n) noexcept {
+        SourceIdentity identity;
+        if(!current_mode_ || !identity_lifetime(b,identity) || !selection.consume(b,identity,n) ||
+           uncertain_ || !journal_ || !connected_ || current_connect_ || current_update_ ||
+           !n.provenance.frame || !n.provenance.origin || n.provenance.ticket<=settled_ticket_)return false;
+        return accept_borrow(b,n);
+    }
     bool borrow_ready(const CameraBinding& b,render::NativeBorrow n) noexcept override {
-        State s;const auto& p=n.provenance;
-        if(!lifetime(b,s) || uncertain_ || !journal_ || !connected_ || s.ids!=ids_ ||
-           !s.active || !s.connected || n.camera!=b.camera || !n.invocation_sp || !n.command ||
+        if(current_mode_)return false; // opt-in requires a live collector-issued selection
+        State s;
+        if(!lifetime(b,s) || uncertain_ || !journal_ || !connected_ || s.ids!=ids_ || !s.active || !s.connected)return false;
+        return accept_borrow(b,n);
+    }
+private:
+    bool accept_borrow(const CameraBinding& b,render::NativeBorrow n) noexcept {
+        const auto& p=n.provenance;
+        if(n.camera!=b.camera || !n.invocation_sp || !n.command ||
            !p.ticket || !p.recording_generation || p.eye>1 || !n.watermark || n.watermark<=settled_watermark_ ||
            p.identity.renderer!=b.renderer || p.identity.device!=b.device ||
            p.identity.renderer_generation!=b.renderer_generation || p.identity.device_generation!=b.device_generation ||
@@ -142,8 +233,14 @@ public:
         const auto& other=borrows_[1-p.eye];
         if(other.provenance.ticket && (other.command!=n.command || other.provenance.recording_generation!=p.recording_generation ||
             other.provenance.frame!=p.frame || other.provenance.ticket==p.ticket))return false;
+        if(current_mode_ && other.provenance.ticket &&
+           (other.provenance.identity.process_instance!=p.identity.process_instance || other.provenance.origin!=p.origin ||
+            other.provenance.lease!=p.lease || other.provenance.geometry!=p.geometry ||
+            other.provenance.deadline!=p.deadline || other.provenance.revocation!=p.revocation))return false;
+        if(p.ticket>highest_ticket_)highest_ticket_=p.ticket;
         watermark_=n.watermark;borrows_[p.eye]=n;return true;
     }
+public:
     bool backend(const CameraBinding& b,uint64_t ticket,const render::Recorded& record,uint64_t command,uint64_t recording) noexcept override {
         State s;if(!lifetime(b,s) || uncertain_)return false;
         for(const auto& n:borrows_)if(n.provenance.ticket==ticket && ticket)
@@ -156,7 +253,7 @@ public:
         if(watermark!=watermark_ || !borrows_[0].provenance.ticket || !borrows_[1].provenance.ticket)return false;
         // Called only AFTER Runtime's frozen sampled-use/reverse-release coverage
         // and existing Command/Lifecycle exact completion. No extra GPU registry.
-        settled_watermark_=watermark;borrows_={};watermark_=0;return true;
+        settled_ticket_=highest_ticket_;settled_watermark_=watermark;borrows_={};watermark_=0;return true;
     }
 private:
     bool stock_owner() const noexcept {
@@ -219,7 +316,21 @@ private:
             }
         }
     }
+    template<uint64_t Method> bool current_result(const CameraBinding& b,const NativeSourceResult<Method>& r) const noexcept {
+        return r.process_==stock_process_ && r.caller_==std::this_thread::get_id() && r.owner_==r.caller_ &&
+            r.binding_==b && r.runtime_==identity_.runtime && r.version_==identity_.version && r.method_==Method &&
+            r.facts_.has(NativeFieldFacts::CLIENT) && r.facts_.values.client==identity_.client_module;
+    }
+    bool identity_lifetime(const CameraBinding& b,SourceIdentity& out) noexcept {
+        if(!current_mode_ || !stock_owner_check_ || !stock_owner() || stock_invalid_.load() ||
+           !identity_auth_ || !identity_auth_(context_,b,out) || !out.runtime || !out.version || !out.client_module ||
+           (bound_ && !(binding_==b)) || (client_ && client_!=out.client_module) ||
+           (identity_.runtime && !(identity_==out)) ||
+           (stock_runtime_ && (stock_runtime_!=out.runtime || stock_version_!=out.version)))return false;
+        identity_=out;bound_=true;binding_=b;client_=out.client_module;return true;
+    }
     bool lifetime(const CameraBinding& b,State& s) noexcept {
+        if(current_mode_) {SourceIdentity identity;return identity_lifetime(b,identity); }
         if(stock_invalid_.load()){uncertain_=true;return false;}
         if(!auth_ || !auth_(context_,b,s) || (bound_ && !(binding_==b)))return false;
         if(bound_ && client_!=s.client)return false;
@@ -231,6 +342,8 @@ private:
     std::thread::id stock_owner_{};
     const std::thread::id stock_constructor_owner_=std::this_thread::get_id();
     void* context_;Authenticate auth_;StockOwner stock_owner_check_;
+    AuthenticateIdentity identity_auth_=nullptr;bool current_mode_=false;SourceIdentity identity_{};
+    uint64_t current_connect_=0,current_update_=0,last_current_invocation_=0,settled_ticket_=0,highest_ticket_=0;
     CameraBinding binding_{};uint64_t client_=0,provider_=0,watermark_=0,settled_watermark_=0;
     bool bound_=false,uncertain_=false,journal_=false,connected_=false,detached_=false,local_connection_=false;
     bool before_ok_=false,before_local_=false,held_disconnect_=false;
