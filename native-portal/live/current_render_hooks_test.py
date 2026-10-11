@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 """Delta-only current-render inventory and actual selected-island tests."""
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 import unittest
 import loader_test as L
 
@@ -14,7 +16,7 @@ CONSUMER = Path('/home/jakeg/.hermes/work/frametop-native-current-source-admissi
 CONSUMER_COMMIT = '673f1149e929aaa218716d572499b1fc919614a1'
 MANIFEST = L.ROOT/'live/runtime-sites.json'
 REQUEST_PATH = CONSUMER/'native-portal/live/current-source-native-hook-request.json'
-REQUEST = json.loads(REQUEST_PATH.read_text())
+REQUEST = json.loads(subprocess.check_output(['git', 'show', CONSUMER_COMMIT+':native-portal/live/current-source-native-hook-request.json'], cwd=CONSUMER))
 PINS = {int(s['pc'], 0): s for s in REQUEST['render_required_callbacks']}
 BASE_MANIFEST = json.loads(subprocess.check_output(['git', 'show', BASE+':native-portal/live/runtime-sites.json'], cwd=L.ROOT))
 OLD_ROWS = L.prepare.merge(L.prepare.image(L.prepare.ELF), L.prepare.core_specs()+BASE_MANIFEST['sites'])
@@ -22,15 +24,27 @@ NEW = sorted(set(PINS)-{s['pc'] for s in OLD_ROWS})
 
 
 def compiled_required():
-    assert subprocess.check_output(['git','rev-parse','HEAD'],cwd=CONSUMER,text=True).strip()==CONSUMER_COMMIT
-    for name in ('current-source-native-hook-request.json','current_source_selection.hpp'):
-        path=CONSUMER/'native-portal/live'/name
-        assert path.read_bytes()==subprocess.check_output(['git','show',CONSUMER_COMMIT+':native-portal/live/'+name],cwd=CONSUMER)
+    # Read immutable Git objects, not a sibling worktree that may advance or
+    # contain a reviewed repair. Preserve its files and compile the pinned tree.
     directory=L.B/'current-consumer';directory.mkdir(parents=True,exist_ok=True)
+    snapshot=directory/'source'
+    archive_bytes=subprocess.check_output(['git','archive',CONSUMER_COMMIT,'native-portal'],cwd=CONSUMER)
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes)) as archive:
+        for entry in archive.getmembers():
+            relative=Path(entry.name)
+            assert not relative.is_absolute() and '..' not in relative.parts and relative.parts[0]=='native-portal'
+            if entry.isdir():continue
+            assert entry.isfile()
+            stream=archive.extractfile(entry);assert stream is not None
+            target=snapshot/relative;target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_bytes(stream.read())
+    for name in ('current-source-native-hook-request.json','current_source_selection.hpp'):
+        path=snapshot/'native-portal/live'/name
+        assert path.read_bytes()==subprocess.check_output(['git','show',CONSUMER_COMMIT+':native-portal/live/'+name],cwd=CONSUMER)
     source=directory/'required.cpp'
     source.write_text('#include "current_source_selection.hpp"\n#include <cstdio>\nint main(){for(auto pc:native_portal::live::CurrentRenderCollector::required_sites)std::printf("%llx\\n",(unsigned long long)pc);}\n')
     binary=directory/'required'
-    L.run(['c++','-std=c++17','-O0','--param','ggc-min-expand=5','--param','ggc-min-heapsize=4096','-I',CONSUMER/'native-portal/live',source,'-o',binary])
+    L.run(['c++','-std=c++17','-O0','--param','ggc-min-expand=5','--param','ggc-min-heapsize=4096','-I',snapshot/'native-portal/live',source,'-o',binary])
     required=[int(s,16) for s in subprocess.check_output([binary],text=True).split()]
     assert len(required)==len(set(required))==REQUEST['render_required_callback_count']==12
     assert set(required)==set(PINS)
