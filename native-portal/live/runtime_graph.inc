@@ -55,6 +55,7 @@
         // are not a writer to this graph. W may retire normally after cutoff.
         if(pc==0x29bd18 || pc==0x29c238)conflict=s.x[0]==g.renderer;
         if(pc==0x2a1e18)conflict=s.x[0]==g.renderer;
+        if(pc==0x29f1e8 && tid()==owner_tid && backend_open && s.x[0]==g.renderer)conflict=true;
         if(g.preparation && pc==0x29ce00 && s.x[0]==g.renderer && tid()==owner_tid &&
            !graph_loan.optimizer_seen && s.sp==graph_loan.sp-0xd0 && s.x[30]==base+0x2a1ecc) {
             // 2a1ec8 ALWAYS calls Collapse. Pinned 29ce1c..29ce30 reads the

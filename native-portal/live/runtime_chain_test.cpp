@@ -904,7 +904,9 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         if(source_rejected){assert(f.s.pad==1);continue;}
         assert(f.s.pad==0);
         f.s.x[0]=addr(f.r);f.s.x[1]=addr(f.packets)+eye*0x2b0;f.s.x[2]=0xa001;f.s.x[3]=37;f.s.x[30]=Chain::base+0x2a1c58;
-        f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f1e8);f.event(0x29f200);assert(f.s.pad==arena::SkipOwned && f.s.x[0]==addr(f.pipeline_object));
+        f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f1e8);
+        f.s.sp-=0x90;f.s.x[21]=addr(f.r);f.s.x[24]=addr(f.packets)+eye*0x2b0;
+        f.event(0x29f200);f.s.sp+=0x90;assert(f.s.pad==arena::SkipOwned && f.s.x[0]==addr(f.pipeline_object));
         f.source_sample(eye);
         f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f518);
         if(eye==0 && mode=="--stop-after-left")f.router.stop();
@@ -1059,7 +1061,9 @@ int run_chain(Chain &f,const std::string &mode,bool entered=false) {
         f.s={};f.s.sp=0x8ff000;f.s.x[19]=addr(f.packets)+eye*0x2b0;f.s.x[21]=addr(f.r);f.s.x[22]=addr(f.passes)+eye*0x98;
         f.event(0x2a1c18);assert(f.s.pad==0);
         f.s.x[0]=addr(f.r);f.s.x[1]=addr(f.packets)+eye*0x2b0;f.s.x[2]=0xa001;f.s.x[3]=37;f.s.x[30]=Chain::base+0x2a1c58;
-        f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f1e8);f.event(0x29f200);assert(f.s.pad==arena::SkipOwned && f.s.x[0]==addr(f.pipeline_object));
+        f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f1e8);
+        f.s.sp-=0x90;f.s.x[21]=addr(f.r);f.s.x[24]=addr(f.packets)+eye*0x2b0;
+        f.event(0x29f200);f.s.sp+=0x90;assert(f.s.pad==arena::SkipOwned && f.s.x[0]==addr(f.pipeline_object));
         f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f518);
     }
     f.s={};f.s.sp=0x880000;f.s.x[0]=0xbeef;f.s.x[1]=addr(next_command);f.s.x[30]=Chain::base+FT_BOOT_QUEUE_LR;f.event(0x3018b0);

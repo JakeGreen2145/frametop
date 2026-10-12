@@ -103,7 +103,7 @@ struct Runtime::Impl {
     PairPreparation prepared{};
     binding::Scope backend_scope{},queue_scope{},stamp_scope{},resource_scope{},wait_scope{};
     binding::Signal queue_signal{},wait_signal{};
-    bool backend_admitted=false,backend_open=false,queue_open=false,stamp_open=false,resource_open=false,wait_open=false;
+    bool backend_admitted=false,backend_open=false,backend_cached=false,queue_open=false,stamp_open=false,resource_open=false,wait_open=false;
     uint64_t sequence=0,wrapper=0,marker=0,invocation=0,outer_sp=0,outer_owner=0,outer_lr=0;
     uint64_t origin_epoch=0,origin_token=0,frame_number=0;
     ft::portal::Mat4 origin{};Frame frame{};EyeInput eye{};
@@ -842,7 +842,7 @@ struct Runtime::Impl {
                    s.x[30]!=base+0x2a1cf0))camera_route_abort(CameraFatalReason::MutationDebt,pc);
                 const auto &e=prepared.eyes[i];Registers lookup=e.lookup;
                 for(unsigned k=0;k<4;++k)lookup.x[k]=s.x[k];
-                backend_scope=scope(s,s.x[0]);backend_open=true;
+                backend_scope=scope(s,s.x[0]);backend_open=true;backend_cached=false;
                 uint64_t ticket=0;decode_ticket(e.record.label,e.record.label_size,ticket);
                 unsigned eye_index=provenance[0].ticket==ticket?0:1;
                 backend_eye=eye_index;backend_preparation=i;
@@ -865,10 +865,16 @@ struct Runtime::Impl {
             }
         }
         if(pc==0x29f200 && backend_open) {
+            const auto& prepared_eye=prepared.eyes[backend_preparation];
+            if(dormant_enabled && (!graph_live() || backend_cached || s.sp+0x90!=backend_scope.sp ||
+               s.x[30]!=backend_scope.lr || s.x[0]!=graph_loan.binding.renderer || s.x[21]!=s.x[0] ||
+               s.x[1]!=prepared_eye.lookup.x[1] || s.x[24]!=s.x[1] || s.x[2]!=prepared_eye.lookup.x[2] ||
+               s.x[3]!=prepared_eye.lookup.x[3]))camera_route_abort(CameraFatalReason::MutationDebt,pc);
+            backend_cached=true;
             s.x[0]=backend_pipeline;s.x[30]=base+0x29f204;s.pad=arena::SkipOwned;
         }
         if((pc==0x29f518 || pc==0x29f550) && backend_open && s.sp==backend_scope.sp && s.x[30]==backend_scope.lr) {
-            encoded_returns[backend_eye]=backend_admitted;
+            encoded_returns[backend_eye]=backend_admitted && backend_cached;
             backend_open=false;
         }
         if(adapter && (pc==0x300c54 || pc==0x300a38)) {

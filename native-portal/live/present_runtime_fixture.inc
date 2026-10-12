@@ -47,7 +47,12 @@ static int consumer_chain(Chain& f,Client& client,Request& request,Reply& reply)
         if(f.s.pad)consumer_skips|=1u<<eye;
         else {
             f.s.x[0]=addr(f.r);f.s.x[1]=addr(f.packets)+eye*0x2b0;f.s.x[2]=0xa001;f.s.x[3]=37;
-            f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f1e8);f.event(0x29f200);
+            f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f1e8);
+            f.s.sp-=0x90;f.s.x[21]=addr(f.r);f.s.x[24]=addr(f.packets)+eye*0x2b0;
+            if(std::getenv("FT_GRAPH_CACHE_SP"))f.s.sp+=16;
+            f.event(0x29f200);
+            if(std::getenv("FT_GRAPH_CACHE_SP")){std::fputs("GRAPH forbidden cached continuation\n",stderr);_Exit(73);}
+            f.s.sp+=0x90;
             assert(f.s.pad==arena::SkipOwned && f.s.x[0]==(eye && std::getenv("FT_GRAPH_DISTINCT")?addr(f.pipeline_right):addr(f.pipeline_object)));
             f.source_sample(eye);f.s.x[30]=Chain::base+0x2a1cf0;
             const char* action=std::getenv("FT_GRAPH_ACTION");

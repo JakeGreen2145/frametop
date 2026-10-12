@@ -42,6 +42,7 @@ def main():
     cases += [(x,{'FT_GRAPH_ACTION':x},None) for x in ['retained-wrong-post','retained-duplicate-pre']]
     cases += [('provider-'+x,{'FT_GRAPH_PROVIDER':x},None) for x in ['missing','vptr','slot0','slot2','name','pointer']]
     cases += [('optimizer-stock',{'FT_GRAPH_OPTIMIZER':'1'},None)]
+    cases += [('cached-wrong-sp',{'FT_GRAPH_CACHE_SP':'1'},0x29f200)]
     results=[]
     for name,env,pc in cases:
         r,w=socket.socketpair();chunks=[]
@@ -61,7 +62,7 @@ def main():
         action=env.get('FT_GRAPH_ACTION')
         if pc is not None:
             expected_reason=5 if pc==0x8b020 else 9
-            passed=code==-6 and int(fields.get('reason','0'),0)==expected_reason and int(fields.get('event','0'),0)==pc and ('GRAPH conflict before-native' in text or action=='missing-backend-return') and 'GRAPH forbidden original continuation' not in text
+            passed=code==-6 and int(fields.get('reason','0'),0)==expected_reason and int(fields.get('event','0'),0)==pc and ('GRAPH conflict before-native' in text or action=='missing-backend-return' or 'FT_GRAPH_CACHE_SP' in env) and 'GRAPH forbidden original continuation' not in text and 'GRAPH forbidden cached continuation' not in text
         elif action in ('early','missing-return','retained-wrong-post','retained-duplicate-pre') or 'FT_GRAPH_OPTIMIZER' in env:
             passed=code==-6 and int(fields.get('reason','0'),0)==5 and int(fields.get('event','0'),0)==0x8b020 and fields.get('joined')=='1' and 'native_cleanup=0' in text
             if action=='early':passed=passed and 'GRAPH early last-use=1 debt-retained=1 no-settlement=1' in text
