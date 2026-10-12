@@ -10,7 +10,7 @@ import struct
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = '9b1bd5fe4463592cbc71b2517b9ceb0a0fcd66cd6885a19dca4be0784bf6c265'
-ELF = Path('/home/jakeg/.hermes/work/frame-native-reuse/camera-analysis/vrcompositor')
+ELF = Path('/opt/steamvr/bin/linuxarm64/vrcompositor')
 CLIENT_ELF = ELF.with_name('vrclient.so')
 CLIENT_PIN = 'fe967dcc0d97dab984bd9acc1dc522fcecbcf9beb794fdd7ec156334ec31e313'
 SOURCE_COMP = [0x15fa78,0x15faa4,0x15fbd8,0x15fc20,0x15fa24,0x15fa28,0x15fa44,0x15fa48,0x15fae8,0x15faec,0x15fbec,0x15fbf0,0x15fc34,0x15fc38]

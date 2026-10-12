@@ -1,8 +1,12 @@
-# Native portal math and offline shaders
+# Native portal experiments
 
-This directory builds a pure C++ aperture library and generates portal-only variants of eight pinned, user-installed SteamVR shaders. It has no runtime hooks, camera acquisition, Vulkan layer, compositor control, services, GUI, or live activation. Linking the library or running the generator does not enable a portal.
+This directory contains a pure C++ aperture library, a generator for masked variants of eight pinned SteamVR shaders, and experimental compositor integration. The CMake target builds only the math library and its optional tests. Linking that library or running the shader generator does not enable passthrough.
 
-The MIT repository contains our generator, hashes, library and tests only. Valve binaries and disassembly are private generated build artifacts. Do not commit or redistribute `build/`, original shaders, patched shaders or their assembly.
+`pipeline/` implements the Vulkan pipeline layer. `live/` builds the experimental native loader and runtime owner, with camera, command and resource tracking across the other subdirectories. See [the live runtime notes](../docs/native-portal-live-runtime.md) for that implementation. Its offline tests do not establish working stereo passthrough on the headset.
+
+The current proof-of-concept work targets a smaller masked stereo path using native camera rendering. Keep its build and headset iteration separate from the historical owner experiments. The historical replay and regression fixtures are optional investigations, not prerequisites for the math library or a separate proof of concept. Many require private native evidence and paths from the original development machine. Run affected checks when changing those components rather than treating every historical suite as a release gate.
+
+The MIT repository contains our source, hashes and tests. Valve binaries and disassembly are private generated build artifacts. Do not commit or redistribute `build/`, original shaders, patched shaders or their assembly.
 
 ## C++ integration
 
