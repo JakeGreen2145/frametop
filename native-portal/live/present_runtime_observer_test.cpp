@@ -23,8 +23,7 @@ extern "C" void graph_test_probe(live::Runtime& runtime,const char* phase) {
     if(!std::strcmp(phase,"dispatch") && std::getenv("FT_GRAPH_DISTINCT"))assert(g.pipelines[0] && g.pipelines[1] && g.pipelines[0]!=g.pipelines[1]);
     if(!std::strcmp(phase,"current-open")) {
         assert(p.graph_active() && !g.preparation && !p.graph_live() && p.camera_owner.callers_==1);
-        // This checks only the adapter guard. The complete native old-W sized
-        // free/factory replay belongs to the parent's reviewed retirement merge.
+        // The complete source-modeled cleanup/free/factory tail follows below.
         arena::Saved s{};s.x[0]=g.wrapper;const auto copy=s;p.graph_conflict(0x4b3d0,s);
         assert(!std::memcmp(&copy,&s,sizeof s));
     }
@@ -33,6 +32,19 @@ extern "C" void graph_test_probe(live::Runtime& runtime,const char* phase) {
         auto before=graph_test_reads();assert(!p.evidence.graph_event(0x2a2230,s) && graph_test_reads()==before);
         s.sp+=16;before=graph_test_reads();assert(!p.evidence.graph_event(0x2a2320,s) && graph_test_reads()==before);
         std::fputs("GRAPH current duplicate-pre/wrong-post zero-reads=1\n",stderr);
+    }
+    if(!std::strcmp(phase,"wrapper-retired") || !std::strcmp(phase,"wrapper-published")) {
+        assert(g.invocation && !g.preparation && p.graph_active() && !p.graph_live());
+        assert(p.camera_owner.callers_==1 && p.graph_caller && p.adapter->state().pending);
+        assert(!p.evidence.first_failure_pc());
+        if(!std::strcmp(phase,"wrapper-retired")) {
+            assert(!p.evidence.command_wrapper_ && p.evidence.wrapper_epoch_.dead(g.wrapper));
+        } else {
+            const auto now=p.evidence.stock_command_facts();
+            assert(now.wrapper && now.command!=g.command && now.generation!=p.graph_loan.recording.generation);
+            if(std::getenv("FT_GRAPH_REUSE_W"))assert(now.wrapper==g.wrapper);
+            std::fprintf(stderr,"GRAPH turnover held-through-publication=1 changed-command=1 changed-recording=1 reused-wrapper=%u\n",now.wrapper==g.wrapper);
+        }
     }
     if((action=="retained-wrong-post" || action=="retained-duplicate-pre") && !std::strcmp(phase,"retained-open")) {
         arena::Saved s{};s.sp=p.evidence.retained_anchor_sp_;s.x[22]=p.binding.identity.renderer;

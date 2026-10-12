@@ -3,7 +3,9 @@
 // source_command_native.py separately executes pinned call/return instructions.
     std::array<std::byte,0x80> source_texture{};
     std::array<std::byte,0x180> source_image{};
-    std::array<std::byte,0x400> source_stack{};
+    // Shared dispatch/backend/acquire coordinates must retain native SP alignment
+    // even when first-consumer-only fields change Chain's member layout.
+    alignas(16) std::array<std::byte,0x400> source_stack{};
     std::array<uint64_t,4> source_vector{};
     std::string source_fault;
     void source_init() {

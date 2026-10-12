@@ -12,6 +12,7 @@ static void consumer_snapshot(Chain& f,const char* phase) {
 }
 static int consumer_chain(Chain& f,Client& client,Request& request,Reply& reply) {
     consumer_skips=0;
+    const uint64_t entry_sp=addr(f.source_stack)+0xb10;
     const bool flush=current_mode=="consumer-flush";
     const bool cold=current_mode=="consumer-coldpass";
     const bool unknown=current_mode=="consumer-unknown";
@@ -23,7 +24,7 @@ static int consumer_chain(Chain& f,Client& client,Request& request,Reply& reply)
     if(std::getenv("FT_GRAPH_OPTIMIZER"))put(f.r,0x15d0,uint8_t(1));
     // Known call lanes derived from verified lane-C native windows by the runner.
     // Objects, SP and all unobserved register lanes remain explicit source models.
-    f.s={};f.s.sp=addr(f.source_stack)+0xb10;f.s.x[0]=addr(f.r);f.s.x[1]=consumer_mode;
+    f.s={};f.s.sp=entry_sp;f.s.x[0]=addr(f.r);f.s.x[1]=consumer_mode;
     f.s.x[2]=Chain::base+0x2a1e18;
     f.s.x[30]=Chain::base+(unknown?0xdead:flush || cold?consumer_flush_lr:consumer_present_lr);
     std::fprintf(stderr,"CONSUMER stimulus mode=%s lr=0x%llx x0_is_R=%u w1=%u slot=0x%llx\n",current_mode.c_str(),
@@ -40,7 +41,7 @@ static int consumer_chain(Chain& f,Client& client,Request& request,Reply& reply)
     const char* graph_action=std::getenv("FT_GRAPH_ACTION");
     const bool draws=f.lookups==2 && (!graph_action || std::strcmp(graph_action,"early"));
     for(unsigned eye=0;eye<2;++eye) {
-        f.s={};f.s.sp=addr(f.source_stack)+0x2e0;f.s.x[30]=Chain::base+0x2a1c58;
+        f.s={};f.s.sp=entry_sp-0x830;f.s.x[30]=Chain::base+0x2a1c58;
         f.s.x[19]=addr(f.packets)+eye*0x2b0;f.s.x[21]=addr(f.r);f.s.x[22]=addr(f.passes)+eye*0x98;
         f.event(0x2a1c18);
         assert(f.s.pad==(draws?0u:1u));
@@ -60,7 +61,7 @@ static int consumer_chain(Chain& f,Client& client,Request& request,Reply& reply)
         }
         if(!eye && std::getenv("FT_GRAPH_STOCK")) {
             const auto saved=f.s;std::array<std::byte,0x2b0> stock{};
-            f.s={};f.s.sp=addr(f.source_stack)+0x2e0;f.s.x[30]=Chain::base+0x2a1c58;
+            f.s={};f.s.sp=entry_sp-0x830;f.s.x[30]=Chain::base+0x2a1c58;
             f.s.x[21]=addr(f.r);f.s.x[19]=addr(stock);f.s.x[22]=addr(f.passes);f.event(0x2a1c18);assert(!f.s.pad);
             f.s.x[0]=addr(f.r);f.s.x[1]=addr(stock);f.s.x[30]=Chain::base+0x2a1cf0;f.event(0x29f1e8);f.event(0x29f200);assert(!f.s.pad);
             uint64_t registers[31]{};registers[0]=addr(f.r);registers[1]=addr(stock);
@@ -69,7 +70,7 @@ static int consumer_chain(Chain& f,Client& client,Request& request,Reply& reply)
         }
     }
     // Non-owned packet remains native, even when whole graph authority is absent.
-    std::array<std::byte,0x2b0> stock{};f.s={};f.s.sp=addr(f.source_stack)+0x2e0;f.s.x[30]=Chain::base+0x2a1c58;
+    std::array<std::byte,0x2b0> stock{};f.s={};f.s.sp=entry_sp-0x830;f.s.x[30]=Chain::base+0x2a1c58;
     f.s.x[21]=addr(f.r);f.s.x[19]=addr(stock);f.s.x[22]=addr(f.passes);f.event(0x2a1c18);assert(!f.s.pad);
     consumer_snapshot(f,"packets");
     request.op=Operation::Release;++request.sequence;assert(client.exchange(request,reply) && reply.state==State::Draining);
@@ -95,21 +96,24 @@ static int consumer_chain(Chain& f,Client& client,Request& request,Reply& reply)
     f.s.sp=0x860000;f.s.x[0]=addr(f.sync);f.s.x[1]=uint64_t(&f.signal_value);f.s.x[30]=Chain::base+0x311104;f.event(0x3160b8);
     f.s.sp-=0x40;f.s.x[0]=0;f.event(0x316110);f.s.sp+=0x40;f.s.x[0]=1;f.event(0x316120);
     consumer_snapshot(f,"wait");
-    f.s.sp=addr(f.source_stack)+0xa40;f.s.x[19]=addr(f.r);f.event(0x2a2230);graph_test_probe(f.router,"current-open");
+    f.s.sp=entry_sp-0xd0;f.s.x[19]=addr(f.r);f.event(0x2a2230);graph_test_probe(f.router,"current-open");
     put(f.r,0x15a8,addr(f.passes));put(f.r,0x15b8,addr(f.passes));put(f.r,0x15c0,addr(f.passes)+f.passes.size());f.event(0x2a2320);
     put(f.r,0x1380,uint64_t(0));f.s.x[0]=f.s.x[20]=addr(f.command);f.s.x[30]=Chain::base+FT_BOOT_RELEASE_LR;f.event(0x305260);
     put(f.executable,0x50,addr(f.bootstrap_pool));
-    f.completed_wrapper_cleanup(addr(f.command),addr(f.executable),addr(f.source_stack)+0xa40);
+    f.completed_wrapper_cleanup(addr(f.command),addr(f.executable),entry_sp-0xd0);
+    graph_test_probe(f.router,"wrapper-retired");
     std::array<std::byte,0x7b0> next_command{};std::array<std::byte,0x10> next_wrapper{};
-    put(next_command,8,addr(f.r)+0x50);put(next_command,0x738,uint64_t(0xc002));put(next_wrapper,8,addr(next_command));
+    auto& publication_wrapper=std::getenv("FT_GRAPH_REUSE_W")?f.command:next_wrapper;
+    put(next_command,8,addr(f.r)+0x50);put(next_command,0x738,uint64_t(0xc002));put(publication_wrapper,8,addr(next_command));
     put(next_command,0x428,uint64_t(&f.signal_pointer));put(next_command,0x430,uint64_t(&f.signal_pointer)+8);
     put(next_command,0x50,addr(f.bootstrap_pool));put(next_command,0x4f0,uint64_t(&f.signal_value));
     f.s.x[0]=f.s.x[20]=addr(next_command);f.s.sp=addr(f.stack)+0x100;f.event(0x301808);
     f.s.sp-=0x40;f.s.x[19]=addr(next_command);f.s.x[30]=Chain::base+0x300ae0;f.event(0x300a08);
     f.s.sp-=0x30;put(f.stack,0x98,uint64_t(Chain::base+0x300ae0));f.s.x[0]=0;f.event(0x300a38);
     f.s.sp=addr(f.stack)+0x100;f.s.x[20]=addr(next_command);f.s.x[0]=1;f.event(0x30180c);
-    f.replacement_factory(addr(next_wrapper),addr(next_command),addr(f.source_stack)+0xa40);
-    {const auto saved=f.s;f.s.sp=addr(f.source_stack)+0xb10;f.s.x[30]=Chain::base+(unknown?0xdead:flush || cold?consumer_flush_lr:consumer_present_lr);
+    f.replacement_factory(addr(publication_wrapper),addr(next_command),entry_sp-0xd0);
+    graph_test_probe(f.router,"wrapper-published");
+    {const auto saved=f.s;f.s.sp=entry_sp;f.s.x[30]=Chain::base+(unknown?0xdead:flush || cold?consumer_flush_lr:consumer_present_lr);
      const char* action=std::getenv("FT_GRAPH_ACTION");
      if(!action || std::strcmp(action,"missing-return"))f.event(action && !std::strcmp(action,"alternate-return")?0x2a2564:0x2a2498);
      f.s=saved;}
