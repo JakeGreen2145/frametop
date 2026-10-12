@@ -1,4 +1,4 @@
-// A desk volume, fixed in OpenVR's standing space (metres, +Y up, -Z forward).
+// A desk rectangle in OpenVR standing space, retaining the legacy volume wire form.
 // Pure placement/manipulation only. enabled is legacy data, never camera intent.
 #pragma once
 
@@ -26,9 +26,13 @@ Point ToLocal(const Volume &v, const Point &p);
 Point ToWorld(const Volume &v, const Point &p);
 struct Edge { Point a, b; };
 std::array<Edge, 12> Edges(const Volume &v);
+// Visible rectangle and controls use only the legacy volume's top plane.
+// Storage remains compatible with saved layouts; no side or bottom faces render.
+std::array<Edge, 4> RectangleEdges(const Volume &v, double outset = 0.012);
+std::array<Point, 6> RectangleControls(const Volume &v);
 // Faces: -X, +X, -Y, +Y, -Z, +Z, in the box's local frame.
 std::array<Point, 6> FaceCenters(const Volume &v);
-// Near-user (+local Z) edge, centered across width, on the top plane.
+// Grab bar outside the near-user (+local Z) edge on the rectangle plane.
 Point GrabCenter(const Volume &v);
 // Delta is metres along the positive local axis from the initial dragged face.
 // Opposite face stays fixed; dimensions and standing center limits clamp together.

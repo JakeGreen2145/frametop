@@ -372,7 +372,7 @@ def test_failed_initial_geometry_query_saves_only_without_overwriting_live_axes(
     if kind == "geometry":
         assert saved["passthrough"]["size"][0] == 1.25
     else:
-        assert saved["passthrough"]["center"] == pytest.approx([.35, 1.25, -2.])
+        assert ft_layout.passthrough_rectangle_center(saved["passthrough"]) == pytest.approx([.35, 1.25, -2.])
     # A later explicit edit must re-read live state, not apply the saved fallback.
     model.setGeometry("size", 0, 1.4)
     wait(lambda: not model.busy)
@@ -384,10 +384,25 @@ def test_place_at_desk_preserves_size_tilt_and_legacy_enabled(setup):
     model, server, *_ = setup
     model.placeAtDesk()
     wait(lambda: not model.busy)
-    assert server.volume["center"] == pytest.approx([.35, 1.25, -2.])
+    assert ft_layout.passthrough_rectangle_center(server.volume) == pytest.approx([.35, 1.25, -2.])
     assert server.volume["yaw"] == 90
     for key in ("pitch", "roll", "size", "enabled"):
         assert server.volume[key] == VOLUME[key]
+
+
+def test_rectangle_position_and_rotation_edit_visible_plane(setup):
+    model, server, *_ = setup
+    center = ft_layout.passthrough_rectangle_center(server.volume)
+    center[1] = 1.5
+    model.setGeometry("center", 1, center[1])
+    wait(lambda: not model.busy)
+    assert model.rectangle["center"] == pytest.approx(center)
+    model.setGeometry("pitch", -1, 35.)
+    wait(lambda: not model.busy)
+    assert server.volume["pitch"] == 35.
+    assert ft_layout.passthrough_rectangle_center(server.volume) == pytest.approx(center)
+    assert server.volume["size"] == VOLUME["size"]
+    assert not server.value["wanted"]
 
 
 def test_unavailable_geometry_is_saved_without_false_live_claim(setup):
@@ -396,7 +411,11 @@ def test_unavailable_geometry_is_saved_without_false_live_claim(setup):
     server.handler = lambda cmd: "error unsupported" if cmd.startswith(("passthrough state", "passthrough set")) else original(cmd)
     model.setGeometry("yaw", -1, 45.)
     wait(lambda: not model.busy)
-    assert json.loads(config.read_text())["passthrough"] == dict(VOLUME, yaw=45.)
+    saved = json.loads(config.read_text())["passthrough"]
+    assert saved["yaw"] == 45.
+    assert ft_layout.passthrough_rectangle_center(saved) == pytest.approx(ft_layout.passthrough_rectangle_center(VOLUME))
+    for key in ("size", "pitch", "roll", "enabled"):
+        assert saved[key] == VOLUME[key]
     assert not model.geometryKnown
     assert "not applied" in model.geometrySummary
 
@@ -464,8 +483,10 @@ def test_actual_shipped_qml_drafts_readback_and_switches(setup, tmp_path):
             pending.extend(obj.childItems())
         raise AssertionError(name)
     APP.processEvents()
-    for name in ("passthroughWidth", "passthroughHeight", "passthroughDepth", "passthroughX", "passthroughY", "passthroughZ", "passthroughYaw", "passthroughPitch", "passthroughRoll", "passthroughPlace", "passthroughControls", "portalAboveSteam"):
+    for name in ("passthroughWidth", "passthroughDepth", "passthroughX", "passthroughY", "passthroughZ", "passthroughYaw", "passthroughPitch", "passthroughRoll", "passthroughPlace", "passthroughControls", "portalAboveSteam"):
         item(name)
+    with pytest.raises(AssertionError):
+        item("passthroughHeight")
     width = item("passthroughWidth")
     width.forceActiveFocus()
     width.setProperty("text", "1.234")
@@ -488,7 +509,8 @@ def test_actual_shipped_qml_drafts_readback_and_switches(setup, tmp_path):
     QTest.keyClick(root, Qt.Key_Space)
     wait(lambda: not model.busy)
     assert model.portal["wanted"] is False
-    assert "Valve" in item("nativePortalCaveat").property("text")
+    assert switch.property("text") == "Passthrough"
+    assert item("portalAboveSteam").property("text") == "Passthrough above Steam menus"
     root.close()
     engine.deleteLater()
     APP.processEvents()

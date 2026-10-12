@@ -99,11 +99,14 @@ This remains a temporary experiment that masks stock RoomView while loaded.
 
 The dynamic path requires the updated `ft-screens` build. Its new
 `passthrough poc` command returns one coherent snapshot of the live box's top
-face, current tracking origin, tracking validity, pause/menu suppression and
+face, current tracking origin, tracking validity, pause state and
 the existing Native portal On intent. Geometry uses the existing controls'
-meaning: the box's +localY top face, with width along +localX and depth along
--localZ. Moving, rotating and resizing the controls updates the aperture during
-the drag. The legacy volume `enabled` field is not camera intent.
+saved placement: the former box's +localY top face, with width along +localX
+and length along -localZ. The UI and in-headset geometry are a flat rectangle
+with four resize handles and an external grab bar. Legacy storage retains its
+height offset so existing placement does not move; UI center and rotation edits
+operate on the rectangle itself. Dragging updates the aperture immediately.
+The legacy volume `enabled` field is not camera intent.
 
 `bridge.py` polls that snapshot every 50 ms. `ft-screens` converts the top face
 from standing into raw space through the public OpenVR origin matrix, so the
@@ -111,11 +114,12 @@ bridge needs no second OpenVR client or fixed floor offset. It atomically
 publishes four float4 values: C, U, V and an enabled flag in the fourth vector's
 first component. The layer refuses missing or stale geometry. The bridge sends
 native RoomView On/Off when effective intent changes; invalid tracking, pause,
-covered Steam menus or loss of the desktop disable the mask. The existing
-above-Steam preference controls menu suppression.
+loss of the desktop disable the mask. Opening Steam menus does not hide the
+camera or placement controls. The above-Steam preference selects native camera
+draw order through the fourth vector's second component.
 
 `run.py` starts and stops the bridge with the experiment. While it is connected,
-Display Settings reports "Experimental portal requested" rather than claiming
+Display Settings reports "Passthrough requested" rather than claiming
 a submitted camera frame. The status keeps `submitted_frame` at zero and camera
 freshness unknown. This distinguishes the active UI request from visual proof.
 
@@ -196,3 +200,31 @@ space corresponds to standing `(0,1.6,-1)` for this origin. It is not evidence
 of worn optical comfort, physical camera registration, or behavior after a
 tracking-origin reset. A desk aperture needs geometry converted through the
 current raw-to-standing transform, rather than a hardcoded floor offset.
+
+## Native camera ordering
+
+The launch gate also guards and replaces the load at ELF VA `0x9fab0`.
+In the ordinary RoomView path, its existing stack-local selector chooses either
+the camera call at `0xa0dbc` before overlay rendering, or the call at `0xa03f8`
+after overlay rendering. The existing native paths own both submissions.
+The nonzero native portal-stencil mode retains its original selector.
+
+The layer passes geometry float 13 to the gate's exported atomic setter.
+Zero selects behind overlays, one selects above overlays. This changes native
+draw order; it does not suppress the camera when the Steam menu opens. The
+setting takes effect on subsequent native recording, so it can lag the UI
+update by a frame. Controls outside the aperture remain visible in either mode.
+
+The near trampoline changes only the displaced instruction's `w0` result and
+the existing selector slot. It uses no callback, branch-with-link, stack
+adjustment or condition-flag changes. Both branch distances and original
+instructions are checked before launch-time modification. The gate defaults
+to behind overlays. Live stereo captures on the pinned runtime verified both
+orders with a rectangle overlapping the Steam menu and desktop: behind kept
+them readable with camera visible outside their bounds; above covered them
+inside the aperture. The controls remained visible outside the camera mask.
+
+Live synthetic-controller checks also verified an 8 cm grab translation and
+a width resize from 0.815033 m to 0.900941 m, including committed placement.
+Original placement was restored and the synthetic controller disconnected.
+The headset continued using its physical pose throughout these checks.

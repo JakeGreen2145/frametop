@@ -6,7 +6,7 @@ import QtQuick.Layouts
 ColumnLayout {
     id: page
     required property var model
-    property var volume: model.volume
+    property var rectangle: model.rectangle
     property var portal: model.portal
     property var prefs: model.preferences
     spacing: 12
@@ -14,8 +14,7 @@ ColumnLayout {
     Controls.Switch {
         id: portalSwitch
         objectName: "cameraPassthroughEnabled"
-        text: page.portal.busy ? "Portal request pending" : page.portal.known
-              ? (page.portal.wanted ? "Portal requested on" : "Portal off") : "Portal state unknown"
+        text: "Passthrough"
         Binding { target: portalSwitch; property: "checked"; value: page.portal.requested === true }
         onToggled: page.model.setWanted(checked)
     }
@@ -26,24 +25,10 @@ ColumnLayout {
         textFormat: Text.PlainText
         text: page.portal.summary
     }
-    Controls.Button {
-        text: "Request portal Off"
-        // Always available, including when an unavailable backend left intent unknown.
-        onClicked: page.model.setWanted(false)
-    }
-    Controls.Label {
-        objectName: "nativePortalCaveat"
-        Layout.fillWidth: true
-        wrapMode: Text.Wrap
-        text: "On and Off control the native portal request in ft-screens. Opening or closing settings does not change it. "
-            + "Off releases only this portal's request; Valve may still own full Room View and camera hardware. "
-            + "Active/submitting means a native frame was submitted, not proof of visible pixels or a fresh camera exposure. "
-            + "Camera freshness is unknown. This experimental view is not a safety boundary."
-    }
     Controls.Switch {
         id: controlsSwitch
         objectName: "passthroughControls"
-        text: "Show controls"
+        text: "Show placement controls"
         Binding {
             target: controlsSwitch; property: "checked"
             value: page.prefs.controls.known ? page.prefs.controls.enabled : page.prefs.controls.saved
@@ -57,10 +42,10 @@ ColumnLayout {
         textFormat: Text.PlainText
         text: page.prefs.controls.summary
     }
-    Controls.CheckBox {
+    Controls.Switch {
         id: layerCheck
         objectName: "portalAboveSteam"
-        text: "Keep portal controls visible with Steam menus"
+        text: "Passthrough above Steam menus"
         Binding {
             target: layerCheck; property: "checked"
             value: page.prefs.layer.known ? page.prefs.layer.enabled : page.prefs.layer.saved
@@ -72,16 +57,13 @@ ColumnLayout {
         Layout.fillWidth: true
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
-        text: page.prefs.layer.summary + ". Default: hide controls with Steam menus. "
-            + "This preference does not prove native camera composition above Steam. The native backend reports menu suppression separately."
+        text: page.prefs.layer.summary
     }
     Controls.Label {
         Layout.fillWidth: true
         wrapMode: Text.Wrap
-        text: "One room-fixed box defines the portal's top face, independently of screen layouts and profiles. "
-            + "Show controls reveals its edges, resize handles and grab bar without turning the portal on. "
-            + "Carry and rotate the bar, or drag a face handle to resize with the opposite face fixed. "
-            + "For an end-on face, drag upward, sideways when looking vertically, or push/pull a controller."
+        text: "Move and rotate the rectangle with its grab bar. Drag an edge handle to resize it. "
+            + "Showing placement controls does not turn passthrough on."
     }
     Controls.Button {
         objectName: "passthroughPlace"
@@ -101,8 +83,7 @@ ColumnLayout {
         Repeater {
             model: [
                 { name: "Width", label: "Width (m)", key: "size", axis: 0, low: 0.05, high: 5, decimals: 3 },
-                { name: "Height", label: "Height (m)", key: "size", axis: 1, low: 0.05, high: 5, decimals: 3 },
-                { name: "Depth", label: "Depth (m)", key: "size", axis: 2, low: 0.05, high: 5, decimals: 3 },
+                { name: "Depth", label: "Length (m)", key: "size", axis: 2, low: 0.05, high: 5, decimals: 3 },
                 { name: "X", label: "Center X, right (m)", key: "center", axis: 0, low: -100, high: 100, decimals: 3 },
                 { name: "Y", label: "Center Y, height (m)", key: "center", axis: 1, low: -100, high: 100, decimals: 3 },
                 { name: "Z", label: "Center Z, forward is negative (m)", key: "center", axis: 2, low: -100, high: 100, decimals: 3 },
@@ -117,8 +98,8 @@ ColumnLayout {
                 Controls.TextField {
                     id: field
                     property bool edited: false
-                    property string current: Number(modelData.axis < 0 ? (page.volume[modelData.key] || 0)
-                        : page.volume[modelData.key][modelData.axis]).toFixed(modelData.decimals)
+                    property string current: Number(modelData.axis < 0 ? (page.rectangle[modelData.key] || 0)
+                        : page.rectangle[modelData.key][modelData.axis]).toFixed(modelData.decimals)
                     objectName: "passthrough" + modelData.name
                     Accessible.name: modelData.label
                     Layout.preferredWidth: 95
@@ -147,8 +128,6 @@ ColumnLayout {
     Controls.Label {
         Layout.fillWidth: true
         wrapMode: Text.Wrap
-        text: "Dimensions: 0.05 to 5 m. Center: -100 to 100 m in OpenVR standing space. "
-            + "Angles: -180 to 180 degrees. Edits preserve all other axes, including pitch and roll. "
-            + "Place at desk preserves size and tilt. Recheck placement after SteamVR recenters. Placement never turns the portal on."
+        text: "Place at desk preserves the rectangle's size and tilt. Placement never turns passthrough on."
     }
 }

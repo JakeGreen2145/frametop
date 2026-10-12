@@ -1016,7 +1016,7 @@ struct VolumePart {
         if (!on) hover = false;
     }
 };
-std::array<VolumePart, 12> g_volumeEdges;
+std::array<VolumePart, 4> g_volumeEdges;
 std::array<VolumePart, 6> g_volumeFaces;
 passthrough::ResizeDrag g_volumeDrag;
 passthrough::TranslateDrag g_volumeMove;
@@ -1026,13 +1026,11 @@ VolumePart g_volumeGrab;
 bool g_volumeControls = false; // independent of legacy screen alpha cutouts
 bool g_portalAboveSteam = false;
 portal::SteamMenuVisibility g_portalMenu;
-bool VolumeMenuCovered() { return !g_portalAboveSteam && g_portalMenu.active(vr::VROverlay()); }
+bool VolumeMenuCovered() { return g_portalMenu.active(vr::VROverlay()); }
 Mat g_volumeDisplayHead = Identity();
 Clock::time_point g_volumeHeadUntil{};
-// Controls keep distinct fixed orders 10001..10019. Steam uses unsigned sort
-// zero, so default mode suppresses controls while its menu is open rather than
-// claiming positive orders sit below Steam. A native camera owner must apply
-// the same suppression policy separately; this code does not render camera pixels.
+// Controls stay visible and interactive across Steam menu transitions.
+// Camera/menu composition is handled by the native POC layer, not visibility.
 uint32_t VolumeSort(bool /*above*/, int index, bool face) {
     return 10000u + (face ? 13u : 1u) + uint32_t(index);
 }
@@ -1045,7 +1043,7 @@ bool VolumeLayers(bool above, bool apply) {
         return vr::VROverlay()->GetOverlaySortOrder(p.overlay, &actual) == vr::VROverlayError_None && actual == order;
     };
     bool ok = true;
-    for (int i=0;i<12;++i) ok = part(g_volumeEdges[i], i, false) && ok;
+    for (int i=0;i<4;++i) ok = part(g_volumeEdges[i], i, false) && ok;
     for (int i=0;i<6;++i) ok = part(g_volumeFaces[i], i, true) && ok;
     return part(g_volumeGrab, 6, true) && ok;
 }
@@ -1060,7 +1058,7 @@ bool RigidPose(const Mat &matrix) {
     return passthrough::ValidPose(pose);
 }
 bool VolumeControlsReady(Mat &head) {
-    return g_volumeControls && !g_paused && !VolumeMenuCovered() && passthrough::Valid(g_passthrough) &&
+    return g_volumeControls && !g_paused && passthrough::Valid(g_passthrough) &&
            DevicePose(vr::k_unTrackedDeviceIndex_Hmd, &head) && RigidPose(head);
 }
 void CancelVolumeDrag();
@@ -1108,17 +1106,16 @@ void MakeVolumePart(VolumePart &part, int index, bool face) {
     std::snprintf(key, sizeof key, face ? "frametop.passthrough.face.%d" : "frametop.guide.passthrough.edge.%d", index);
     const bool grab = face && index == 6;
     if (grab) std::snprintf(key, sizeof key, "frametop.passthrough.grab");
-    std::snprintf(name, sizeof name, "Desk volume: %s %d", grab ? "move" : face ? "resize face" : "edge", index);
+    std::snprintf(name, sizeof name, "Desk rectangle: %s %d", grab ? "grab" : face ? "resize" : "edge", index);
     if (vr::VROverlay()->CreateOverlay(key, name, &part.overlay) != vr::VROverlayError_None) return;
     vr::VROverlay()->SetOverlayInputMethod(part.overlay, face ? vr::VROverlayInputMethod_Mouse : vr::VROverlayInputMethod_None);
     vr::VROverlay()->SetOverlaySortOrder(part.overlay, VolumeSort(g_portalAboveSteam, index, face));
-    // Opt-in above-menu mode must remain drawable while the dashboard is open.
-    // OFF uses the explicit menu-presentation policy, not this flag as a layer.
+    // Keep placement controls available while the dashboard is open.
     vr::VROverlay()->SetOverlayFlag(part.overlay, vr::VROverlayFlags_VisibleInDashboard, true);
     if (grab) {
         const auto &texture = BarTexture(false);
         vr::VROverlay()->SetOverlayRaw(part.overlay, const_cast<uint8_t *>(texture.data()), 256, 24, 4);
-        vr::VROverlay()->SetOverlayAlpha(part.overlay, kChromeIdle);
+        vr::VROverlay()->SetOverlayAlpha(part.overlay, 0.9f);
     } else if (face) {
         const auto texture = ControlTexture(64, InDisc, [](double u, double v) {
             // Bidirectional arrow: drag this face along its axis.
@@ -1126,8 +1123,8 @@ void MakeVolumePart(VolumePart &part, int index, bool face) {
                    (std::fabs(u) > 0.3 && std::fabs(u) < 0.6 && std::fabs(v) < (std::fabs(u) - 0.3));
         }, DiscRim);
         vr::VROverlay()->SetOverlayRaw(part.overlay, const_cast<uint8_t *>(texture.data()), 64, 64, 4);
-        vr::VROverlay()->SetOverlayWidthInMeters(part.overlay, 0.065f);
-        vr::VROverlay()->SetOverlayAlpha(part.overlay, kChromeIdle);
+        vr::VROverlay()->SetOverlayWidthInMeters(part.overlay, 0.08f);
+        vr::VROverlay()->SetOverlayAlpha(part.overlay, 0.9f);
     }
 }
 
@@ -1144,7 +1141,7 @@ void UpdateVolumeControls() {
         // For display-only billboarding, bridge a brief invalid-bit dropout.
         // Never retain after explicit off, bad metadata, or past this bound.
         CancelVolumeDrag();
-        want = g_volumeControls && !g_paused && !VolumeMenuCovered() && passthrough::Valid(g_passthrough) &&
+        want = g_volumeControls && !g_paused && passthrough::Valid(g_passthrough) &&
                !g_poses[vr::k_unTrackedDeviceIndex_Hmd].bPoseIsValid && now < g_volumeHeadUntil;
         if (want) head = g_volumeDisplayHead;
         else g_volumeHeadUntil = {};
@@ -1156,8 +1153,8 @@ void UpdateVolumeControls() {
         g_volumeGrab.Show(false);
         return;
     }
-    const auto edges = passthrough::Edges(g_passthrough);
-    for (int i = 0; i < 12; ++i) {
+    const auto edges = passthrough::RectangleEdges(g_passthrough);
+    for (int i = 0; i < 4; ++i) {
         auto &part = g_volumeEdges[i];
         MakeVolumePart(part, i, false);
         if (part.overlay == vr::k_ulOverlayHandleInvalid) continue;
@@ -1182,9 +1179,10 @@ void UpdateVolumeControls() {
     // The 3D mouse or the dashboard still works; screen visibility is irrelevant.
     const bool lasers = g_lasers != Lasers::Dashboard && !g_gameRunning &&
                         vr::VRApplications()->GetCurrentSceneProcessId() == 0;
-    const auto centers = passthrough::FaceCenters(g_passthrough);
+    const auto centers = passthrough::RectangleControls(g_passthrough);
     for (int i = 0; i < 6; ++i) {
         auto &part = g_volumeFaces[i];
+        if (i == 2 || i == 3) { part.Show(false); continue; }
         MakeVolumePart(part, i, true);
         if (part.overlay == vr::k_ulOverlayHandleInvalid) continue;
         const Mat pose = FacingPose(centers[i].data(), head);
@@ -1198,8 +1196,8 @@ void UpdateVolumeControls() {
         // Keep the bar across the local X near edge; only its display plane faces
         // the head. Geometry and this edge follow the full rigid volume rotation.
         const passthrough::Edge edge{
-            passthrough::ToWorld(g_passthrough, {-width / 2, g_passthrough.size[1] / 2, g_passthrough.size[2] / 2}),
-            passthrough::ToWorld(g_passthrough, { width / 2, g_passthrough.size[1] / 2, g_passthrough.size[2] / 2})};
+            passthrough::ToWorld(g_passthrough, {-width / 2, g_passthrough.size[1] / 2, g_passthrough.size[2] / 2 + 0.085}),
+            passthrough::ToWorld(g_passthrough, { width / 2, g_passthrough.size[1] / 2, g_passthrough.size[2] / 2 + 0.085})};
         const Mat pose = EdgePose(edge, head);
         vr::VROverlay()->SetOverlayTransformAbsolute(g_volumeGrab.overlay, vr::TrackingUniverseStanding, &pose);
         vr::VROverlay()->SetOverlayWidthInMeters(g_volumeGrab.overlay, float(width));
@@ -1286,7 +1284,7 @@ void PollVolumeControls(void (*handle)(const ft_event *, void *), void *data) {
         const auto &part = VolumeControl(control);
         const bool active = control == 6 ? g_volumeMove.Active() : g_volumeDrag.Face() == control;
         if (part.overlay != vr::k_ulOverlayHandleInvalid)
-            vr::VROverlay()->SetOverlayAlpha(part.overlay, part.hover || active ? 1.f : kChromeIdle);
+            vr::VROverlay()->SetOverlayAlpha(part.overlay, part.hover || active ? 1.f : 0.9f);
     }
 }
 
@@ -1814,7 +1812,7 @@ void ShowCatcher(bool on) {
 void UpdateCatcher() {
     Mat l;
     if (VolumeDragging() && g_catcher != vr::k_ulOverlayHandleInvalid && LaserPose(VolumeDevice(), &l)) {
-        const auto center = g_volumeDrag.Active() ? passthrough::FaceCenters(g_passthrough)[g_volumeDrag.Face()] :
+        const auto center = g_volumeDrag.Active() ? passthrough::RectangleControls(g_passthrough)[g_volumeDrag.Face()] :
                                                    passthrough::GrabCenter(g_passthrough);
         double distance = 0;
         for (int k = 0; k < 3; ++k) distance += (center[k] - l.m[k][3]) * -l.m[k][2];
@@ -2815,7 +2813,7 @@ void ft_vr_command(const char *cmd, char *reply, int size) {
             menu=VolumeMenuCovered();
             origin=vr::VRSystem()->GetRawZeroPoseToStandingAbsoluteTrackingPose();
         }
-        const bool valid=tracking&&!g_paused&&!menu&&RigidPose(origin)&&passthrough::Valid(g_passthrough);
+        const bool valid=tracking&&!g_paused&&RigidPose(origin)&&passthrough::Valid(g_passthrough);
         const auto plane=passthrough::TopFace(g_passthrough);
         const auto raw=Inverse(origin);
         double c[3]{},u[3]{},v[3]{};
@@ -2828,11 +2826,11 @@ void ft_vr_command(const char *cmd, char *reply, int size) {
             }
         }
         return (void)std::snprintf(reply,size,
-            "ok poc {\"wanted\":%s,\"valid\":%s,\"tracking\":%s,\"paused\":%s,\"menu\":%s,"
+            "ok poc {\"wanted\":%s,\"valid\":%s,\"tracking\":%s,\"paused\":%s,\"menu\":%s,\"above\":%s,"
             "\"center\":[%.9g,%.9g,%.9g],\"u\":[%.9g,%.9g,%.9g],\"v\":[%.9g,%.9g,%.9g],"
             "\"raw_to_standing\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g]}",
             g_nativePortal.wanted()?"true":"false",valid?"true":"false",tracking?"true":"false",
-            g_paused?"true":"false",menu?"true":"false",c[0],c[1],c[2],u[0],u[1],u[2],v[0],v[1],v[2],
+            g_paused?"true":"false",menu?"true":"false",g_portalAboveSteam?"true":"false",c[0],c[1],c[2],u[0],u[1],u[2],v[0],v[1],v[2],
             origin.m[0][0],origin.m[0][1],origin.m[0][2],origin.m[0][3],
             origin.m[1][0],origin.m[1][1],origin.m[1][2],origin.m[1][3],
             origin.m[2][0],origin.m[2][1],origin.m[2][2],origin.m[2][3]);

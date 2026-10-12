@@ -70,7 +70,30 @@ std::array<Point, 6> FaceCenters(const Volume &v) {
 }
 
 Point GrabCenter(const Volume &v) {
-    return ToWorld(v, {0, v.size[1] / 2, v.size[2] / 2});
+    return ToWorld(v, {0, v.size[1] / 2, v.size[2] / 2 + 0.085});
+}
+
+std::array<Edge, 4> RectangleEdges(const Volume &v, double outset) {
+    const double x = v.size[0] / 2 + outset;
+    const double y = v.size[1] / 2;
+    const double z = v.size[2] / 2 + outset;
+    const Point corners[] = {ToWorld(v, {-x, y, -z}), ToWorld(v, {x, y, -z}),
+                             ToWorld(v, {x, y, z}), ToWorld(v, {-x, y, z})};
+    std::array<Edge, 4> edges{};
+    for (int i = 0; i < 4; ++i) edges[i] = {corners[i], corners[(i + 1) % 4]};
+    return edges;
+}
+
+std::array<Point, 6> RectangleControls(const Volume &v) {
+    std::array<Point, 6> controls{};
+    for (int face : {0, 1, 4, 5}) {
+        Point local{0, v.size[1] / 2, 0};
+        local[face / 2] = (face % 2 ? 1 : -1) * (v.size[face / 2] / 2 + 0.065);
+        // The near-depth resize button sits away from the central grab bar.
+        if (face == 5) local[0] = v.size[0] / 2;
+        controls[face] = ToWorld(v, local);
+    }
+    return controls;
 }
 
 bool ResizeFace(Volume &out, const Volume &start, int face, double delta) {
@@ -136,7 +159,7 @@ bool ResizeDrag::Begin(const Volume &v, int face, unsigned device, const Ray &ra
     Point dir{};
     if (!UnitRay(ray, dir)) return false;
     start_ = v;
-    point_ = FaceCenters(v)[face];
+    point_ = (face == 2 || face == 3) ? FaceCenters(v)[face] : RectangleControls(v)[face];
     Point local{}, to{};
     local[face / 2] = 1;
     const Point world = ToWorld(v, local);

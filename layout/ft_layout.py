@@ -434,6 +434,22 @@ def passthrough(layout):
         return validate_passthrough(PASSTHROUGH)
 
 
+def passthrough_rectangle_center(volume):
+    """Expose the retained top face as a 2D rectangle without moving old layouts."""
+    yaw, pitch, roll = (math.radians(volume.get(key, 0)) for key in ("yaw", "pitch", "roll"))
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cr, sr = math.cos(roll), math.sin(roll)
+    normal = [-cy * sr + sy * sp * cr, cp * cr, sy * sr + cy * sp * cr]
+    return [volume["center"][i] + normal[i] * volume["size"][1] / 2 for i in range(3)]
+
+
+def set_passthrough_rectangle_center(volume, center):
+    """Move the visible plane while preserving legacy storage and hidden thickness."""
+    old = passthrough_rectangle_center(volume)
+    volume["center"] = [volume["center"][i] + center[i] - old[i] for i in range(3)]
+
+
 def parse_passthrough_state(reply):
     """The native standing-space volume and optional renderer status."""
     fields = reply.split() if isinstance(reply, str) else []

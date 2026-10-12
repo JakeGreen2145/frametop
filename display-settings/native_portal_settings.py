@@ -13,12 +13,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "layout"))
 import ft_layout
 from native_portal_client import ADDRESS, Client, PortalError
 
-LABELS = {"unavailable": "Native portal backend unavailable", "off": "Native portal off",
-          "poc-requested": "Experimental portal requested",
+LABELS = {"unavailable": "Native portal backend unavailable", "off": "Passthrough off",
+          "poc-requested": "Passthrough requested",
           "warming": "Native portal warming", "active-submitted": "Native portal active/submitting",
           "suspended-external": "Native portal suspended by external owner",
           "suppressed-menu": "Native portal suppressed by Steam menu", "draining": "Native portal draining",
           "fault": "Native portal fault"}
+
+
+def status_summary(value):
+    label = LABELS[value["state"]]
+    return label if value["state"] in ("off", "poc-requested") else label + ": " + value["reason"]
 
 
 def unknown(reason):
@@ -64,6 +69,12 @@ class PortalSettings(QObject):
     @Property("QVariantMap", notify=changed)
     def volume(self):
         return copy.deepcopy(self._volume)
+
+    @Property("QVariantMap", notify=changed)
+    def rectangle(self):
+        result = copy.deepcopy(self._volume)
+        result["center"] = ft_layout.passthrough_rectangle_center(result)
+        return result
 
     @Property("QVariantMap", notify=changed)
     def preferences(self):
@@ -156,7 +167,7 @@ class PortalSettings(QObject):
     def _status(self):
         try:
             value = self._client.status()
-            return dict(value, known=True, summary=LABELS[value["state"]] + ": " + value["reason"])
+            return dict(value, known=True, summary=status_summary(value))
         except PortalError as exc:
             return unknown(str(exc))
 
@@ -192,7 +203,7 @@ class PortalSettings(QObject):
             if enabled is not None and actual != enabled:
                 raise ValueError("readback did not match")
             label = ("Controls shown" if actual else "Controls hidden") if key == "controls" else (
-                "Keep controls visible with Steam menus requested" if actual else "Hide controls with Steam menus requested")
+                "Passthrough above Steam menus" if actual else "Passthrough behind Steam menus")
             return {"known": True, "enabled": actual, "saved": saved, "summary": label}
         except (OSError, RuntimeError, ValueError) as exc:
             label = "Saved preference; not applied: " if enabled is not None and saved == enabled else "Live preference unknown: "
@@ -216,14 +227,21 @@ class PortalSettings(QObject):
             if not all(math.isfinite(v) for v in (x, y, z, yaw)):
                 raise ValueError("Head pose needs finite numbers")
             angle = math.radians(yaw)
-            volume["center"] = [x - .65 * math.sin(angle), y - .55, z - .65 * math.cos(angle)]
             volume["yaw"] = yaw
+            ft_layout.set_passthrough_rectangle_center(volume,
+                [x - .65 * math.sin(angle), y - .55, z - .65 * math.cos(angle)])
         else:
             key, axis, value = edit
-            if key in ("size", "center") and 0 <= axis < 3:
-                volume[key][axis] = value
+            if key == "size" and axis in (0, 2):
+                volume["size"][axis] = value
+            elif key == "center" and 0 <= axis < 3:
+                center = ft_layout.passthrough_rectangle_center(volume)
+                center[axis] = value
+                ft_layout.set_passthrough_rectangle_center(volume, center)
             elif key in ("yaw", "pitch", "roll") and axis == -1:
+                center = ft_layout.passthrough_rectangle_center(volume)
                 volume[key] = value
+                ft_layout.set_passthrough_rectangle_center(volume, center)
             else:
                 raise ValueError("Unknown placement field")
         volume = ft_layout.validate_passthrough(volume)
@@ -258,7 +276,7 @@ class PortalSettings(QObject):
                         **self._geometry("poll", None))
         if kind == "intent":
             actual = self._client.set_wanted(value)
-            return {"portal": dict(actual, known=True, summary=LABELS[actual["state"]] + ": " + actual["reason"])}
+            return {"portal": dict(actual, known=True, summary=status_summary(actual))}
         if kind in ("controls", "layer"):
             if type(value) is not bool:
                 raise ValueError("Portal preference must be true or false")

@@ -31,21 +31,22 @@ def sample():
     if not reply.startswith('ok poc '):
         raise RuntimeError('ft-screens needs the POC snapshot command: ' + reply[:120])
     state = json.loads(reply[7:])
-    if type(state.get('wanted')) is not bool or type(state.get('valid')) is not bool:
+    if any(type(state.get(key)) is not bool for key in ('wanted', 'valid', 'above')):
         raise ValueError('invalid desktop intent/validity')
     vectors = [state[key] for key in ('center', 'u', 'v')]
     if any(not isinstance(v, list) or len(v) != 3 or
            any(type(n) not in (int, float) or not math.isfinite(n) for n in v) for v in vectors):
         raise ValueError('invalid desktop aperture')
-    return vectors, state['wanted'] and state['valid']
+    return vectors, state['wanted'] and state['valid'], state['above']
 
 
-def publish(path, vectors=None, enabled=False):
+def publish(path, vectors=None, enabled=False, above=False):
     values = [0.0] * 16
     if vectors:
         for i, vector in enumerate(vectors):
             values[4*i:4*i+3] = vector
     values[12] = float(enabled)
+    values[13] = float(above)
     temporary = path.with_name(path.name + '.tmp')
     temporary.write_bytes(struct.pack('<16f', *values))
     temporary.replace(path)
@@ -65,8 +66,8 @@ def main():
         while not STOP:
             started = time.monotonic()
             try:
-                vectors, enabled = sample()
-                publish(args.geometry, vectors, enabled)
+                vectors, enabled, above = sample()
+                publish(args.geometry, vectors, enabled, above)
                 if enabled != last_enabled:
                     control.send(enabled)
                     last_enabled = enabled

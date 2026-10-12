@@ -4,11 +4,59 @@
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
+#include <initializer_list>
 #include <link.h>
 #include <openssl/evp.h>
 #include <sys/mman.h>
 #include <unistd.h>
 namespace {
+alignas(4) uint32_t above_menu = 0;
+bool branch(uintptr_t from, uintptr_t to, uint32_t &out) {
+  const int64_t delta = int64_t(to) - int64_t(from);
+  if ((delta & 3) || delta < -(INT64_C(1) << 27) ||
+      delta >= (INT64_C(1) << 27)) return false;
+  out = 0x14000000 | (uint32_t(delta / 4) & 0x03ffffff);
+  return true;
+}
+// Only w0 is changed, exactly as by the displaced LDR. No BL, stack change,
+// flag change, SIMD instruction, callback or resource access occurs here.
+void *order_trampoline(uintptr_t site, size_t page_size, uint32_t &entry) {
+  const uintptr_t origin = site & ~(uintptr_t(page_size) - 1);
+  for (uintptr_t distance = 0x10000; distance < 0x7000000; distance += 0x10000) {
+    for (int direction : {-1, 1}) {
+      if (direction < 0 && origin < distance) continue;
+      uintptr_t address = direction < 0 ? origin-distance : origin+distance;
+      void *memory = mmap(reinterpret_cast<void *>(address), page_size,
+                          PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
+                          -1, 0);
+      if (memory == MAP_FAILED) continue;
+      auto *code = static_cast<uint32_t *>(memory);
+      // Native portal-stencil mode keeps its original selector. Ordinary
+      // RoomView selects its existing pre/post-overlay camera paths instead.
+      code[0] = 0xb940d3e0; // ldr w0,[sp,#0xd0]
+      code[1] = 0x350000a0; // cbnz w0,+20 -> original load at instruction6
+      code[2] = 0x580000c0; // ldr x0,+24 -> pointer literal at offset32
+      code[3] = 0xb9400000; // ldr w0,[x0]
+      code[4] = 0xb9010be0; // str w0,[sp,#0x108]
+      code[6] = 0xb9410be0; // displaced ldr w0,[sp,#0x108]
+      const uintptr_t pointer = reinterpret_cast<uintptr_t>(&above_menu);
+      memcpy(code+8, &pointer, sizeof pointer);
+      if (!branch(site, address, entry) ||
+          !branch(address+20, site+4, code[5]) ||
+          !branch(address+28, site+4, code[7])) {
+        munmap(memory,page_size); continue;
+      }
+      __builtin___clear_cache(reinterpret_cast<char *>(memory),
+                              reinterpret_cast<char *>(memory)+40);
+      if (mprotect(memory,page_size,PROT_READ|PROT_EXEC)) {
+        munmap(memory,page_size); return nullptr;
+      }
+      return memory;
+    }
+  }
+  return nullptr;
+}
 bool pin_executable() {
   FILE *f = fopen("/proc/self/exe", "rb");
   if (!f)
@@ -35,31 +83,43 @@ int gate(dl_phdr_info *info, size_t, void *) {
   if (info->dlpi_name && *info->dlpi_name)
     return 0;
   auto *word = reinterpret_cast<uint32_t *>(info->dlpi_addr + 0x9f404);
+  auto *order = reinterpret_cast<uint32_t *>(info->dlpi_addr + 0x9fab0);
   bool executable = false;
   for (unsigned i = 0; i < info->dlpi_phnum; i++) {
     const auto &p = info->dlpi_phdr[i];
     if (p.p_type == PT_LOAD && (p.p_flags & PF_X) && p.p_vaddr <= 0x9f404 &&
-        p.p_vaddr + p.p_memsz >= 0x9f408)
+        p.p_vaddr + p.p_memsz >= 0x9fab4)
       executable = true;
   }
-  if (!executable || *word != 0x34003577) {
+  if (!executable || *word != 0x34003577 || *order != 0xb9410be0 ||
+      order[1] != 0x7100001f || order[2] != 0xb940d3e0) {
     fprintf(stderr, "ft-poc: Aurora gate original mismatch\n");
     return 1;
   }
   long ps = sysconf(_SC_PAGESIZE);
-  if (ps <= 0)
+  if (ps <= 0 || (ps & (ps-1)))
     return 1;
   auto *page = reinterpret_cast<void *>(uintptr_t(word) & ~(uintptr_t(ps) - 1));
+  if ((uintptr_t(order) & ~(uintptr_t(ps)-1)) != uintptr_t(page)) return 1;
+  uint32_t order_branch = 0;
+  void *trampoline = order_trampoline(uintptr_t(order), size_t(ps), order_branch);
+  if (!trampoline) {
+    fprintf(stderr,"ft-poc: camera order trampoline unavailable\n");
+    return 1;
+  }
   if (mprotect(page, size_t(ps), PROT_READ | PROT_WRITE)) {
+    munmap(trampoline,size_t(ps));
     perror("ft-poc gate mprotect");
     return 1;
   }
   __atomic_store_n(word, 0xd503201f, __ATOMIC_RELEASE);
+  __atomic_store_n(order, order_branch, __ATOMIC_RELEASE);
   __builtin___clear_cache(reinterpret_cast<char *>(word),
-                          reinterpret_cast<char *>(word + 1));
+                          reinterpret_cast<char *>(order + 1));
   if (mprotect(page, size_t(ps), PROT_READ | PROT_EXEC))
     _exit(190);
   fprintf(stderr, "ft-poc: Aurora gate patched\n");
+  fprintf(stderr,"ft-poc: native camera pre/post-overlay selector installed\n");
   return 1;
 }
 __attribute__((constructor)) void launch_gate() {
@@ -95,3 +155,7 @@ __attribute__((constructor)) void launch_gate() {
   dl_iterate_phdr(gate, nullptr);
 }
 } // namespace
+extern "C" __attribute__((visibility("default")))
+void ft_poc_set_above_menu(uint32_t enabled) {
+  __atomic_store_n(&above_menu, enabled ? 1u : 0u, __ATOMIC_RELAXED);
+}

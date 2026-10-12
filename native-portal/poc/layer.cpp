@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <mutex>
 #include <openssl/evp.h>
@@ -369,6 +370,12 @@ std::array<float, 16> read_geometry() {
   result[12] = result[12] > 0.5f ? 1.0f : 0.0f;
   return result;
 }
+void update_native_order(const std::array<float,16> &geometry) {
+  using SetOrder = void (*)(uint32_t);
+  static const auto set_order = reinterpret_cast<SetOrder>(
+      dlsym(RTLD_DEFAULT,"ft_poc_set_above_menu"));
+  if (set_order) set_order(geometry[12] > .5f && geometry[13] > .5f);
+}
 VkResult VKAPI_CALL create_layout(VkDevice device,
                                   const VkPipelineLayoutCreateInfo *ci,
                                   const VkAllocationCallbacks *a,
@@ -541,6 +548,7 @@ void VKAPI_CALL draw_indexed(VkCommandBuffer command, uint32_t indexCount,
       layout = state.layout;
       if (!state.sampled) {
         state.geometry = read_geometry();
+        update_native_order(state.geometry);
         state.sampled = true;
       }
       geometry = state.geometry;
