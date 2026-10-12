@@ -8,21 +8,22 @@ portal runtime or its copied packets and graph observers.
 `generate.py` takes the eight pinned installed shaders and produces private
 `<id>.original.spv` and `<id>.portal.spv` files. It reuses the aperture generator's
 smooth location-3 varying and fragment rejection. The vertex shader calculates
-the aperture from its existing per-eye M1 matrix and a fixed rectangle embedded
-in the shader. No uniform block members, descriptors or push constants are added.
+the aperture from its existing per-eye M1 matrix and 64 bytes of push constants.
+The native uniform block and descriptors remain unchanged. The Vulkan layer
+adds the compatible vertex push-constant range to layouts that originally had
+none, then supplies the current desktop rectangle before native camera draws.
 
 ```sh
 python3 native-portal/poc/generate.py \
   --source /opt/steamvr/resources/shaders/vulkan \
-  --output native-portal/build/poc \
-  --center 0 0 -1 --u .45 0 0 --v 0 .3 0
+  --output native-portal/build/poc
 ```
 
 The coordinates are in the native shader's X reference frame, where
 `X = M0 * mesh_position` and `eye_position = M1 * X`. The live translation/yaw
 check below identifies this with raw tracking space for the tested runtime and
-camera mode. The default rectangle is only an initial diagnostic placement.
-It is not a calibrated desk location.
+camera mode. `--fixed --center 0 0 -1 --u .45 0 0 --v 0 .3 0` retains the earlier
+baked diagnostic instead of following the desktop box.
 
 The shader derives E from `inverse(M1) * (0,0,0,1)`. With rectangle center C and
 half-extent vectors U,V, it emits `inverse(mat3(U,V,C-E)) * (X-E)` without
@@ -53,6 +54,7 @@ VK_ADD_LAYER_PATH=/absolute/repo/native-portal/build/poc
 VK_INSTANCE_LAYERS=VK_LAYER_FT_poc
 LD_PRELOAD=/absolute/repo/native-portal/build/poc/libft_poc_gate.so
 FT_POC_AURORA=1
+FT_POC_GEOMETRY=/absolute/repo/native-portal/build/poc/geometry.private.bin
 ```
 
 Apply these variables to the compositor launch and preserve any required
@@ -69,8 +71,10 @@ The host-only helper installs these settings temporarily and restarts SteamVR:
 
 ```sh
 python3 native-portal/poc/run.py enable
-python3 native-portal/poc/control.py on
-python3 native-portal/poc/control.py off
+# Use Native portal On/Off and placement in Frametop Display Settings.
+# The same intent is available from the CLI:
+python3 display-settings/native_portal_client.py on
+python3 display-settings/native_portal_client.py off
 python3 native-portal/poc/run.py disable
 ```
 
@@ -79,6 +83,10 @@ its own runtime `99-ft-poc.conf` service drop-in. It refuses an existing drop-in
 instead of overwriting it. An independent user-systemd timer automatically runs
 `disable` after ten minutes. `disable` sends RoomView Off, removes the owned
 drop-in and restarts SteamVR with the prior settings. Both restarts interrupt VR.
+After a successful trial, `run.py retain` cancels only that rollback timer and
+keeps the current session running. It verifies ownership first and changes no
+running services. This lasts for the current boot; `run.py disable` still
+restores stock behavior. Use the same `--output` directory for all three actions.
 
 The helper records an initially active Frametop desktop's command and required
 environment in private `build/poc/launch-state.private.json`. After either
@@ -87,6 +95,30 @@ was unloaded. It also restores pointer, gaze and power services that were
 initially active. It does not change testbench poses or tracking configuration.
 This remains a temporary experiment that masks stock RoomView while loaded.
 
+## Desktop placement and intent
+
+The dynamic path requires the updated `ft-screens` build. Its new
+`passthrough poc` command returns one coherent snapshot of the live box's top
+face, current tracking origin, tracking validity, pause/menu suppression and
+the existing Native portal On intent. Geometry uses the existing controls'
+meaning: the box's +localY top face, with width along +localX and depth along
+-localZ. Moving, rotating and resizing the controls updates the aperture during
+the drag. The legacy volume `enabled` field is not camera intent.
+
+`bridge.py` polls that snapshot every 50 ms. `ft-screens` converts the top face
+from standing into raw space through the public OpenVR origin matrix, so the
+bridge needs no second OpenVR client or fixed floor offset. It atomically
+publishes four float4 values: C, U, V and an enabled flag in the fourth vector's
+first component. The layer refuses missing or stale geometry. The bridge sends
+native RoomView On/Off when effective intent changes; invalid tracking, pause,
+covered Steam menus or loss of the desktop disable the mask. The existing
+above-Steam preference controls menu suppression.
+
+`run.py` starts and stops the bridge with the experiment. While it is connected,
+Display Settings reports "Experimental portal requested" rather than claiming
+a submitted camera frame. The status keeps `submitted_frame` at zero and camera
+freshness unknown. This distinguishes the active UI request from visual proof.
+
 This shader change alone does not activate RoomView or ensure the scene remains
 visible outside the aperture. Native system-layer clears and scene fades are
 separate operations. A live trial must verify both eyes and the outside region.
@@ -94,7 +126,21 @@ Replacing camera shaders also masks stock RoomView for the duration of that
 diagnostic. The experiment does not promise independent portal controls or
 normal stock RoomView coexistence.
 
-## First live image
+## Live desktop box check
+
+The dynamic build passed headset captures with a front-facing rectangle, then
+the same box shifted 0.25 m, narrowed from 0.9 m to 0.45 m and rotated 20 degrees
+without restarting the compositor. Both camera apertures followed the changes.
+Restoring the existing horizontal desk box and looking down 25 degrees produced
+the expected perspective aperture in both eyes. Native portal Off removed it.
+Suspending the bridge for one second also removed it through the layer's
+half-second freshness limit; resuming restored normal operation.
+
+All eight generated modules passed SPIR-V validation, and the updated desktop
+and layer built on the headset. These captures use controlled testbench poses;
+worn comfort and physical registration still need a wearer check.
+
+## First live image with the fixed diagnostic
 
 A headset compositor capture with the experiment enabled shows a finite camera
 rectangle in both eye images, with different camera perspectives and the Aurora

@@ -13,6 +13,7 @@ HERE = Path(__file__).resolve().parent
 STEAMVR = 'steamvr.service'
 DESKTOP = 'frametop-desktop.service'
 TIMER = 'ft-poc-rollback'
+BRIDGE = 'frametop-poc-bridge.service'
 COMPANIONS = ('frametop-pointer.service', 'frametop-gaze.service', 'frametop-power.service')
 MARKER = '# Managed by frametop native-portal/poc/run.py\n'
 
@@ -79,6 +80,7 @@ def launch_dropin(output):
                  'VK_ADD_LAYER_PATH': str(output), 'VK_INSTANCE_LAYERS': 'VK_LAYER_FT_poc'}
     values = {key: value + (':' + existing[key] if existing.get(key) else '') for key, value in additions.items()}
     values['FT_POC_AURORA'] = '1'
+    values['FT_POC_GEOMETRY'] = str(output / 'geometry.private.bin')
     return MARKER + '[Service]\n' + ''.join('Environment=' + quote_environment(key + '=' + value) + '\n' for key, value in values.items())
 
 
@@ -100,6 +102,8 @@ def disable(output, dropin, state_path):
         raise RuntimeError('invalid POC ownership state')
     if dropin.exists() and dropin.read_text() != saved['dropin']:
         raise RuntimeError('refusing to remove a changed or unknown drop-in')
+    if saved.get('bridge'):
+        command('systemctl', '--user', 'stop', BRIDGE, check=False)
     try:
         import control
         control.send(False)
@@ -115,9 +119,24 @@ def disable(output, dropin, state_path):
     print('POC removed; SteamVR restarted with its prior launch configuration.')
 
 
+def retain(dropin, state_path):
+    saved = json.loads(state_path.read_text())
+    if (saved.get('dropin_path') != str(dropin) or not saved.get('dropin', '').startswith(MARKER)
+            or not dropin.is_file() or dropin.read_text() != saved['dropin']):
+        raise RuntimeError('refusing to retain an unknown or changed POC launch configuration')
+    if property_value(TIMER + '.service', 'ActiveState') not in ('inactive', 'failed'):
+        raise RuntimeError('rollback has already started; cannot retain this session')
+    command('systemctl', '--user', 'stop', TIMER + '.timer')
+    if property_value(TIMER + '.service', 'ActiveState') not in ('inactive', 'failed'):
+        raise RuntimeError('rollback started while stopping its timer; let it finish')
+    saved['retained_current_boot'] = True
+    save_state(state_path, saved)
+    print('POC retained for this boot; rollback timer cancelled. Use run.py disable with the same --output to restore stock SteamVR.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['enable', 'disable'])
+    parser.add_argument('action', choices=['enable', 'disable', 'retain'])
     parser.add_argument('--output', type=Path, default=HERE.parent / 'build/poc')
     args = parser.parse_args()
     if platform.system() != 'Linux' or platform.machine() != 'aarch64' or not Path('/opt/steamvr/bin/linuxarm64/vrcompositor').is_file():
@@ -134,11 +153,16 @@ def main():
     if args.action == 'disable':
         disable(output, dropin, state_path)
         return
+    if args.action == 'retain':
+        retain(dropin, state_path)
+        return
     if dropin.exists() or state_path.exists():
         raise RuntimeError('POC drop-in or state already exists; disable the owned trial first. Unknown drop-ins are never overwritten.')
     for name in ('libft_poc.so', 'libft_poc_gate.so', 'VkLayer_FT_poc.json'):
         if not (output / name).is_file():
             raise RuntimeError('build the POC first: missing ' + name)
+    if property_value(BRIDGE, 'LoadState') != 'not-found':
+        raise RuntimeError('POC bridge unit already exists; stop the previous trial first')
     desktop = snapshot_desktop()
     companions = [unit for unit in COMPANIONS if property_value(unit, 'ActiveState') == 'active']
     content = launch_dropin(output)
@@ -155,11 +179,15 @@ def main():
         command('systemctl', '--user', 'daemon-reload')
         command('systemctl', '--user', 'restart', STEAMVR)
         restore_session(saved)
+        saved['bridge'] = True
+        save_state(state_path, saved)
+        command('systemd-run', '--user', '--collect', '--unit=' + BRIDGE,
+                sys.executable, str(HERE / 'bridge.py'), '--geometry', str(output / 'geometry.private.bin'))
     except Exception:
         # Keep state if rollback itself fails, so disable can be retried.
         disable(output, dropin, state_path)
         raise
-    print('POC launch settings enabled. Automatic rollback is armed for 10 minutes. Use control.py on/off to toggle camera rendering.')
+    print('POC launch settings enabled. Automatic rollback is armed for 10 minutes. Use the Frametop Native portal controls to toggle and place the mask.')
 
 
 if __name__ == '__main__':

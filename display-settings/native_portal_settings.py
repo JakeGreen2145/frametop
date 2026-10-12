@@ -14,6 +14,7 @@ import ft_layout
 from native_portal_client import ADDRESS, Client, PortalError
 
 LABELS = {"unavailable": "Native portal backend unavailable", "off": "Native portal off",
+          "poc-requested": "Experimental portal requested",
           "warming": "Native portal warming", "active-submitted": "Native portal active/submitting",
           "suspended-external": "Native portal suspended by external owner",
           "suppressed-menu": "Native portal suppressed by Steam menu", "draining": "Native portal draining",

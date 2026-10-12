@@ -12,6 +12,7 @@ struct Owner::Impl {
     std::string path; Clock clock; Mailbox<Sample> sample; Mailbox<Observed> status;
     Mailbox<Intent> desired; // one coherent command snapshot for the worker
     std::atomic<bool> wanted{false},quit{false},unsettled{false}; std::atomic<uint64_t> intent{0};
+    std::atomic<uint64_t> poc_until{0};
     std::thread worker; uint64_t generation=0;
     Impl(std::string p,Clock c):path(std::move(p)),clock(c) {
         if(path.empty()) { const char* rt=std::getenv("XDG_RUNTIME_DIR"); if(rt&&rt[0]=='/')path=std::string(rt)+"/frametop-native-portal/control.sock"; }
@@ -47,7 +48,7 @@ struct Owner::Impl {
             if(!desired.read(request)) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); continue; }
             const auto ticket=request.ticket; const bool want=request.wanted;
             Sample s; bool have=sample.read(s); auto now=clock();
-            bool ready=have&&s.tracking&&!s.paused&&s.time&&now>=s.time&&now-s.time<250000000;
+            bool ready=now>=poc_until.load()&&have&&s.tracking&&!s.paused&&s.time&&now>=s.time&&now-s.time<250000000;
             auto current=[&] {
                 Intent latest;
                 return !quit&&desired.read(latest)&&latest.ticket==ticket&&latest.wanted==want;
@@ -111,6 +112,8 @@ struct Owner::Impl {
 };
 Owner::Owner(std::string path,Clock clock):impl_(new Impl(std::move(path),clock)) {}
 Owner::~Owner(){shutdown();delete impl_;}
+bool Owner::wanted() const { return impl_->wanted.load(); }
+void Owner::poc_heartbeat() { impl_->poc_until=impl_->clock()+500000000; }
 void Owner::shutdown() { impl_->wanted=false; impl_->desired.publish({impl_->intent.load(),false}); impl_->quit=true; if(impl_->worker.joinable())impl_->worker.join(); }
 bool Owner::command(const char* cmd,char* out,int size) {
     std::istringstream input(cmd); std::string subsystem,action,value,extra; input>>subsystem>>action;
@@ -119,10 +122,16 @@ bool Owner::command(const char* cmd,char* out,int size) {
         std::snprintf(out,size,"error passthrough portal <on|off|status>"); return true;
     }
     auto& s=*impl_;
-    if(value=="on") { s.wanted=true; ++s.intent; s.desired.publish({s.intent.load(),true}); if(!s.worker.joinable()) { s.quit=false; s.worker=std::thread([&s]{s.run();}); } }
+    const bool poc=s.clock()<s.poc_until.load();
+    if(value=="on") { s.wanted=true; ++s.intent; s.desired.publish({s.intent.load(),true}); if(!poc&&!s.worker.joinable()) { s.quit=false; s.worker=std::thread([&s]{s.run();}); } }
     if(value=="off") {
         s.wanted=false; ++s.intent; s.desired.publish({s.intent.load(),false});
         if(!s.worker.joinable()&&!s.unsettled) { Reply off; off.state=State::Off; off.reason=Reason::Off; s.status.publish({off,s.intent.load()}); }
+    }
+    if(poc) {
+        std::snprintf(out,size,"ok portal {\"abi\":1,\"wanted\":%s,\"state\":\"%s\",\"reason\":\"POC desktop mask publisher connected; rendering unverified\",\"epoch\":%llu,\"submitted_frame\":0,\"camera_freshness\":\"unknown\"}",
+            s.wanted?"true":"false",s.wanted?"poc-requested":"off",(unsigned long long)s.intent.load());
+        return true;
     }
     Impl::Observed observed; Reply r;
     if(s.status.read(observed))r=observed.reply;

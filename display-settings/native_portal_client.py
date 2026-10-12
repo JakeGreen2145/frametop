@@ -10,7 +10,7 @@ import time
 ADDRESS = "\0ft_screens"
 MAX_REPLY = 4096
 STATES = {"unavailable", "off", "warming", "active-submitted", "suspended-external",
-          "suppressed-menu", "draining", "fault"}
+          "suppressed-menu", "draining", "fault", "poc-requested"}
 
 
 class PortalError(RuntimeError):
@@ -45,7 +45,7 @@ def parse_status(reply):
             raise ValueError("invalid reason")
         if data.get("camera_freshness") != "unknown":
             raise ValueError("unsupported camera freshness claim")
-        required = {"warming", "active-submitted", "suspended-external", "suppressed-menu"}
+        required = {"warming", "active-submitted", "suspended-external", "suppressed-menu", "poc-requested"}
         if ((data["state"] in required and not data["wanted"])
                 or (data["state"] in {"off", "draining"} and data["wanted"])):
             raise ValueError("contradictory state and intent")

@@ -2802,6 +2802,41 @@ void ft_vr_command(const char *cmd, char *reply, int size) {
     std::istringstream input(cmd);
     std::string subsystem, action, value, extra;
     input >> subsystem >> action;
+    if (subsystem == "passthrough" && action == "poc") {
+        if (input >> extra) return (void)std::snprintf(reply,size,"error passthrough poc");
+        // One VR-thread snapshot follows live drags and the current origin.
+        // The read also advertises a live experimental publisher to the UI.
+        g_nativePortal.poc_heartbeat();
+        Mat origin=Identity(); bool tracking=false, menu=false;
+        if(g_vr) {
+            RefreshPoses();
+            const auto& head=g_poses[vr::k_unTrackedDeviceIndex_Hmd];
+            tracking=head.bPoseIsValid&&head.bDeviceIsConnected&&RigidPose(head.mDeviceToAbsoluteTracking);
+            menu=VolumeMenuCovered();
+            origin=vr::VRSystem()->GetRawZeroPoseToStandingAbsoluteTrackingPose();
+        }
+        const bool valid=tracking&&!g_paused&&!menu&&RigidPose(origin)&&passthrough::Valid(g_passthrough);
+        const auto plane=passthrough::TopFace(g_passthrough);
+        const auto raw=Inverse(origin);
+        double c[3]{},u[3]{},v[3]{};
+        for(int i=0;i<3;++i) {
+            c[i]=raw.m[i][3];
+            for(int j=0;j<3;++j) {
+                c[i]+=raw.m[i][j]*plane.pose[j][3];
+                u[i]+=raw.m[i][j]*plane.pose[j][0]*plane.width/2;
+                v[i]+=raw.m[i][j]*plane.pose[j][1]*plane.length/2;
+            }
+        }
+        return (void)std::snprintf(reply,size,
+            "ok poc {\"wanted\":%s,\"valid\":%s,\"tracking\":%s,\"paused\":%s,\"menu\":%s,"
+            "\"center\":[%.9g,%.9g,%.9g],\"u\":[%.9g,%.9g,%.9g],\"v\":[%.9g,%.9g,%.9g],"
+            "\"raw_to_standing\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g]}",
+            g_nativePortal.wanted()?"true":"false",valid?"true":"false",tracking?"true":"false",
+            g_paused?"true":"false",menu?"true":"false",c[0],c[1],c[2],u[0],u[1],u[2],v[0],v[1],v[2],
+            origin.m[0][0],origin.m[0][1],origin.m[0][2],origin.m[0][3],
+            origin.m[1][0],origin.m[1][1],origin.m[1][2],origin.m[1][3],
+            origin.m[2][0],origin.m[2][1],origin.m[2][2],origin.m[2][3]);
+    }
     if (subsystem == "passthrough" && action == "presentation") {
         if (!(input >> value) || value != "state" || input >> extra)
             return (void)std::snprintf(reply, size, "error passthrough presentation state");

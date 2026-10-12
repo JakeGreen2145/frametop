@@ -1,8 +1,11 @@
 // Explicit POC layer. Native commands and resource lifetimes are untouched.
 // The optional Aurora patch is a separate launch-only gate DSO.
+#include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fcntl.h>
 #include <mutex>
 #include <openssl/evp.h>
@@ -10,6 +13,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <vulkan/vk_layer.h>
 
@@ -28,11 +32,35 @@ struct DeviceDispatch {
   PFN_vkDestroyDevice destroy;
   PFN_vkDestroyShaderModule destroy_module;
   PFN_vkCreateGraphicsPipelines pipelines;
+  PFN_vkCreatePipelineLayout create_layout;
+  PFN_vkDestroyPipelineLayout destroy_layout;
+  PFN_vkDestroyPipeline destroy_pipeline;
+  PFN_vkCmdBindPipeline bind_pipeline;
+  PFN_vkCmdPushConstants push;
+  PFN_vkCmdDrawIndexed draw_indexed;
+  PFN_vkAllocateCommandBuffers allocate_commands;
+  PFN_vkFreeCommandBuffers free_commands;
+  PFN_vkBeginCommandBuffer begin_command;
+  PFN_vkResetCommandBuffer reset_command;
+  PFN_vkResetCommandPool reset_pool;
+  PFN_vkDestroyCommandPool destroy_pool;
 };
 std::mutex dispatch_mutex;
 std::unordered_map<void *, InstanceDispatch> instances;
 std::unordered_map<void *, DeviceDispatch> devices;
 std::unordered_map<void *, std::unordered_map<VkShaderModule, int>> modules;
+struct CommandState {
+  void *device{};
+  VkCommandPool pool{};
+  VkPipelineLayout layout{};
+  bool sampled{};
+  std::array<float, 16> geometry{};
+};
+std::unordered_map<void *, std::unordered_set<VkPipelineLayout>> layouts;
+std::unordered_map<void *, std::unordered_map<VkPipeline, VkPipelineLayout>>
+    camera_pipelines;
+std::unordered_map<VkCommandBuffer, CommandState> commands;
+unsigned draw_logs = 0;
 void *key(const void *handle) {
   return handle ? *static_cast<void *const *>(handle) : nullptr;
 }
@@ -144,10 +172,23 @@ VkResult VKAPI_CALL create_device(VkPhysicalDevice p,
   if (r != VK_SUCCESS)
     return r;
   DeviceDispatch d{
-      gdpa, (PFN_vkCreateShaderModule)gdpa(*out, "vkCreateShaderModule"),
+      gdpa,
+      (PFN_vkCreateShaderModule)gdpa(*out, "vkCreateShaderModule"),
       (PFN_vkDestroyDevice)gdpa(*out, "vkDestroyDevice"),
       (PFN_vkDestroyShaderModule)gdpa(*out, "vkDestroyShaderModule"),
-      (PFN_vkCreateGraphicsPipelines)gdpa(*out, "vkCreateGraphicsPipelines")};
+      (PFN_vkCreateGraphicsPipelines)gdpa(*out, "vkCreateGraphicsPipelines"),
+      (PFN_vkCreatePipelineLayout)gdpa(*out, "vkCreatePipelineLayout"),
+      (PFN_vkDestroyPipelineLayout)gdpa(*out, "vkDestroyPipelineLayout"),
+      (PFN_vkDestroyPipeline)gdpa(*out, "vkDestroyPipeline"),
+      (PFN_vkCmdBindPipeline)gdpa(*out, "vkCmdBindPipeline"),
+      (PFN_vkCmdPushConstants)gdpa(*out, "vkCmdPushConstants"),
+      (PFN_vkCmdDrawIndexed)gdpa(*out, "vkCmdDrawIndexed"),
+      (PFN_vkAllocateCommandBuffers)gdpa(*out, "vkAllocateCommandBuffers"),
+      (PFN_vkFreeCommandBuffers)gdpa(*out, "vkFreeCommandBuffers"),
+      (PFN_vkBeginCommandBuffer)gdpa(*out, "vkBeginCommandBuffer"),
+      (PFN_vkResetCommandBuffer)gdpa(*out, "vkResetCommandBuffer"),
+      (PFN_vkResetCommandPool)gdpa(*out, "vkResetCommandPool"),
+      (PFN_vkDestroyCommandPool)gdpa(*out, "vkDestroyCommandPool")};
   try {
     std::lock_guard<std::mutex> l(dispatch_mutex);
     devices.emplace(key(*out), d);
@@ -166,6 +207,13 @@ void VKAPI_CALL destroy_device(VkDevice device,
     std::lock_guard<std::mutex> l(dispatch_mutex);
     devices.erase(key(device));
     modules.erase(key(device));
+    layouts.erase(key(device));
+    camera_pipelines.erase(key(device));
+    for (auto it = commands.begin(); it != commands.end();)
+      if (it->second.device == key(device))
+        it = commands.erase(it);
+      else
+        ++it;
   }
   d.destroy(device, a);
 }
@@ -228,6 +276,7 @@ VkResult VKAPI_CALL create_pipelines(VkDevice device, VkPipelineCache cache,
     std::vector<VkPipelineColorBlendStateCreateInfo> blends(count);
     std::vector<VkPipelineColorBlendAttachmentState> attachments(count);
     unsigned changed = 0;
+    std::vector<bool> camera(count, false);
     {
       std::lock_guard<std::mutex> l(dispatch_mutex);
       auto known = modules.find(key(device));
@@ -252,6 +301,14 @@ VkResult VKAPI_CALL create_pipelines(VkDevice device, VkPipelineCache cache,
           if (!((vs == 57 && ps >= 125 && ps <= 127) ||
                 (vs == 58 && ps >= 128 && ps <= 130)))
             continue;
+          auto compatible = layouts.find(key(device));
+          if (compatible == layouts.end() ||
+              !compatible->second.count(c.layout)) {
+            fprintf(stderr,
+                    "ft-poc: camera pipeline has unsupported push layout\n");
+            return VK_ERROR_INITIALIZATION_FAILED;
+          }
+          camera[i] = true;
           const auto *b = c.pColorBlendState;
           if (!b || b->attachmentCount != 1 || !b->pAttachments ||
               b->logicOpEnable)
@@ -274,6 +331,12 @@ VkResult VKAPI_CALL create_pipelines(VkDevice device, VkPipelineCache cache,
     }
     VkResult result =
         d.pipelines(device, cache, count, changed ? copies.data() : ci, a, out);
+    {
+      std::lock_guard<std::mutex> lock(dispatch_mutex);
+      for (uint32_t i = 0; i < count; i++)
+        if (camera[i] && out[i] != VK_NULL_HANDLE)
+          camera_pipelines[key(device)][out[i]] = ci[i].layout;
+    }
     if (changed)
       fprintf(stderr, "ft-poc: source-over pipelines %u result %d\n", changed,
               int(result));
@@ -282,6 +345,220 @@ VkResult VKAPI_CALL create_pipelines(VkDevice device, VkPipelineCache cache,
     return VK_ERROR_OUT_OF_HOST_MEMORY;
   }
 }
+
+std::array<float, 16> read_geometry() {
+  std::array<float, 16> result{};
+  const char *path = getenv("FT_POC_GEOMETRY");
+  if (!path || path[0] != '/')
+    return result;
+  int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+  if (fd < 0)
+    return result;
+  struct stat st{};
+  timespec now{};
+  bool ok = !fstat(fd, &st) && S_ISREG(st.st_mode) && st.st_size == 64 &&
+            st.st_uid == getuid() && !clock_gettime(CLOCK_REALTIME, &now);
+  double age = double(now.tv_sec - st.st_mtim.tv_sec) +
+               double(now.tv_nsec - st.st_mtim.tv_nsec) * 1e-9;
+  ok = ok && age >= -0.1 && age <= 0.5 && read(fd, result.data(), 64) == 64;
+  close(fd);
+  for (float value : result)
+    ok = ok && std::isfinite(value);
+  if (!ok)
+    result.fill(0);
+  result[12] = result[12] > 0.5f ? 1.0f : 0.0f;
+  return result;
+}
+VkResult VKAPI_CALL create_layout(VkDevice device,
+                                  const VkPipelineLayoutCreateInfo *ci,
+                                  const VkAllocationCallbacks *a,
+                                  VkPipelineLayout *out) {
+  auto d = device_dispatch(device);
+  if (!d.create_layout)
+    return VK_ERROR_INITIALIZATION_FAILED;
+  bool compatible = enabled && ci->pushConstantRangeCount == 0;
+  VkPushConstantRange range{VK_SHADER_STAGE_VERTEX_BIT, 0, 64};
+  auto copy = *ci;
+  if (compatible) {
+    copy.pushConstantRangeCount = 1;
+    copy.pPushConstantRanges = &range;
+  }
+  VkResult result = d.create_layout(device, compatible ? &copy : ci, a, out);
+  if (enabled)
+    fprintf(stderr, "ft-poc: layout original_ranges=%u added64=%d result=%d\n",
+            ci->pushConstantRangeCount, int(compatible), int(result));
+  if (result == VK_SUCCESS && compatible) {
+    try {
+      std::lock_guard<std::mutex> lock(dispatch_mutex);
+      layouts[key(device)].insert(*out);
+    } catch (...) {
+      d.destroy_layout(device, *out, a);
+      *out = VK_NULL_HANDLE;
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+  }
+  return result;
+}
+void VKAPI_CALL destroy_layout(VkDevice device, VkPipelineLayout layout,
+                               const VkAllocationCallbacks *a) {
+  auto d = device_dispatch(device);
+  {
+    std::lock_guard<std::mutex> lock(dispatch_mutex);
+    layouts[key(device)].erase(layout);
+    auto &known = camera_pipelines[key(device)];
+    for (auto it = known.begin(); it != known.end();)
+      if (it->second == layout) {
+        fprintf(stderr,
+                "ft-poc: camera layout destroyed while pipeline retained\n");
+        it = known.erase(it);
+      } else
+        ++it;
+    for (auto &item : commands)
+      if (item.second.device == key(device) && item.second.layout == layout)
+        item.second.layout = VK_NULL_HANDLE;
+  }
+  d.destroy_layout(device, layout, a);
+}
+void VKAPI_CALL destroy_pipeline(VkDevice device, VkPipeline pipeline,
+                                 const VkAllocationCallbacks *a) {
+  auto d = device_dispatch(device);
+  {
+    std::lock_guard<std::mutex> lock(dispatch_mutex);
+    camera_pipelines[key(device)].erase(pipeline);
+  }
+  d.destroy_pipeline(device, pipeline, a);
+}
+VkResult VKAPI_CALL allocate_commands(VkDevice device,
+                                      const VkCommandBufferAllocateInfo *ci,
+                                      VkCommandBuffer *out) {
+  auto d = device_dispatch(device);
+  VkResult result = d.allocate_commands(device, ci, out);
+  if (result == VK_SUCCESS) {
+    try {
+      std::lock_guard<std::mutex> lock(dispatch_mutex);
+      for (uint32_t i = 0; i < ci->commandBufferCount; i++)
+        commands[out[i]] = {key(device), ci->commandPool};
+    } catch (...) {
+      d.free_commands(device, ci->commandPool, ci->commandBufferCount, out);
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+  }
+  return result;
+}
+void VKAPI_CALL free_commands(VkDevice device, VkCommandPool pool,
+                              uint32_t count, const VkCommandBuffer *buffers) {
+  auto d = device_dispatch(device);
+  {
+    std::lock_guard<std::mutex> lock(dispatch_mutex);
+    for (uint32_t i = 0; i < count; i++)
+      commands.erase(buffers[i]);
+  }
+  d.free_commands(device, pool, count, buffers);
+}
+void clear_command(CommandState &state) {
+  state.layout = VK_NULL_HANDLE;
+  state.sampled = false;
+  state.geometry.fill(0);
+}
+VkResult VKAPI_CALL begin_command(VkCommandBuffer command,
+                                  const VkCommandBufferBeginInfo *ci) {
+  auto d = device_dispatch(reinterpret_cast<VkDevice>(command));
+  {
+    std::lock_guard<std::mutex> lock(dispatch_mutex);
+    auto it = commands.find(command);
+    if (it != commands.end())
+      clear_command(it->second);
+  }
+  return d.begin_command(command, ci);
+}
+VkResult VKAPI_CALL reset_command(VkCommandBuffer command,
+                                  VkCommandBufferResetFlags flags) {
+  auto d = device_dispatch(reinterpret_cast<VkDevice>(command));
+  VkResult result = d.reset_command(command, flags);
+  if (result == VK_SUCCESS) {
+    std::lock_guard<std::mutex> lock(dispatch_mutex);
+    auto it = commands.find(command);
+    if (it != commands.end())
+      clear_command(it->second);
+  }
+  return result;
+}
+VkResult VKAPI_CALL reset_pool(VkDevice device, VkCommandPool pool,
+                               VkCommandPoolResetFlags flags) {
+  auto d = device_dispatch(device);
+  VkResult result = d.reset_pool(device, pool, flags);
+  if (result == VK_SUCCESS) {
+    std::lock_guard<std::mutex> lock(dispatch_mutex);
+    for (auto &item : commands)
+      if (item.second.device == key(device) && item.second.pool == pool)
+        clear_command(item.second);
+  }
+  return result;
+}
+void VKAPI_CALL destroy_pool(VkDevice device, VkCommandPool pool,
+                             const VkAllocationCallbacks *a) {
+  auto d = device_dispatch(device);
+  {
+    std::lock_guard<std::mutex> lock(dispatch_mutex);
+    for (auto it = commands.begin(); it != commands.end();)
+      if (it->second.device == key(device) && it->second.pool == pool)
+        it = commands.erase(it);
+      else
+        ++it;
+  }
+  d.destroy_pool(device, pool, a);
+}
+void VKAPI_CALL bind_pipeline(VkCommandBuffer command,
+                              VkPipelineBindPoint point, VkPipeline pipeline) {
+  auto d = device_dispatch(reinterpret_cast<VkDevice>(command));
+  if (point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
+    std::lock_guard<std::mutex> lock(dispatch_mutex);
+    auto state = commands.find(command);
+    if (state != commands.end()) {
+      state->second.layout = VK_NULL_HANDLE;
+      auto known = camera_pipelines.find(key(command));
+      if (known != camera_pipelines.end()) {
+        auto it = known->second.find(pipeline);
+        if (it != known->second.end())
+          state->second.layout = it->second;
+      }
+    }
+  }
+  d.bind_pipeline(command, point, pipeline);
+}
+void VKAPI_CALL draw_indexed(VkCommandBuffer command, uint32_t indexCount,
+                             uint32_t instanceCount, uint32_t firstIndex,
+                             int32_t vertexOffset, uint32_t firstInstance) {
+  auto d = device_dispatch(reinterpret_cast<VkDevice>(command));
+  VkPipelineLayout layout = VK_NULL_HANDLE;
+  std::array<float, 16> geometry{};
+  bool log_draw = false;
+  {
+    std::lock_guard<std::mutex> lock(dispatch_mutex);
+    auto it = commands.find(command);
+    if (it != commands.end() && it->second.layout) {
+      auto &state = it->second;
+      layout = state.layout;
+      if (!state.sampled) {
+        state.geometry = read_geometry();
+        state.sampled = true;
+      }
+      geometry = state.geometry;
+      if (draw_logs < 4) {
+        ++draw_logs;
+        log_draw = true;
+      }
+    }
+  }
+  if (layout)
+    d.push(command, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, geometry.data());
+  if (log_draw)
+    fprintf(stderr, "ft-poc: push draw enabled=%.0f center=%.3f,%.3f,%.3f\n",
+            geometry[12], geometry[0], geometry[1], geometry[2]);
+  d.draw_indexed(command, indexCount, instanceCount, firstIndex, vertexOffset,
+                 firstInstance);
+}
+
 } // namespace
 EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
 vkGetInstanceProcAddr(VkInstance, const char *);
@@ -293,6 +570,28 @@ vkGetDeviceProcAddr(VkDevice d, const char *n) {
     return nullptr;
   if (!strcmp(n, "vkGetDeviceProcAddr"))
     return (PFN_vkVoidFunction)vkGetDeviceProcAddr;
+  if (!strcmp(n, "vkCreatePipelineLayout"))
+    return (PFN_vkVoidFunction)create_layout;
+  if (!strcmp(n, "vkDestroyPipelineLayout"))
+    return (PFN_vkVoidFunction)destroy_layout;
+  if (!strcmp(n, "vkDestroyPipeline"))
+    return (PFN_vkVoidFunction)destroy_pipeline;
+  if (!strcmp(n, "vkCmdBindPipeline"))
+    return (PFN_vkVoidFunction)bind_pipeline;
+  if (!strcmp(n, "vkCmdDrawIndexed"))
+    return (PFN_vkVoidFunction)draw_indexed;
+  if (!strcmp(n, "vkAllocateCommandBuffers"))
+    return (PFN_vkVoidFunction)allocate_commands;
+  if (!strcmp(n, "vkFreeCommandBuffers"))
+    return (PFN_vkVoidFunction)free_commands;
+  if (!strcmp(n, "vkBeginCommandBuffer"))
+    return (PFN_vkVoidFunction)begin_command;
+  if (!strcmp(n, "vkResetCommandBuffer"))
+    return (PFN_vkVoidFunction)reset_command;
+  if (!strcmp(n, "vkResetCommandPool"))
+    return (PFN_vkVoidFunction)reset_pool;
+  if (!strcmp(n, "vkDestroyCommandPool"))
+    return (PFN_vkVoidFunction)destroy_pool;
   if (!strcmp(n, "vkDestroyShaderModule"))
     return (PFN_vkVoidFunction)destroy_module;
   if (!strcmp(n, "vkCreateGraphicsPipelines"))
@@ -322,6 +621,28 @@ vkGetInstanceProcAddr(VkInstance i, const char *n) {
     return (PFN_vkVoidFunction)create_device;
   if (!strcmp(n, "vkDestroyDevice"))
     return (PFN_vkVoidFunction)destroy_device;
+  if (!strcmp(n, "vkCreatePipelineLayout"))
+    return (PFN_vkVoidFunction)create_layout;
+  if (!strcmp(n, "vkDestroyPipelineLayout"))
+    return (PFN_vkVoidFunction)destroy_layout;
+  if (!strcmp(n, "vkDestroyPipeline"))
+    return (PFN_vkVoidFunction)destroy_pipeline;
+  if (!strcmp(n, "vkCmdBindPipeline"))
+    return (PFN_vkVoidFunction)bind_pipeline;
+  if (!strcmp(n, "vkCmdDrawIndexed"))
+    return (PFN_vkVoidFunction)draw_indexed;
+  if (!strcmp(n, "vkAllocateCommandBuffers"))
+    return (PFN_vkVoidFunction)allocate_commands;
+  if (!strcmp(n, "vkFreeCommandBuffers"))
+    return (PFN_vkVoidFunction)free_commands;
+  if (!strcmp(n, "vkBeginCommandBuffer"))
+    return (PFN_vkVoidFunction)begin_command;
+  if (!strcmp(n, "vkResetCommandBuffer"))
+    return (PFN_vkVoidFunction)reset_command;
+  if (!strcmp(n, "vkResetCommandPool"))
+    return (PFN_vkVoidFunction)reset_pool;
+  if (!strcmp(n, "vkDestroyCommandPool"))
+    return (PFN_vkVoidFunction)destroy_pool;
   if (!strcmp(n, "vkDestroyShaderModule"))
     return (PFN_vkVoidFunction)destroy_module;
   if (!strcmp(n, "vkCreateGraphicsPipelines"))

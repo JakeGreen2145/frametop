@@ -57,7 +57,9 @@ PACKAGES = {
                            "native-portal/poc: recheck compositor hash and Aurora gate instruction at "
                            "0x9f404, all eight shader hashes and M0/M1 uniform layouts, then verify "
                            "both-eye masking, scene outside the aperture, tracking-space placement "
-                           "under motion, and restoration after disabling the trial",
+                           "under motion, zero-range pipeline layout compatibility with the added 64-byte "
+                           "vertex push constants, live desktop top-face placement across origin changes, "
+                           "stale bridge suppression, and restoration after disabling the trial",
     "kwin": "clicks near the far edge of a screen whose scale isn't 1; every screen comes back "
             "after a desktop restart; floating a window; no blur behind the taskbar's menus",
     "plasma-workspace": "the taskbar and panels after a desktop restart; no DiscoverNotifier or "

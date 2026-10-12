@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a fixed native-reference-space camera aperture without changing its UBO.
+"""Generate a camera aperture driven by 64-byte vertex push constants.
 
 Private diagnostic assets only. This does not install or activate the shaders.
 """
@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 import generate_shaders as original
 
 
-def patch(text, stage, raw_position, center, u, v):
+def patch(text, stage, raw_position, center, u, v, fixed=False):
     # Reuse the tested varying, clipping and native-instruction preservation.
     # Replace only the newly added extension loads with shader calculations.
     extended = original.patch_assembly(text, stage, raw_position)
@@ -37,6 +37,7 @@ def patch(text, stage, raw_position, center, u, v):
     zero = a.declaration(f'OpConstant {f32} 0')
     replacements = {3: one, 6: uone}
     code = []
+    push_block = None
 
     def emit(rhs):
         ident = a.fresh()
@@ -72,7 +73,25 @@ def patch(text, stage, raw_position, center, u, v):
         ew = emit(f'OpCompositeExtract {f32} {e4} 3')
         ew_inverse = emit(f'OpFDiv {f32} {one} {ew}')
         eye = emit(f'OpVectorTimesScalar {v3} {e3} {ew_inverse}')
-        c, uu, vv = map(constant_vec, (center, u, v))
+        active = one
+        if fixed:
+            c, uu, vv = map(constant_vec, (center, u, v))
+        else:
+            push_block = a.declaration(f'OpTypeStruct {v4} {v4} {v4} {v4}')
+            push_ptr = a.declaration(f'OpTypePointer PushConstant {push_block}')
+            push = a.declaration(f'OpVariable {push_ptr} PushConstant')
+            vector_ptr = a.declaration(f'OpTypePointer PushConstant {v4}')
+            annotations = [f'OpDecorate {push_block} Block']
+            annotations += [f'OpMemberDecorate {push_block} {i} Offset {16*i}' for i in range(4)]
+            first_type = next(i for i, line in enumerate(lines) if ' = OpType' in line)
+            lines[first_type:first_type] = annotations
+            vectors = []
+            for i in range(4):
+                member = a.declaration(f'OpConstant {u32} {i}')
+                address = emit(f'OpAccessChain {vector_ptr} {push} {member}')
+                vectors.append(emit(f'OpLoad {v4} {address}'))
+            c, uu, vv = [emit(f'OpVectorShuffle {v3} {x} {x} 0 1 2') for x in vectors[:3]]
+            active = emit(f'OpCompositeExtract {f32} {vectors[3]} 0')
         w = emit(f'OpFSub {v3} {c} {eye}')
         n = emit(f'OpExtInst {v3} {glsl} Cross {uu} {vv}')
         det = emit(f'OpDot {f32} {n} {w}')
@@ -84,7 +103,8 @@ def patch(text, stage, raw_position, center, u, v):
             dot = emit(f'OpDot {f32} {row} {eye}')
             offset = emit(f'OpFNegate {f32} {dot}')
             xyz = [emit(f'OpCompositeExtract {f32} {row} {j}') for j in range(3)]
-            replacements[i] = emit(f'OpCompositeConstruct {v4} {" ".join(xyz)} {offset}')
+            coefficient = emit(f'OpCompositeConstruct {v4} {" ".join(xyz)} {offset}')
+            replacements[i] = emit(f'OpVectorTimesScalar {v4} {coefficient} {active}')
 
     # The original patch adds members 26..32. Eliminate their accesses and
     # declarations, leaving the exact original descriptor and buffer layout.
@@ -119,7 +139,11 @@ def patch(text, stage, raw_position, center, u, v):
     first_function = next(i for i, line in enumerate(output) if ' = OpFunction ' in line)
     output[first_function:first_function] = a.declarations
     result = '\n'.join(output) + '\n'
-    original.verify_preservation(text, result)
+    # The existing checker allows no new structs. Exclude exactly our new push
+    # block declaration from that check; every original instruction must remain.
+    preservation = '\n'.join(line for line in output
+                             if push_block is None or not line.startswith(push_block + ' = OpTypeStruct '))
+    original.verify_preservation(text, preservation)
     return result
 
 
@@ -130,6 +154,7 @@ def main():
     p.add_argument('--center', type=float, nargs=3, default=[0, 0, -1])
     p.add_argument('--u', type=float, nargs=3, default=[0.45, 0, 0])
     p.add_argument('--v', type=float, nargs=3, default=[0, 0.3, 0])
+    p.add_argument('--fixed', action='store_true', help='retain the original baked rectangle diagnostic')
     args = p.parse_args()
     if not all(math.isfinite(value) for values in (args.center, args.u, args.v) for value in values):
         p.error('aperture coordinates must be finite')
@@ -139,13 +164,14 @@ def main():
     if sum(value*value for value in cross) < 1e-12:
         p.error('aperture half-extent vectors must span a plane')
     args.output.mkdir(parents=True, exist_ok=True)
-    report = {'center_reference': args.center, 'u_reference': args.u, 'v_reference': args.v, 'shaders': {}}
+    report = {'geometry_mode': 'fixed' if args.fixed else 'frametop-push-constants',
+              'center_reference': args.center, 'u_reference': args.u, 'v_reference': args.v, 'shaders': {}}
     for ident, info in original.MANIFEST['shaders'].items():
         source = args.source / info['filename']
         if hashlib.sha256(source.read_bytes()).hexdigest() != info['sha256']:
             raise ValueError('native shader hash mismatch: ' + str(source))
         assembly = original.run('spirv-dis', '--raw-id', source)
-        modified = patch(assembly, info['stage'], info['raw_position_id'], args.center, args.u, args.v)
+        modified = patch(assembly, info['stage'], info['raw_position_id'], args.center, args.u, args.v, args.fixed)
         private_asm = args.output / (ident + '.poc.spvasm')
         target = args.output / (ident + '.portal.spv')
         (args.output / (ident + '.original.spv')).write_bytes(source.read_bytes())
