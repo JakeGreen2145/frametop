@@ -1,21 +1,120 @@
 {
   "schema": 1,
-  "status": "required bounded dispatch adapter extension",
+  "status": "implemented canonical extension; source and CPU installer verified; not live",
   "module": "compositor",
   "callback": "ft_native_portal_event(relative_pc, Saved*)",
   "emitter": "observer; conflict is production fail-stop before displaced instruction",
   "required_sites": [
-    {"pc":"0x2a2498","role":"restored normal/early RET, exact entry SP/LR; last dependent use, not settlement"},
-    {"pc":"0x2a2564","role":"restored alternate RET, exact entry SP/LR; never release unmatched outer"},
-    {"pc":"0x2a2870","role":"EH tail, fail-stop with retained debt and caller, never normal return"},
-    {"pc":"0x2983c8","role":"selected R sampled cleanup before original; special image bypasses pipeline cache deletion"},
-    {"pc":"0x298750","role":"selected R Begin before deferred destructive drain, recursive Begin conflict"},
-    {"pc":"0x29ce00","role":"selected R optimizer before pass rewrite, recursive optimizer conflict"},
-    {"pc":"0x29b278","role":"selected R record entry before packet append"},
-    {"pc":"0x299a60","role":"selected R target binding before pass/vector mutation"},
-    {"pc":"0x2993f8","role":"selected R upload recording before native writer"},
-    {"pc":"0x2990c8","role":"selected R update recording before native writer"},
-    {"pc":"0x2988a8","role":"selected R uniform recording before native writer"}
+    {
+      "pc": "0x2a2498",
+      "role": "restored normal/early RET, exact entry SP/LR; last dependent use, not settlement",
+      "module": "compositor",
+      "word": "0xd65f03c0",
+      "kind": 5,
+      "guard": "c0035fd6347874f841008052e00314aa",
+      "guard_sha256": "0eaf31bc086832771abf19f6e0570b2fb1089823a29d7c4ddf87f74ad69fb3f6",
+      "emitter": "observer"
+    },
+    {
+      "pc": "0x2a2564",
+      "role": "restored alternate RET, exact entry SP/LR; never release unmatched outer",
+      "module": "compositor",
+      "word": "0xd65f03c0",
+      "kind": 5,
+      "guard": "c0035fd6000440f9020080d261e249f9",
+      "guard_sha256": "0c48fbce0a1379f7a826b8979019bca446a816d73be9d5b03e5bf5f7d544f24f",
+      "emitter": "observer"
+    },
+    {
+      "pc": "0x2a2870",
+      "role": "EH tail, fail-stop with retained debt and caller, never normal return",
+      "module": "compositor",
+      "word": "0xf9405bf4",
+      "kind": 0,
+      "guard": "f45b40f9f30300aab40000b4e00314aa",
+      "guard_sha256": "e71ed8b6903cfbf178597ddf3b27dc3b2229b438e156a6913faa26e2ad3c129b",
+      "emitter": "observer"
+    },
+    {
+      "pc": "0x2983c8",
+      "role": "selected R sampled cleanup before original; special image bypasses pipeline cache deletion",
+      "module": "compositor",
+      "word": "0xa9b77bfd",
+      "kind": 0,
+      "guard": "fd7bb7a9fd030091f35301a9f76303a9",
+      "guard_sha256": "efd2c8e033aede8e3d67204ad880afaa9c898ace965f470d69807a9f870b2f55",
+      "emitter": "observer"
+    },
+    {
+      "pc": "0x298750",
+      "role": "selected R Begin before deferred destructive drain, recursive Begin conflict",
+      "module": "compositor",
+      "word": "0xa9bc7bfd",
+      "kind": 0,
+      "guard": "fd7bbca903bb82d2fd030091f35301a9",
+      "guard_sha256": "fa48877d35950344cbb6ce5073748ee230d1a560e5153dfdad36711907c79d2d",
+      "emitter": "observer"
+    },
+    {
+      "pc": "0x29ce00",
+      "role": "selected R optimizer before pass rewrite, recursive optimizer conflict; once-only ordinary zero-flag no-op at SP=E-0xd0/LR=2a1ecc preserved",
+      "module": "compositor",
+      "word": "0xd10bc3ff",
+      "kind": 0,
+      "guard": "ffc30bd1fd7b00a9fd030091f35301a9",
+      "guard_sha256": "fdef580e1a7565ff70729f2e652171083ece3d58cd276de0393b9493e3d79777",
+      "emitter": "observer"
+    },
+    {
+      "pc": "0x29b278",
+      "role": "selected R record entry before packet append",
+      "module": "compositor",
+      "word": "0xa9b57bfd",
+      "kind": 0,
+      "guard": "fd7bb5a9fd030091f35301a9f55b02a9",
+      "guard_sha256": "3effcba3e00d941ed2e56f253b4892bb5a502a8462f54ac64d5817518b7d9517",
+      "emitter": "observer"
+    },
+    {
+      "pc": "0x299a60",
+      "role": "selected R target binding before pass/vector mutation",
+      "module": "compositor",
+      "word": "0x34001d41",
+      "kind": 3,
+      "guard": "411d0034ff4302d13f040071fd7b01a9",
+      "guard_sha256": "5cff8e8eeefe35b49aeaf284c10a1c4e3d5238114d4cb31e3ec9cc1bdcb888f3",
+      "emitter": "observer"
+    },
+    {
+      "pc": "0x2993f8",
+      "role": "selected R upload recording before native writer",
+      "module": "compositor",
+      "word": "0xa9bd7bfd",
+      "kind": 0,
+      "guard": "fd7bbda9fd030091f35301a9f30300aa",
+      "guard_sha256": "f235ae5e1f0a51ef4a6e1bece7a44872a0afa3ed14d7d69368b59eb965455b22",
+      "emitter": "observer"
+    },
+    {
+      "pc": "0x2990c8",
+      "role": "selected R update recording before native writer",
+      "module": "compositor",
+      "word": "0xa9bb7bfd",
+      "kind": 0,
+      "guard": "fd7bbba9fd030091f35301a9f30300aa",
+      "guard_sha256": "62381863cbe093c5321c110e8507bf461f120b06bd7380c849e534404b150908",
+      "emitter": "observer"
+    },
+    {
+      "pc": "0x2988a8",
+      "role": "selected R uniform recording before native writer",
+      "module": "compositor",
+      "word": "0xb40002a2",
+      "kind": 3,
+      "guard": "a20200b4441840b903ffbf129f00036b",
+      "guard_sha256": "d88cf69beaf584bba89dfb4cb6db8208ffc2b44df754bc836088d75cc8758c83",
+      "emitter": "observer"
+    }
   ],
   "additional_site_rationale": "Entry guards are needed, not later passive observers: existing 2987d4 follows Begin's destructive drain; 299110 and 2988b0 are interior classification sites. EH cannot borrow either normal RET. These exact entry families and native receiver x0=R are identified by the delivered native mutation contract; no new ancestry analysis is requested.",
   "permission": "Installed presence alone grants no heap reads. Admission reader plus retained caller, exact binding/recording/invocation, and conditional native ownership remain required. Present remains closed."
